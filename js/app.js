@@ -838,13 +838,8 @@ try { relayOff = LOCAL && localStorage.getItem(RELAY_KEY) === 'off'; } catch (e)
 const relayOn = () => !!BOOK_RELAY && !relayOff;
 function setRelay(on) { relayOff = !on; try { on ? localStorage.removeItem(RELAY_KEY) : localStorage.setItem(RELAY_KEY, 'off'); } catch (e) {} }
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-// 책 칸 형식에 맞춘다: 부제는 «제목 - 부제», 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외»
-const NOT_SUBTITLE = /(판|권|세트|에디션|합본|도서|원서)$|^\d/;
-function bookTitle(s) {
-  const t = tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
-  const m = t.match(/^(.+?)\s*\(([^()]+\s[^()]+)\)$/);
-  return m && !NOT_SUBTITLE.test(m[2]) ? `${m[1]} - ${m[2]}` : t;
-}
+// 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
+const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
 const peopleText = (xs) => { const n = (xs || []).map(tidy).filter(Boolean); return n.length > 3 ? `${n[0]} 외` : n.join(', '); };
 function bookAuthors(authors, translators) {
   const a = peopleText(authors), tr = peopleText(translators);
