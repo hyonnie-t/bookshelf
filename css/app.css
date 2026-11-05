@@ -130,7 +130,7 @@ a.copy { color:var(--ink); text-decoration:none; display:inline-block; }
 .btn.ghost { background:var(--chip); color:var(--ink); border-color:var(--line); }
 .btn:disabled { opacity:.6; }
 #posts { display:grid; gap:12px; margin-top:14px; max-width:44rem; }
-#posts .card { border-top:1px solid var(--line); }
+#posts .card { border-top:1px solid var(--line); padding:14px 16px; gap:8px; }
 .more { display:flex; justify-content:center; margin-top:16px; max-width:44rem; }
 .rise { opacity:0; transform:translateY(10px); transition:opacity .3s ease, transform .3s ease; }
 .rise.show { opacity:1; transform:none; }
