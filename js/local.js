@@ -66,21 +66,21 @@ export async function exportText() {
 }
 export const markBackup = (day) => writePath('meta/lastBackup', day);
 
-const str = (v, max = 20000) => (typeof v === 'string' ? v.slice(0, max) : '');
-const day = (v) => { const s = str(v, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; };
+const str = (v) => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : ''); // 저장할 때 제한이 없으니 복원할 때도 자르지 않는다
+const day = (v) => { const s = str(v); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; };
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const arr = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
-const safeKey = (k) => /^[A-Za-z0-9_-]{1,80}$/.test(k);
+const safeKey = (k) => /^[A-Za-z0-9_-]{1,80}$/.test(k) && !k.startsWith('__');
 function cleanWork(w) {
-  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:Number.isInteger(r.r) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l, 500), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; return o; });
-  const o = { t:str(w.t, 300), a:str(w.a, 300), p:str(w.p, 300), k:KINDS.has(w.k) ? w.k : 'book', th:Array.isArray(w.th) ? w.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.y, 4), fd:day(w.fd) || str(w.fd, 4), known:true, recs, notes:[] };
+  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:Number.isInteger(r.r) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; return o; });
+  const o = { t:str(w.t), a:str(w.a), p:str(w.p), k:KINDS.has(w.k) ? w.k : 'book', th:Array.isArray(w.th) ? w.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.y).slice(0, 4), fd:day(w.fd) || str(w.fd).slice(0, 4), known:true, recs, notes:[] };
   if (w.unread === true) o.unread = true;
   if (w.del === true) o.del = true;
   return o;
 }
 function cleanLib(b) {
-  return { t:str(b.t, 300), a:str(b.a, 300), p:str(b.p, 300), w:safeKey(str(b.w, 80)) ? str(b.w, 80) : '', th:Array.isArray(b.th) ? b.th.filter((x) => typeof x === 'string').slice(0, 21) : [], st:b.st === 'in' ? 'in' : 'own', where:str(b.where, 100), added:day(b.added),
-    loans:arr(b.loans).map((l) => { const o = { dir:l.dir === 'in' ? 'in' : 'out', who:str(l.who, 100), d:day(l.d), due:day(l.due) }; if (day(l.back)) o.back = day(l.back); return o; }) };
+  return { t:str(b.t), a:str(b.a), p:str(b.p), w:safeKey(str(b.w)) ? str(b.w) : '', th:Array.isArray(b.th) ? b.th.filter((x) => typeof x === 'string').slice(0, 21) : [], st:b.st === 'in' ? 'in' : 'own', where:str(b.where), added:day(b.added),
+    loans:arr(b.loans).map((l) => { const o = { dir:l.dir === 'in' ? 'in' : 'out', who:str(l.who), d:day(l.d), due:day(l.due) }; if (day(l.back)) o.back = day(l.back); return o; }) };
 }
 const cleanMap = (m, f) => (isObj(m) ? Object.fromEntries(Object.entries(m).filter(([k, v]) => safeKey(k) && isObj(v)).map(([k, v]) => [k, f(v)])) : {});
 // 파일을 읽어 앱이 쓰는 칸만 골라 낸다. 맞는 파일이 아니면 userMsg가 붙은 오류를 던진다
@@ -90,7 +90,7 @@ export function parseBackup(text) {
   try { j = JSON.parse(text); } catch (e) { throw bad(); }
   if (!isObj(j) || j.app !== APP || !isObj(j.data)) throw bad();
   const d = j.data, out = { works:cleanMap(d.works, cleanWork), library:cleanMap(d.library, cleanLib) };
-  if (isObj(d.meta)) out.meta = { name:str(d.meta.name, 40), lastBackup:day(d.meta.lastBackup) };
+  if (isObj(d.meta)) out.meta = { name:str(d.meta.name).slice(0, 40), lastBackup:day(d.meta.lastBackup) };
   return out;
 }
 export const replaceAll = (data) => { const v = clone(data); return mutate((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, v); }); };

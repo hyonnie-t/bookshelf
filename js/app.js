@@ -107,7 +107,7 @@ function spine(w) {
   b.append(el('span', { textContent:label }));
   if (w.guess || isReading(w)) b.append(el('i', { className:'est', textContent:w.guess ? '추정' : '미완' }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
-  b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 서평 ${rv.length}개`);
+  b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개`);
   b.onclick = () => openBook(w.id, b);
   return el('div', { className:'slot' }, b);
 }
@@ -356,7 +356,7 @@ function renderRecap() {
   const pc = {};
   D.posts.filter((p) => p.k === 'review' && !p.blog).forEach((p) => { const y = p.d.slice(0, 4); pc[y] = (pc[y] || 0) + 1; });
   const pys = Object.keys(pc).sort().reverse(), maxP = Math.max(1, ...Object.values(pc));
-  const reviewed = [...D.byWork.entries()].map(([id, ps]) => [D.works.get(id), ps.length]).filter(([w, n]) => w && n > 1).sort((a, b) => b[1] - a[1]).slice(0, 24);
+  const reviewed = [...D.byWork.entries()].map(([id, ps]) => [D.works.get(id), ps.filter((p) => !p.blog).length]).filter(([w, n]) => w && n > 1).sort((a, b) => b[1] - a[1]).slice(0, 24);
   const postCard = el('div', { className:'card' }, el('h2', { textContent:'해마다 쓴 서평' }), el('p', { className:'sub', textContent:'@hyonnie_books에 올린 서평 글 기준' }),
     pys.map((y) => hbar(y, pc[y], maxP, 'var(--bar)')),
     reviewed.length ? el('h2', { textContent:'여러 번 쓴 책', style:'margin-top:16px;margin-bottom:8px' }) : null,
@@ -826,7 +826,7 @@ function setLede() {
   if (LOCAL) {
     const read = list().filter((w) => w.k === 'book' && !isReading(w)).length, now = list().filter(isReading).length;
     $('lede').textContent = `읽은 책 ${read}권` + (now ? `, 읽는 중 ${now}권` : '');
-    $('foot').textContent = '기록은 이 기기에만 저장되고 어디로도 보내지 않아요. 브라우저 기록을 지우거나 기기를 바꾸면 사라지니 가끔 «파일로 저장»을 눌러 두세요. 폰에서는 홈 화면에 추가해 두면 더 안전해요.';
+    $('foot').textContent = '기록은 이 기기에만 저장되고 어디로도 보내지 않아요. 브라우저 기록을 지우거나 기기를 바꾸면 사라지고, 아이폰 사파리는 오래 안 쓰면 지워질 수 있어요. 가끔 «파일로 저장»을 눌러 두세요. 홈 화면에 추가하면 더 안전한데, 아이폰은 저장 공간이 따로라 추가하기 전에 파일로 저장한 뒤 홈 화면 앱에서 불러와 주세요.';
     return;
   }
   const books = list().filter((w) => w.k === 'book' && !isHidden(w) && !isReading(w)).length, now = list().filter((w) => isReading(w) && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review' && !p.blog).length, blogs = D.posts.filter((p) => p.blog).length;

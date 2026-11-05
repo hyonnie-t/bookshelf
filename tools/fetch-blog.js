@@ -55,9 +55,9 @@ async function main() {
     if (!/^\d+$/.test(id)) continue;
     fresh.push({ c:`tb${id}`, d, t:title, u:grab(it, 'link'), x:excerpt(grab(it, 'description')), k:w.length ? 'review' : 'etc', w });
   }
-  // RSS 범위 안에서 사라진 글은 비공개로 돌린 글로 보고 뺀다. 범위보다 옛 글만 남긴다
+  // RSS 범위 안에서 사라진 글은 비공개로 돌린 글로 보고 뺀다. 범위 밖(가장 옛 글과 같은 날 포함)만 남긴다. 범위 밖 글을 비공개로 돌리면 blog.json에서 손으로 지운다
   const seen = new Set(fresh.map((p) => p.c));
-  const kept = prev.filter((p) => !seen.has(p.c) && p.d < oldest);
+  const kept = prev.filter((p) => !seen.has(p.c) && p.d <= oldest);
   const posts = [...fresh, ...kept].sort((a, b) => b.d.localeCompare(a.d));
   const next = JSON.stringify({ posts });
   const old = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
