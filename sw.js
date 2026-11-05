@@ -1,5 +1,5 @@
 // 앱 파일과 공개 책장만 캐시한다(비공개 기록은 캐시하지 않음). 네트워크 먼저, 끊기면 캐시.
-const VERSION = 'v12';
+const VERSION = 'v15';
 const CACHE = 'bookshelf-' + VERSION;
 const FILES = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/fb.js', 'js/local.js', 'data/public.json', 'data/blog.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())));

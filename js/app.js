@@ -524,6 +524,7 @@ function renderRecap() {
 
 /* ---------- 내 서재 ---------- */
 const openLoan = (it) => it.loans.find((l) => !l.back);
+const fromWho = (who) => `${who}${/(도서관|학교|문고)$/.test(who || '') ? '에서' : '에게서'}`; // 관악중앙도서관에서, 민수에게서
 const isActive = (it) => it.st === 'own' || !!openLoan(it); // 빌려 온 책을 돌려주면 서가에서 빠지고 기록만 남는다
 const libWork = (it) => (it.w ? D.works.get(it.w) : null);
 const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
@@ -555,7 +556,7 @@ function caseBook(it) {
   if (!out) b.style.background = themeVar(th[0]);
   b.append(el('span', { textContent:label }));
   if (sub) b.append(el('small', { textContent:sub }));
-  const status = it.st === 'in' ? `${l.who}에게서 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
+  const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
   b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
   b.title = [title, status].join(' · ');
   b.dataset.lib = it.id;
@@ -566,7 +567,7 @@ function ledgerRow(it, l) {
   const i = it.loans.indexOf(l);
   const name = el('button', { className:'ledger-title', type:'button', textContent:it.t || '제목 없음' });
   name.onclick = () => openLib(it.id, name);
-  const meta = [l.dir === 'out' ? `${l.who}에게` : `${l.who}에게서`, l.d ? `${l.d} 빌림` : '', l.due ? `${l.due}까지` : '', l.back ? `${l.back} 돌아옴` : ''].filter(Boolean).join(' · ');
+  const meta = [l.dir === 'out' ? `${l.who}에게` : fromWho(l.who), l.d ? `${l.d} 빌림` : '', l.due ? `${l.due}까지` : '', l.back ? `${l.back} 돌아옴` : ''].filter(Boolean).join(' · ');
   const tools = el('div', { className:'ledger-tools' });
   if (!l.back) tools.append(backButton(it, i));
   const fix = el('button', { className:'copy', type:'button', textContent:'고치기' });
@@ -646,12 +647,12 @@ function libBox(it, w) {
     return el('div', { className:'libbox' }, add);
   }
   const l = openLoan(it);
-  const state = it.st === 'in' ? (l ? `빌려 온 책 · ${l.who}에게서` : '빌렸다가 돌려준 책') : l ? `소장 · 지금 ${l.who}에게 빌려줌` : `소장 · ${it.where || DEFAULT_WHERE}`;
+  const state = it.st === 'in' ? (l ? `빌려 온 책 · ${fromWho(l.who)}` : '빌렸다가 돌려준 책') : l ? `소장 · 지금 ${l.who}에게 빌려줌` : `소장 · ${it.where || DEFAULT_WHERE}`;
   const kids = [el('h3', { className:'sec', textContent:'내 서재' }), el('p', { className:'libstate', textContent:state })];
   it.loans.forEach((x, i) => {
     const fix = el('button', { className:'copy', type:'button', textContent:'고치기' });
     fix.onclick = () => openLoanForm(it, i);
-    const text = [x.dir === 'out' ? `${x.who}에게` : `${x.who}에게서`, x.d, x.due ? `${x.due}까지` : '', x.back ? `${x.back} 돌아옴` : ''].filter(Boolean).join(' · ');
+    const text = [x.dir === 'out' ? `${x.who}에게` : fromWho(x.who), x.d, x.due ? `${x.due}까지` : '', x.back ? `${x.back} 돌아옴` : ''].filter(Boolean).join(' · ');
     kids.push(el('div', { className:'loanline' + (isLate(x) ? ' late' : '') }, el('span', { textContent:text }), fix));
   });
   const tools = el('div', { className:'actions' });
@@ -863,17 +864,34 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
   $('form').scrollTop = 0;
 }
 /* ---------- 인터넷에서 책 찾아 채우기 ---------- */
-// 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 키 없이 되는 공개 목록을 쓰고, 안 나오면 서점 검색으로 넘겨 준다
-async function getJson(url) {
-  const c = new AbortController(), t = setTimeout(() => c.abort(), 5000);
+// 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 카카오 책 검색을 앱스크립트 중계로 먼저 찾고, 키 없는 공개 목록을 그다음에 쓴다. 안 나오면 서점 검색으로 넘겨 준다
+const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec'; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
+const relayOn = () => !!BOOK_RELAY && !LOCAL; // 범용판은 효니 키를 쓰는 중계를 쓰지 않는다(효니 결정 2026-11-05)
+const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+// 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
+const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
+const peopleText = (xs) => { const n = (xs || []).map(tidy).filter(Boolean); return n.length > 3 ? `${n[0]} 외` : n.join(', '); };
+function bookAuthors(authors, translators) {
+  const a = peopleText(authors), tr = peopleText(translators);
+  return tr ? (a ? `${a}, ` : '') + `${tr} 옮김` : a;
+}
+async function getJson(url, ms = 5000) {
+  const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
   try { const r = await fetch(url, { signal:c.signal }); if (!r.ok) throw new Error(String(r.status)); return await r.json(); } finally { clearTimeout(t); }
 }
 async function searchBooks(q) {
   const enc = encodeURIComponent(q);
   const sources = [
+    relayOn() && (async () => {
+      const r = await getJson(`${BOOK_RELAY}?q=${enc}`, 12000); // 앱스크립트는 오래 쉬면 깨어나는 데 몇 초 걸린다
+      if (!r.ok) throw new Error(r.error || 'relay');
+      const seen = new Set();
+      return (r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '' }))
+        .filter((b) => { const k = dupNorm(b.t + b.a + b.p); if (seen.has(k)) return false; seen.add(k); return true; });
+    }),
     async () => ((await getJson(`https://www.googleapis.com/books/v1/volumes?maxResults=6&printType=books&q=${enc}`)).items || []).map(({ volumeInfo:v }) => ({ t:v.title || '', a:(v.authors || []).join(', '), p:v.publisher || '', y:(v.publishedDate || '').slice(0, 4) })),
     async () => ((await getJson(`https://openlibrary.org/search.json?limit=6&fields=title,author_name,publisher,first_publish_year&q=${enc}`)).docs || []).map((d) => ({ t:d.title || '', a:(d.author_name || []).join(', '), p:(d.publisher || [])[0] || '', y:d.first_publish_year ? String(d.first_publish_year) : '' })),
-  ];
+  ].filter(Boolean);
   let failed = false;
   for (const source of sources) {
     try { const rows = (await source()).filter((b) => b.t); if (rows.length) return { rows, failed:false }; } catch (e) { failed = true; console.warn('책 찾기 실패', e.message); }
@@ -882,7 +900,7 @@ async function searchBooks(q) {
 }
 const STORES = [['교보문고', 'https://search.kyobobook.co.kr/search?keyword='], ['알라딘', 'https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Book&SearchWord=']];
 function bookLookup(apply) {
-  const q = el('input', { type:'search', placeholder:'제목이나 저자로 찾기', ariaLabel:'인터넷에서 책 찾기' });
+  const q = el('input', { type:'search', maxLength:100, placeholder:'제목이나 저자로 찾기', ariaLabel:'인터넷에서 책 찾기' });
   const go = el('button', { className:'btn ghost', type:'button', textContent:'찾기' });
   const found = el('ul', { className:'found' });
   const msg = el('p', { className:'warn', role:'status', hidden:true });
@@ -909,9 +927,10 @@ function bookLookup(apply) {
   };
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
+  // 찾는 말이 실제로 가는 곳만 적는다
+  const note = el('small', { textContent:relayOn() ? '찾는 말만 구글 앱스크립트를 거쳐 카카오 책 검색으로 보내요. 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.' : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go), msg, found,
-    el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links),
-    el('small', { textContent:'찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' }));
+    el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
 
 /* ---------- 겹치는 책 고치기 ---------- */
