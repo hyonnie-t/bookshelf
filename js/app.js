@@ -817,6 +817,7 @@ function renderWho() {
     box.replaceChildren(el('span', { className:'me', textContent:DEMO ? '시험 화면' : '내 기록 보는 중' }), out);
   } else {
     const inBtn = el('button', { className:'copy', type:'button', textContent:'주인 로그인' });
+    if (!DEMO) fb.warm();
     inBtn.onclick = async () => {
       inBtn.disabled = true;
       try {
