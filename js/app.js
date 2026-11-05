@@ -1,10 +1,13 @@
 // 효니의 책장: 공개 화면은 data/public.json(책·인스타 서평), 주인 로그인 뒤에는 비공개 기록을 겹쳐 보여 주고 고칠 수 있다.
-import * as fb from './fb.js';
+import * as remote from './fb.js';
+import * as local from './local.js';
 
-const DEMO = new URLSearchParams(location.search).get('demo') === '1'; // 시험용: 가짜 기록으로 주인 화면, 저장은 메모리에만
-const KINDS = [['book','책'],['film','영화·드라마'],['show','전시·공연'],['trip','여행'],['other','다른 글'],['wishlist','읽을 목록'],['all','전체']];
+const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
+const fb = LOCAL ? local : remote;
+const DEMO = !LOCAL && new URLSearchParams(location.search).get('demo') === '1'; // 시험용: 가짜 기록으로 주인 화면, 저장은 메모리에만
+const KINDS = [['book','책'],['reading','읽는 중'],['film','영화·드라마'],['show','전시·공연'],['trip','여행'],['other','다른 글'],['wishlist','읽을 목록'],['all','전체']];
 const THEMES = [['소설','소설'],['에세이','에세이'],['역사','역사'],['철학','철학'],['사회·정치','사회정치'],['여성','여성'],['과학·환경','과학환경'],['사랑·관계','사랑관계'],['죽음·상실','죽음상실'],['일·노동','일노동'],['교육','교육'],['법','법'],['SF·판타지','SF판타지'],['여행','여행'],['예술','예술'],['시','시'],['심리','심리'],['인문','인문'],['청소년·그림책','청소년그림책'],['경제·자기계발','경제자기계발'],['기타','기타']];
-const POST_KINDS = [['review','서평'],['etc','결산·일상'],['all','전체']];
+const POST_KINDS = [['review','서평'],['etc','결산·일상'],['blog','블로그'],['all','전체']];
 const PAGE = 24;
 const $ = (id) => document.getElementById(id);
 const el = (tag, props, ...kids) => { const n = Object.assign(document.createElement(tag), props || {}); kids.flat().forEach((k) => { if (k != null) n.append(k); }); return n; };
@@ -15,7 +18,7 @@ const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
 const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
-const D = { pub:null, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[] };
+const D = { pub:null, blog:[], works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[] };
 const VIEWS = ['shelf', 'library', 'posts', 'recap'];
 const LIB_KINDS = [['all','전체'],['own','소장'],['out','빌려준 책'],['in','빌려 온 책'],['unread','아직 안 읽음']];
 const DEFAULT_WHERE = '내 책장';
@@ -35,6 +38,7 @@ function rebuild() {
     Object.values(D.priv.igAdded || {}).forEach((p) => posts.set(p.c, { ...p, w:p.w || [] }));
     Object.entries(D.priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p) { p.w = l.w || []; if (l.k) p.k = l.k; } });
   }
+  D.blog.forEach((p) => posts.set(p.c, { ...p, w:p.w || [], blog:true })); // 티스토리 글은 data/blog.json에서만 온다
   D.works = works;
   posts.forEach((p) => { p.w = p.w.filter((id) => works.has(id)); if (!p.w.length && p.k === 'review') p.k = 'etc'; });
   D.posts = [...posts.values()].sort((a, b) => b.d.localeCompare(a.d));
@@ -52,11 +56,14 @@ function rebuild() {
 const titleOf = (w) => w.t || { book:'제목 미확인 책', film:'제목 미확인 영화', show:'제목 미확인 공연', trip:'여행 기록', other:'제목 없는 글', wishlist:'읽을 목록' }[w.k] || '제목 없음';
 const reviewsOf = (w) => D.byWork.get(w.id) || [];
 const list = () => [...D.works.values()];
+// 다 읽은 기록이 없고 미완독·읽는 중 표시가 있는 책. 공개 화면은 public.json의 st로 안다
+const isReading = (w) => w.k === 'book' && !w.recs.some((r) => r.st !== 'unread') && (w.st === 'reading' || !!w.unread || w.recs.some((r) => r.st === 'unread') || w.notes.some((n) => n.s === 'reading'));
+const inShelfKind = (w, k) => k === 'all' || (k === 'reading' ? isReading(w) : w.k === k && !(k === 'book' && isReading(w)));
 
 /* ---------- 책장 ---------- */
 const isHidden = (w) => S.hideUnknown && !w.known && ['book','film','show'].includes(w.k);
 function matches(w) {
-  if (S.kind !== 'all' && w.k !== S.kind) return false;
+  if (!inShelfKind(w, S.kind)) return false;
   if (S.theme && !w.th.includes(S.theme)) return false;
   if (S.onlyIg && !reviewsOf(w).length) return false;
   if (isHidden(w) && !S.q) return false; // 찾을 때는 숨긴 기록까지 찾아 준다
@@ -67,7 +74,7 @@ function chips() {
   const all = list().filter((w) => !isHidden(w));
   $('onlyIg').setAttribute('aria-pressed', S.onlyIg);
   $('showUnknown').setAttribute('aria-pressed', !S.hideUnknown);
-  const count = (k) => k === 'all' ? all.length : all.filter((w) => w.k === k).length;
+  const count = (k) => all.filter((w) => inShelfKind(w, k)).length;
   const kinds = KINDS.filter(([k]) => k === 'all' ? false : count(k));
   const rows = kinds.length > 1 ? [...kinds, ['all','전체']] : [];
   $('kinds').replaceChildren(...rows.map(([k, label]) => {
@@ -92,15 +99,15 @@ function spine(w) {
   const label = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
   const cols = label.length <= 8 ? 1 : label.length <= 16 ? 2 : 3;
   const len = rv.reduce((a, p) => a + p.x.length, 0) + w.notes.reduce((a, n) => a + (n.len || 0), 0);
-  const h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (w.guess || w.unread ? 18 : 0));
+  const h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (w.guess || isReading(w) ? 18 : 0));
   const wd = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9);
-  const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (w.guess || w.unread ? ' guess' : '') + (rv.length ? ' has-ig' : '') });
+  const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (w.guess || isReading(w) ? ' guess' : '') + (rv.length ? ' has-ig' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
   b.style.background = themeVar(w.th[0]);
   b.append(el('span', { textContent:label }));
-  if (w.guess || w.unread) b.append(el('i', { className:'est', textContent:w.guess ? '추정' : '미완' }));
+  if (w.guess || isReading(w)) b.append(el('i', { className:'est', textContent:w.guess ? '추정' : '미완' }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
-  b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 서평 ${rv.length}개`);
+  b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개`);
   b.onclick = () => openBook(w.id, b);
   return el('div', { className:'slot' }, b);
 }
@@ -117,6 +124,12 @@ function renderShelf() {
   const byYear = {};
   rows.forEach((w) => { (byYear[w.y || '날짜 없음'] = byYear[w.y || '날짜 없음'] || []).push(w); });
   const ys = Object.keys(byYear).sort((a, b) => b.localeCompare(a));
+  if (LOCAL && !D.works.size) {
+    const first = el('button', { className:'btn', type:'button', textContent:'첫 책 꽂기' });
+    first.onclick = () => openBookForm(null);
+    $('shelves').replaceChildren(el('div', { className:'empty' }, el('div', { textContent:'아직 꽂은 책이 없어요. 가입은 필요 없고, 기록은 이 기기에만 남아요.' }), first));
+    return;
+  }
   if (!ys.length) {
     const reset = el('button', { className:'btn', type:'button', textContent:'조건 풀기' });
     reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:false, onlyIg:false }); $('q').value = ''; renderShelf(); };
@@ -134,7 +147,8 @@ function postBlock(p, { showBooks = false, ownerTools = false, inWork = null } =
   const text = el('p', { className:'post-text', textContent:p.x });
   const long = p.x.length > 420;
   if (long) text.classList.add('clamp');
-  const kids = [el('div', { className:'when', textContent:p.d })];
+  const kids = [el('div', { className:'when', textContent:p.blog ? `${p.d} · 블로그` : p.d })];
+  if (p.t) kids.push(el('p', { className:'post-title', textContent:p.t }));
   if (showBooks && p.w.length) {
     kids.push(el('div', { className:'post-books' }, p.w.map((id) => {
       const w = D.works.get(id); if (!w) return null;
@@ -151,8 +165,9 @@ function postBlock(p, { showBooks = false, ownerTools = false, inWork = null } =
     more.onclick = () => { const open = text.classList.toggle('clamp'); more.textContent = open ? '더 보기' : '접기'; more.setAttribute('aria-expanded', String(!open)); };
     foot.append(more);
   }
-  if (validCode(p.c)) foot.append(el('a', { className:'copy link', href:igUrl(p.c), target:'_blank', rel:'noopener', textContent:'인스타그램에서 보기' }));
-  if (ownerTools && S.owner) {
+  if (p.blog) foot.append(el('a', { className:'copy link', href:p.u, target:'_blank', rel:'noopener', textContent:'블로그에서 읽기' }));
+  else if (validCode(p.c)) foot.append(el('a', { className:'copy link', href:igUrl(p.c), target:'_blank', rel:'noopener', textContent:'인스타그램에서 보기' }));
+  if (ownerTools && S.owner && !p.blog) {
     if (inWork) {
       const un = el('button', { className:'copy', type:'button', textContent:'이 책 글이 아니에요' });
       un.onclick = () => saveLinks(p, p.w.filter((x) => x !== inWork), '연결을 풀었어요', inWork).catch((e) => { console.error(e); toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); });
@@ -193,10 +208,13 @@ function renderTome(w, item, from) {
   const rv = reviewsOf(w);
   const byline = [w.a, w.p, kindName === '책' ? '' : kindName].filter(Boolean).join(' · ');
   const left = [el('div', { className:'title-page' }, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }))];
+  if (isReading(w)) left.push(el('p', { className:'by', textContent:'읽는 중' }));
   if (w.th.length) left.push(el('div', { className:'title-tags' }, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
   if (w.guess && S.owner) left.push(el('p', { className:'warn', textContent:'제목과 저자는 메모 내용으로 추정한 것이에요. 틀렸으면 고쳐 주세요.' }));
   const body = [];
-  if (rv.length) body.push(el('h3', { className:'sec', textContent:`인스타 서평 ${rv.length}` }), rv.map((p) => postBlock(p, { ownerTools:true, inWork:w.id })));
+  const rvBlog = rv.filter((p) => p.blog), rvIg = rv.filter((p) => !p.blog);
+  if (rvBlog.length) body.push(el('h3', { className:'sec', textContent:`블로그 글 ${rvBlog.length}` }), rvBlog.map((p) => postBlock(p)));
+  if (rvIg.length) body.push(el('h3', { className:'sec', textContent:`인스타 서평 ${rvIg.length}` }), rvIg.map((p) => postBlock(p, { ownerTools:true, inWork:w.id })));
   else if (!S.owner) body.push(el('p', { className:'warn', textContent:'아직 쓴 서평이 없는 책이에요.' }));
   if (S.owner) {
     left.push(libBox(item, w));
@@ -288,14 +306,15 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------- 서평 글 목록 ---------- */
+const inKind = (p, k) => k === 'all' || (k === 'blog' ? !!p.blog : (p.k || 'etc') === k);
 function postRows() {
   const q = S.pq.toLowerCase();
-  return D.posts.filter((p) => (S.pKind === 'all' || (p.k || 'etc') === S.pKind) && (!q || p.x.toLowerCase().includes(q) || p.w.some((id) => { const w = D.works.get(id); return w && titleOf(w).toLowerCase().includes(q); })));
+  return D.posts.filter((p) => inKind(p, S.pKind) && (!q || p.x.toLowerCase().includes(q) || (p.t || '').toLowerCase().includes(q) || p.w.some((id) => { const w = D.works.get(id); return w && titleOf(w).toLowerCase().includes(q); })));
 }
 function renderPosts(reset) {
   if (reset) S.pShown = PAGE;
-  const count = (k) => k === 'all' ? D.posts.length : D.posts.filter((p) => (p.k || 'etc') === k).length;
-  $('postKinds').replaceChildren(...POST_KINDS.map(([k, label]) => {
+  const count = (k) => D.posts.filter((p) => inKind(p, k)).length;
+  $('postKinds').replaceChildren(...POST_KINDS.filter(([k]) => k !== 'blog' || count(k)).map(([k, label]) => {
     const b = el('button', { className:'chip', type:'button', textContent:`${label} ${count(k)}` });
     b.setAttribute('aria-pressed', S.pKind === k);
     b.onclick = () => { S.pKind = k; renderPosts(true); };
@@ -317,7 +336,8 @@ function renderPosts(reset) {
 
 /* ---------- 돌아보기 ---------- */
 function renderRecap() {
-  const box = $('recap'), books = list().filter((w) => w.k === 'book');
+  const box = $('recap'), books = list().filter((w) => w.k === 'book' && !isReading(w));
+  if (LOCAL && !books.length) { box.replaceChildren(el('div', { className:'empty span2' }, el('div', { textContent:'책을 꽂으면 해마다 읽은 책과 주제별 책을 모아 보여 줄게요.' }))); return; }
   const yc = {};
   const readYear = (w) => { const d = w.recs.filter((r) => r.st !== 'unread').map((r) => r.d).filter(Boolean).sort()[0]; return d ? d.slice(0, 4) : (reviewsOf(w).length || w.pub ? w.y : ''); };
   books.forEach((w) => { const y = readYear(w); if (y) yc[y] = (yc[y] || 0) + 1; });
@@ -334,20 +354,20 @@ function renderRecap() {
   const themeCard = el('div', { className:'card' }, el('h2', { textContent:'주제별 책' }), el('p', { className:'sub', textContent:'누르면 책장에서 그 주제만 보여요' }),
     ts.map(([t, n]) => hbar(t, n, ts[0][1], themeVar(t), () => { Object.assign(S, { kind:'all', theme:t, q:'', hideUnknown:false, onlyIg:false }); $('q').value = ''; show('shelf'); renderShelf(); scrollTo(0, 0); })));
   const pc = {};
-  D.posts.filter((p) => p.k === 'review').forEach((p) => { const y = p.d.slice(0, 4); pc[y] = (pc[y] || 0) + 1; });
+  D.posts.filter((p) => p.k === 'review' && !p.blog).forEach((p) => { const y = p.d.slice(0, 4); pc[y] = (pc[y] || 0) + 1; });
   const pys = Object.keys(pc).sort().reverse(), maxP = Math.max(1, ...Object.values(pc));
-  const reviewed = [...D.byWork.entries()].map(([id, ps]) => [D.works.get(id), ps.length]).filter(([w, n]) => w && n > 1).sort((a, b) => b[1] - a[1]).slice(0, 24);
+  const reviewed = [...D.byWork.entries()].map(([id, ps]) => [D.works.get(id), ps.filter((p) => !p.blog).length]).filter(([w, n]) => w && n > 1).sort((a, b) => b[1] - a[1]).slice(0, 24);
   const postCard = el('div', { className:'card' }, el('h2', { textContent:'해마다 쓴 서평' }), el('p', { className:'sub', textContent:'@hyonnie_books에 올린 서평 글 기준' }),
     pys.map((y) => hbar(y, pc[y], maxP, 'var(--bar)')),
     reviewed.length ? el('h2', { textContent:'여러 번 쓴 책', style:'margin-top:16px;margin-bottom:8px' }) : null,
     reviewed.length ? el('div', { className:'again' }, reviewed.map(([w, n]) => { const b = el('button', { className:'chip', type:'button', textContent:`${titleOf(w)} ×${n}` }); b.onclick = () => openBook(w.id, b); return b; })) : null);
-  const cards = [yearCard, themeCard, postCard];
+  const cards = LOCAL ? [yearCard, themeCard] : [yearCard, themeCard, postCard];
   if (S.owner) {
     const rc = {};
     books.forEach((w) => w.recs.forEach((r) => { if (r.r != null && r.st !== 'unread') rc[r.r] = (rc[r.r] || 0) + 1; }));
     const maxR = Math.max(1, ...Object.values(rc));
     const best = books.filter((w) => w.recs.some((r) => r.r === 5));
-    cards.push(el('div', { className:'card span2' }, el('h2', { textContent:'별점 (나만 보임)' }), el('p', { className:'sub', textContent:`별점을 남긴 ${Object.values(rc).reduce((a, b) => a + b, 0)}건` }),
+    cards.push(el('div', { className:'card span2' }, el('h2', { textContent:LOCAL ? '별점' : '별점 (나만 보임)' }), el('p', { className:'sub', textContent:`별점을 남긴 ${Object.values(rc).reduce((a, b) => a + b, 0)}건` }),
       [5, 4, 3, 2, 1, 0].filter((r) => rc[r]).map((r) => hbar(r === 0 ? '최하' : `${r}점`, rc[r], maxR, 'var(--bar)')),
       best.length ? el('h2', { textContent:'5점을 준 책', style:'margin-top:16px;margin-bottom:8px' }) : null,
       best.length ? el('div', { className:'again' }, best.map((w) => { const b = el('button', { className:'chip', type:'button', textContent:titleOf(w) }); b.onclick = () => openBook(w.id, b); return b; })) : null));
@@ -360,7 +380,7 @@ const openLoan = (it) => it.loans.find((l) => !l.back);
 const isActive = (it) => it.st === 'own' || !!openLoan(it); // 빌려 온 책을 돌려주면 서가에서 빠지고 기록만 남는다
 const libWork = (it) => (it.w ? D.works.get(it.w) : null);
 const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
-const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !w.unread; };
+const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !isReading(w); };
 const libThemes = (it) => (it.th.length ? it.th : (libWork(it) || {}).th || []);
 const isLate = (l) => !!l.due && !l.back && l.due < today();
 const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
@@ -645,7 +665,7 @@ function openLoanForm(it, i) {
 /* ---------- 저장 ---------- */
 async function write(path, value, how) {
   if (DEMO) { console.info('[demo] 저장 안 함', path); return; }
-  if (navigator.onLine === false) throw fail('인터넷이 끊겨 있어요. 연결되면 다시 눌러 주세요.');
+  if (!LOCAL && navigator.onLine === false) throw fail('인터넷이 끊겨 있어요. 연결되면 다시 눌러 주세요.');
   // Firebase 저장은 끊기면 응답 없이 기다리므로 시간을 정해 알린다. 늦게라도 연결되면 저장될 수 있다
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
@@ -708,14 +728,15 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   const t = el('input', { type:'text', required:true, value:seed.t || '' });
   const a = el('input', { type:'text', value:seed.a || '' });
   const p = el('input', { type:'text', value:seed.p || '' });
-  const k = el('select', {}, ...KINDS.filter(([x]) => x !== 'all').map(([x, l]) => el('option', { value:x, textContent:l })));
+  const k = el('select', {}, ...KINDS.filter(([x]) => x !== 'all' && x !== 'reading').map(([x, l]) => el('option', { value:x, textContent:l })));
   k.value = w ? w.k : 'book';
   const th = themeChecks(seed.th || []);
   const kids = [field('제목', t), field('저자', a), field('출판사', p), field('종류', k), field('주제', th)];
-  let d, r, l, b;
+  let d, r, l, b, unfinished;
   if (isNew) {
+    unfinished = el('label', { className:'check' }, el('input', { type:'checkbox' }), ' 아직 읽는 중이에요');
     d = el('input', { type:'date', value:today() }); r = ratingSelect(null); l = el('input', { type:'text' }); b = el('textarea', { rows:6 });
-    kids.push(field('읽은 날', d), field('별점', r), field('한 줄 평', l), field('기록', b));
+    kids.push(field('읽은 날', d), unfinished, field('별점', r), field('한 줄 평', l), field('기록', b));
   }
   const save = async () => {
     const title = t.value.trim();
@@ -724,8 +745,8 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     const base = isNew ? { id:newId, recs:[], notes:[], known:true } : { ...w };
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), k:k.value, th:th.values(), known:true });
     delete base.guess;
-    if (isNew) { base.recs = [{ d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
-    await saveWork(base, isNew ? '읽은 책에 꽂았어요' : '고쳤어요');
+    if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
+    await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
     if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
     else { // 다른 종류를 보고 있어도 꽂힌 걸 바로 보여 준다. 양식의 기록이 먼저 빠진 뒤 연다
@@ -802,15 +823,73 @@ function openPostForm() {
 
 /* ---------- 머리·탭·로그인 ---------- */
 function setLede() {
-  const books = list().filter((w) => w.k === 'book' && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review').length;
-  $('lede').textContent = `책 ${books}권, 인스타 서평 ${reviews}개`;
+  if (LOCAL) {
+    const read = list().filter((w) => w.k === 'book' && !isReading(w)).length, now = list().filter(isReading).length;
+    $('lede').textContent = `읽은 책 ${read}권` + (now ? `, 읽는 중 ${now}권` : '');
+    $('foot').textContent = '기록은 이 기기에만 저장되고 어디로도 보내지 않아요. 브라우저 기록을 지우거나 기기를 바꾸면 사라지고, 아이폰 사파리는 오래 안 쓰면 지워질 수 있어요. 가끔 «파일로 저장»을 눌러 두세요. 홈 화면에 추가하면 더 안전한데, 아이폰은 저장 공간이 따로라 추가하기 전에 파일로 저장한 뒤 홈 화면 앱에서 불러와 주세요.';
+    return;
+  }
+  const books = list().filter((w) => w.k === 'book' && !isHidden(w) && !isReading(w)).length, now = list().filter((w) => isReading(w) && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review' && !p.blog).length, blogs = D.posts.filter((p) => p.blog).length;
+  $('lede').textContent = `책 ${books}권` + (now ? `, 읽는 중 ${now}권` : '') + `, 인스타 서평 ${reviews}개` + (blogs ? `, 블로그 글 ${blogs}개` : '');
   $('foot').textContent = S.owner
     ? '내 기록과 메모, 별점은 로그인한 나에게만 보여요. 고친 내용은 바로 저장되고, 공개 화면에는 다음 공개 반영 때 들어가요. 제목을 못 찾은 메모는 점선 책등으로 꽂아 뒀어요.'
-    : '@hyonnie_books에 쓴 서평을 책별로 모았어요.';
+    : '@hyonnie_books와 블로그 «효니의 기록»에 쓴 글을 책별로 모았어요.';
+}
+function applyName() {
+  const name = ((D.priv.meta || {}).name || '').trim() || '나의 책장';
+  document.querySelector('.cover h1').textContent = name;
+  document.title = name;
+}
+function openNameForm() {
+  const name = el('input', { type:'text', maxLength:40, value:(D.priv.meta || {}).name || '', placeholder:'나의 책장' });
+  showForm('책장 이름', [field('이름', name, '비워 두면 «나의 책장»으로 보여요')], async () => {
+    await write('meta/name', name.value.trim());
+    setPriv('meta', 'name', name.value.trim());
+    applyName();
+    toast('이름을 바꿨어요');
+  });
+}
+async function saveBackup() {
+  const text = await fb.exportText();
+  const file = new File([text], `my-bookshelf-${today()}.json`, { type:'application/json' });
+  // 폰은 공유 창이 파일 저장의 확실한 길이다. 그 밖에는 내려받기
+  if (matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files:[file] })) {
+    try { await navigator.share({ files:[file] }); } catch (e) { if (e.name === 'AbortError') return; throw e; }
+  } else {
+    const a = el('a', { href:URL.createObjectURL(file), download:file.name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  await fb.markBackup(today());
+  setPriv('meta', 'lastBackup', today());
+  renderWho();
+  toast('파일로 저장했어요');
+}
+async function loadBackup(file) {
+  const data = fb.parseBackup(await file.text());
+  const count = (m) => Object.values(m || {}).filter((w) => !w.del).length;
+  if (!confirm(`지금 이 기기의 기록(${count(D.priv.works)}권)을 지우고 파일의 기록(${count(data.works)}권)으로 바꿀까요?`)) return;
+  await fb.replaceAll(data);
+  D.priv = await fb.readPrivate();
+  applyName(); renderWho(); refreshAll();
+  toast('파일에서 불러왔어요');
+}
+function renderLocalTools(box) {
+  const name = el('button', { className:'copy', type:'button', textContent:'이름 바꾸기' });
+  name.onclick = openNameForm;
+  const out = el('button', { className:'copy', type:'button', textContent:'파일로 저장' });
+  out.onclick = () => saveBackup().catch((e) => { console.error(e); toast('저장하지 못했어요'); });
+  const pick = el('input', { type:'file', accept:'.json,application/json', hidden:true });
+  pick.onchange = () => { const f = pick.files[0]; pick.value = ''; if (f) loadBackup(f).catch((e) => { console.error(e); toast(e.userMsg || '불러오지 못했어요'); }); };
+  const inn = el('button', { className:'copy', type:'button', textContent:'파일 불러오기' });
+  inn.onclick = () => pick.click();
+  const last = (D.priv.meta || {}).lastBackup;
+  box.replaceChildren(el('span', { className:'me', textContent:last ? `마지막 저장 ${last}` : '아직 파일로 저장 안 함' }), name, out, inn, pick);
 }
 function renderWho() {
   const box = $('who');
   document.querySelectorAll('.owner-only').forEach((n) => { n.hidden = !S.owner; });
+  if (LOCAL) { renderLocalTools(box); return; }
   if (S.owner) {
     const out = el('button', { className:'copy', type:'button', textContent:'로그아웃' });
     out.onclick = async () => { if (!DEMO) await fb.signOutOwner(); leaveOwner(); };
@@ -847,7 +926,7 @@ function leaveOwner() {
   renderWho(); refreshAll();
 }
 function show(v, quiet) {
-  if (v === 'library' && !S.owner) return;
+  if ((v === 'library' && !S.owner) || (v === 'posts' && LOCAL)) return;
   S.view = v;
   VIEWS.forEach((x) => { $(`view-${x}`).hidden = x !== v; $(`tab-${x}`).setAttribute('aria-selected', x === v); });
   $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
@@ -897,10 +976,20 @@ document.addEventListener('visibilitychange', async () => {
 
 /* ---------- 시작 ---------- */
 async function start() {
+  if (LOCAL) {
+    D.pub = { books:[], posts:[] };
+    D.priv = await fb.readPrivate();
+    S.owner = true; S.user = { uid:'local' };
+    applyName(); renderWho(); refreshAll(); route();
+    if (fb.isVolatile()) toast('이 창에서는 저장이 안 돼요. 창을 닫으면 기록이 사라져요');
+    return;
+  }
   try {
     const r = await fetch('data/public.json', { cache:'no-cache' });
     if (!r.ok) throw new Error(String(r.status));
     D.pub = await r.json();
+    // 블로그 글은 없어도 책장은 열린다
+    D.blog = await fetch('data/blog.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.posts || []).catch(() => []);
   } catch (e) {
     console.error(e);
     const retry = el('button', { className:'btn', type:'button', textContent:'다시 불러오기' });

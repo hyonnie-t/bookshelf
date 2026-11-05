@@ -1,0 +1,32 @@
+# 티스토리 책 글을 하루 한 번 data/blog.json으로 가져온다. 바뀐 게 있을 때만 커밋하고 Pages를 다시 만든다.
+name: 티스토리 글 가져오기
+on:
+  schedule:
+    - cron: '20 21 * * *' # 한국 시각 오전 6:20
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/fetch-blog.js
+      - name: 바뀐 게 있으면 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- data/blog.json && [ -z "$(git ls-files --others --exclude-standard data/blog.json)" ]; then
+            echo "바뀐 글 없음"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/blog.json
+          git commit -m "티스토리 글 갱신"
+          git pull --rebase origin main
+          git push
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" || true

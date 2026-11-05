@@ -8,7 +8,7 @@ const priv = JSON.parse(fs.readFileSync(process.argv[2], 'utf8').replace(/^\uFEF
 const books = new Map(pub.books.map((b) => [b.id, b]));
 const works = priv.works || {};
 let changed = 0, removed = 0, added = 0;
-const pick = (w) => { const prev = books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || w.fd || ''; return o; };
+const pick = (w) => { const prev = books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || w.fd || ''; const recs = w.recs || []; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; return o; };
 const posts = new Map(pub.posts.map((p) => [p.c, p]));
 Object.values(priv.igAdded || {}).forEach((p) => { if (!posts.has(p.c)) { added++; } posts.set(p.c, { c:p.c, d:p.d, x:p.x, k:p.k || 'review', w:p.w || [] }); });
 Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && JSON.stringify(p.w) !== JSON.stringify(l.w || [])) { p.w = l.w || []; p.k = l.k || p.k; changed++; } });
