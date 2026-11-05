@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>효니의 책장</title>
+<meta name="description" content="현의 문장들 @hyonnie_books의 책과 서평을 모은 책장">
+<meta name="theme-color" content="#f3f4f2">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Gowun+Dodum&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="cover">
+    <div>
+      <h1>효니의 책장</h1>
+      <p id="lede">책장을 펴는 중</p>
+    </div>
+    <div class="who" id="who"></div>
+  </header>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-shelf" aria-selected="true" aria-controls="view-shelf">책장</button>
+    <button class="tab" role="tab" id="tab-posts" aria-selected="false" aria-controls="view-posts">서평</button>
+    <button class="tab" role="tab" id="tab-recap" aria-selected="false" aria-controls="view-recap">돌아보기</button>
+  </div>
+  <section id="view-shelf" role="tabpanel" aria-labelledby="tab-shelf">
+    <div class="filters">
+      <div class="row" id="kinds" role="group" aria-label="종류"></div>
+      <div class="row" id="themes" role="group" aria-label="주제"></div>
+      <label class="check"><input type="checkbox" id="onlyIg"> 인스타 서평이 있는 책만</label>
+      <label class="check owner-only" hidden><input type="checkbox" id="hideUnknown"> 제목 확인 안 된 기록 숨기기</label>
+    </div>
+    <div class="bar">
+      <input class="search" id="q" type="search" placeholder="제목, 저자, 서평 내용 찾기" aria-label="찾기">
+      <span class="count" id="count" aria-live="polite"></span>
+    </div>
+    <div id="shelves"></div>
+    <p class="note" id="foot"></p>
+  </section>
+  <section id="view-posts" role="tabpanel" aria-labelledby="tab-posts" hidden>
+    <div class="filters">
+      <div class="row" id="postKinds" role="group" aria-label="글 종류"></div>
+      <div class="owner-only" hidden><button class="copy" id="addPost" type="button">+ 인스타 글 추가</button></div>
+    </div>
+    <div class="bar">
+      <input class="search" id="pq" type="search" placeholder="서평 내용 찾기" aria-label="서평 찾기">
+      <span class="count" id="pcount" aria-live="polite"></span>
+    </div>
+    <div id="posts"></div>
+    <div id="postsMore" class="more" hidden></div>
+  </section>
+  <section id="view-recap" role="tabpanel" aria-labelledby="tab-recap" hidden><div class="recap" id="recap"></div></section>
+</div>
+
+<button class="fab owner-only" id="addBook" type="button" hidden>+ 책 추가</button>
+<dialog id="sheet" aria-labelledby="sheet-title"><div class="sheet" id="sheet-body"></div></dialog>
+<dialog id="form" aria-labelledby="form-title"><form class="sheet" id="form-body" method="dialog"></form></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+<script type="module" src="js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>

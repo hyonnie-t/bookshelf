@@ -1,0 +1,30 @@
+// 공개 반영: 앱에서 고친 책 정보·서평 연결을 data/public.json에 넣는다. 기록·메모·별점은 절대 옮기지 않는다.
+// 준비: npx.cmd firebase-tools database:get /users/<주인uid>/bookshelf --project timetable-af612 -o private.local.json
+// 사용: node tools/publish.js private.local.json   → 바뀐 개수만 출력. 그 뒤 git commit·push
+const fs = require('fs'), path = require('path');
+const OUT = path.join(__dirname, '..', 'data', 'public.json');
+const pub = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+const priv = JSON.parse(fs.readFileSync(process.argv[2], 'utf8').replace(/^\uFEFF/, ''));
+const books = new Map(pub.books.map((b) => [b.id, b]));
+const works = priv.works || {};
+let changed = 0, removed = 0, added = 0;
+const pick = (w) => { const prev = books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || w.fd || ''; return o; };
+const posts = new Map(pub.posts.map((p) => [p.c, p]));
+Object.values(priv.igAdded || {}).forEach((p) => { if (!posts.has(p.c)) { added++; } posts.set(p.c, { c:p.c, d:p.d, x:p.x, k:p.k || 'review', w:p.w || [] }); });
+Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && JSON.stringify(p.w) !== JSON.stringify(l.w || [])) { p.w = l.w || []; p.k = l.k || p.k; changed++; } });
+const reviewed = new Set([...posts.values()].flatMap((p) => p.w));
+Object.entries(works).forEach(([id, w]) => {
+  w.id = id;
+  const recs = w.recs || [];
+  const done = (w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread');
+  if (w.del || (!done && !reviewed.has(id))) { if (books.delete(id)) removed++; return; }
+  const next = pick(w), prev = books.get(id);
+  if (!prev) added++; else if (JSON.stringify(prev) !== JSON.stringify(next)) changed++;
+  books.set(id, next);
+});
+// 빠진 책을 가리키는 연결은 지운다
+[...posts.values()].forEach((p) => { p.w = p.w.filter((id) => books.has(id)); if (!p.w.length && p.k === 'review') p.k = 'etc'; });
+fs.writeFileSync(OUT, JSON.stringify({ at:new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10), books:[...books.values()], posts:[...posts.values()] }));
+const text = fs.readFileSync(OUT, 'utf8');
+if (/"(recs|notes|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
+console.log({ 책:books.size, 글:posts.size, 추가:added, 변경:changed, 제외:removed, 크기KB:text.length / 1024 | 0 });

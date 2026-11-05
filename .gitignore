@@ -1,0 +1,8 @@
+node_modules/
+*.local.json
+private*.json
+!demo/private.json
+token.json
+api_key.txt
+credentials.json
+.claude/
