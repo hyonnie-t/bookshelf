@@ -39,8 +39,10 @@ export async function watchAuth(cb) {
   const s = await load();
   s.authM.onAuthStateChanged(s.auth, cb);
 }
+// 로그인 버튼이 보일 때 미리 불러 둔다. 눌린 뒤에 불러오면 사파리가 팝업을 막는다(누름 동작이 끊김).
+export function warm() { load().catch(() => {}); }
 export async function signIn() {
-  const s = await load();
+  const s = sdk || await load();
   const r = await s.authM.signInWithPopup(s.auth, new s.authM.GoogleAuthProvider());
   if (!isOwner(r.user)) { await s.authM.signOut(s.auth); return null; }
   flag.set(true);
