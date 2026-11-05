@@ -463,6 +463,8 @@ function pushDlg(id) { try { history.pushState({ dlg:id }, '', location.href); }
 let popping = 0;
 function popDlg(id) { if (popping || (history.state && history.state.dlg === id)) { popping++; history.back(); } }
 window.addEventListener('popstate', () => {
+  const askOpen = document.querySelector('.ask-dlg');
+  if (askOpen) askOpen.close(); // 뒤로 가기는 취소로 친다
   popping = Math.max(0, popping - 1);
   const top = history.state && history.state.dlg;
   if ($('form').open && top !== 'form') $('form').close();
@@ -755,7 +757,7 @@ function openLibForm(it, { work } = {}) {
   if (it) {
     const del = el('button', { className:'copy danger', type:'button', textContent:'서재에서 빼기' });
     del.onclick = async () => {
-      if (!confirm(`«${it.t}»을 내 서재에서 뺄까요? 빌린 기록도 함께 지워져요.`)) return;
+      if (!await ask(`«${it.t}»을 내 서재에서 뺄까요? 빌린 기록도 함께 지워져요.`, '빼기')) return;
       try {
         await write(`library/${it.id}`, null);
         setPriv('library', it.id, null);
@@ -821,7 +823,7 @@ function openLoanForm(it, i) {
   if (editing && l.dir === 'out') {
     const del = el('button', { className:'copy danger', type:'button', textContent:'이 기록 지우기' });
     del.onclick = async () => {
-      if (!confirm('이 기록을 지울까요?')) return;
+      if (!await ask('이 기록을 지울까요?')) return;
       try { await saveLib({ ...it, loans:it.loans.filter((_, n) => n !== i) }, '기록을 지웠어요'); $('form').close(); reshow(); } catch (e) { saveFailed(e); }
     };
     kids.push(el('div', { className:'memo-foot' }, del));
@@ -860,6 +862,24 @@ async function saveLinks(p, ids, msg, stayOn) {
   toast(msg);
 }
 
+/* ---------- 확인 창 ---------- */
+// 브라우저 기본 confirm은 앱 안 브라우저 등에서 창 없이 바로 취소로 끝나 지우기가 안 된다(2026-11-05 재현). 그래서 화면 안에 직접 그린다
+function ask(message, yes = '지우기') {
+  return new Promise((done) => {
+    const d = el('dialog', { className:'ask-dlg' });
+    d.setAttribute('role', 'alertdialog');
+    const no = el('button', { className:'btn ghost', type:'button', textContent:'취소' });
+    no.onclick = () => d.close();
+    const ok = el('button', { className:'btn danger', type:'button', textContent:yes });
+    ok.onclick = () => d.close('yes');
+    d.append(el('p', { className:'ask-text', textContent:message }), el('div', { className:'actions' }, no, ok));
+    d.addEventListener('close', () => { const r = d.returnValue === 'yes'; d.remove(); done(r); });
+    document.body.append(d);
+    d.showModal();
+    no.focus(); // 되돌릴 수 없는 일이라 처음에는 취소에 둔다
+  });
+}
+
 /* ---------- 메모 보관·지우기 ---------- */
 // 보관한 메모는 같은 칸의 archived로 옮긴다. notes에서 빠지므로 책등·찾기·돌아보기·공개 반영에 쓰이지 않는다
 const memoOwner = (id) => { const w = D.priv.works[id]; return D.works.get(id) || { ...w, id, t:w.t || '', th:w.th || [], recs:w.recs || [], notes:w.notes || [], archived:w.archived || [] }; };
@@ -872,8 +892,10 @@ let memoBusy = false; // 저장 중에 또 누르면 옛 내용으로 덮어써 
 async function memoSave(next, msg) {
   if (memoBusy) return;
   memoBusy = true;
-  try { await saveWork(next, msg); memoBusy = false; afterMemo(); }
-  catch (e) { memoBusy = false; console.error(e); toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); throw e; }
+  try { await saveWork(next, msg); }
+  catch (e) { console.error(e); toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); throw e; }
+  finally { memoBusy = false; }
+  afterMemo();
 }
 function memoTools(w, i) {
   const keep = el('button', { className:'copy', type:'button', textContent:'보관' });
@@ -882,9 +904,9 @@ function memoTools(w, i) {
     memoSave({ ...w, notes, archived:[...w.archived, { ...w.notes[i], arcAt:today() }] }, gone ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
   };
   const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
-  del.onclick = () => {
+  del.onclick = async () => {
     const notes = w.notes.filter((_, x) => x !== i), empty = emptyAfter(w, notes, w.archived);
-    if (!confirm(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸에 남는 글이 없어서 책장에서도 빠져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
+    if (!await ask(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸에 남는 글이 없어서 책장에서도 빠져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
     memoSave({ ...w, notes, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
   };
   return el('div', { className:'memo-foot' }, keep, del);
@@ -903,9 +925,9 @@ function openMemoBin(onlyId) {
     const { arcAt, ...restored } = n;
     back.onclick = () => memoSave({ ...w, notes:[...w.notes, restored], archived:w.archived.filter((_, x) => x !== i) }, '메모를 되돌렸어요').then(() => openMemoBin(onlyId)).catch(() => {});
     const del = el('button', { className:'copy danger', type:'button', textContent:'완전히 지우기' });
-    del.onclick = () => {
+    del.onclick = async () => {
       const archived = w.archived.filter((_, x) => x !== i), empty = emptyAfter(w, w.notes, archived);
-      if (!confirm(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸의 마지막 글이라 칸도 함께 사라져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
+      if (!await ask(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸의 마지막 글이라 칸도 함께 사라져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
       memoSave({ ...w, archived, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').then(() => openMemoBin(onlyId)).catch(() => {});
     };
     const tools = [back, del];
@@ -917,6 +939,73 @@ function openMemoBin(onlyId) {
     return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:titleOf(w) }), el('span', { textContent:[n.d || '날짜 없음', n.arcAt ? `${n.arcAt} 보관` : ''].filter(Boolean).join(' · ') })), body, el('div', { className:'dup-tools' }, tools));
   });
   showForm(onlyId ? '이 책의 보관한 메모' : '보관한 메모', rows.length ? rows : [el('p', { className:'warn', textContent:'보관한 메모가 없어요.' })]);
+}
+/* ---------- 인스타와 겹치는 메모 ---------- */
+// 메모와 인스타 글이 다섯 글자 묶음을 얼마나 함께 갖는지 짧은 쪽 기준으로 잰다. 실제 메모 389개에서 비율 0.3~0.8 사이 건수가 거의 안 변했다(2026-11-05)
+// 짧은 인용 메모는 긴 서평에 다 들어 있어도 같은 글이 아니므로, 미리 고르는 «거의 같음»은 긴 쪽 기준으로도 절반 넘게 겹칠 때만 준다
+const OVERLAP_MIN = .5, OVERLAP_SURE = .8, OVERLAP_SURE_LONG = .5, GRAMS_MIN = 20;
+const gramsOf = (s) => { const t = squeeze((s || '').replace(/#\S+/g, '')), g = new Set(); for (let i = 0; i + 5 <= t.length; i++) g.add(t.slice(i, i + 5)); return g; }; // 해시태그는 글마다 비슷해 뺀다
+function memoOverlaps() {
+  const posts = D.posts.filter((p) => !p.blog).map((p) => ({ p, g:gramsOf(p.x) })).filter((x) => x.g.size >= GRAMS_MIN);
+  const index = new Map();
+  posts.forEach((x, i) => x.g.forEach((g) => { if (!index.has(g)) index.set(g, []); index.get(g).push(i); }));
+  const rows = [];
+  list().forEach((w) => w.notes.forEach((n, i) => {
+    const g = gramsOf(n.b || n.l);
+    if (g.size < GRAMS_MIN) return;
+    const hits = new Map();
+    g.forEach((x) => (index.get(x) || []).forEach((k) => hits.set(k, (hits.get(k) || 0) + 1)));
+    let best = null, score = 0, long = 0;
+    hits.forEach((c, k) => {
+      const r = c / Math.min(g.size, posts[k].g.size);
+      if (r > score || (r === score && best && posts[k].p.w.includes(w.id))) { score = r; best = posts[k].p; long = c / Math.max(g.size, posts[k].g.size); }
+    });
+    if (score >= OVERLAP_MIN) rows.push({ w, i, n, p:best, score, sure:score >= OVERLAP_SURE && long >= OVERLAP_SURE_LONG });
+  }));
+  return rows.sort((a, b) => b.sure - a.sure || b.score - a.score);
+}
+async function archiveOverlaps(picked) {
+  if (memoBusy) throw fail('저장하는 중이에요. 잠시 뒤 다시 눌러 주세요.');
+  memoBusy = true;
+  try {
+    const stamp = today(), byWork = new Map();
+    picked.forEach((r) => { if (!byWork.has(r.w.id)) byWork.set(r.w.id, { w:r.w, at:new Set() }); byWork.get(r.w.id).at.add(r.i); });
+    const out = {};
+    byWork.forEach(({ w, at }, id) => {
+      out[id] = storedWork({ ...w, notes:w.notes.filter((_, x) => !at.has(x)), archived:[...w.archived, ...w.notes.filter((_, x) => at.has(x)).map((n) => ({ ...n, arcAt:stamp }))] });
+    });
+    await write('works', out, 'update');
+    Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
+    refreshAll();
+    toast(`메모 ${picked.length}개를 보관했어요`);
+  } finally { memoBusy = false; }
+}
+function openMemoOverlap() {
+  showForm('인스타 글과 겹치는 메모', [el('p', { className:'warn', role:'status', textContent:'찾는 중이에요.' })]);
+  setTimeout(showMemoOverlap, 30); // 글이 많으면 재는 동안 화면이 멈추므로 안내를 먼저 그린다
+}
+function showMemoOverlap() {
+  if (!$('form').open) return;
+  if (!((D.pub || {}).posts || []).length) { showForm('인스타 글과 겹치는 메모', [el('p', { className:'warn', textContent:'아직 인스타 글을 불러오는 중이에요. 잠시 뒤 다시 눌러 주세요.' })]); return; }
+  const rows = memoOverlaps();
+  if (!rows.length) { showForm('인스타 글과 겹치는 메모', [el('p', { className:'warn', textContent:'겹치는 메모가 없어요.' })]); return; }
+  const sure = rows.filter((r) => r.sure).length;
+  const boxes = rows.map((r) => el('input', { type:'checkbox', checked:r.sure }));
+  const kids = rows.map((r, x) => {
+    const books = r.p.w.map((id) => { const w = D.works.get(id); return w ? titleOf(w) : ''; }).filter(Boolean).join(', ') || '책 연결 없음';
+    const leaves = !r.w.pub && !r.w.recs.length && !reviewsOf(r.w).length;
+    return el('div', { className:'dup-row' },
+      el('label', { className:'check overlap-pick' }, boxes[x], el('strong', { textContent:titleOf(r.w) })),
+      el('div', { className:'when', textContent:[r.n.d || '날짜 없음', r.sure ? '거의 같음' : '일부 겹침'].join(' · ') }),
+      el('p', { className:'post-text clamp', textContent:r.n.b || r.n.l }),
+      el('div', { className:'memo-foot' }, validCode(r.p.c) ? el('a', { className:'copy link', href:igUrl(r.p.c), target:'_blank', rel:'noopener', textContent:`인스타 글 ${r.p.d}` }) : el('span', { className:'memo-name', textContent:`인스타 글 ${r.p.d}` }), el('span', { className:'memo-name', textContent:books })),
+      leaves ? el('small', { className:'overlap-note', textContent:'이 칸의 메모를 다 보관하면 책장에서도 빠져요.' }) : null);
+  });
+  showForm('인스타 글과 겹치는 메모', [el('p', { className:'warn', textContent:`겹치는 메모 ${rows.length}개 중 거의 같은 ${sure}개를 골라 뒀어요. 보관해도 «보관한 메모»에서 되돌릴 수 있어요.` }), ...kids], async () => {
+    const picked = rows.filter((_, x) => boxes[x].checked);
+    if (!picked.length) throw fail('보관할 메모를 골라 주세요');
+    await archiveOverlaps(picked);
+  }, '고른 메모 보관');
 }
 function syncMemoBin() {
   const b = $('memoBin');
@@ -1070,7 +1159,7 @@ function openDupTool() {
   const done = Object.entries(D.priv.works || {}).filter(([, w]) => w.del && w.into).sort((x, y) => (y[1].at || 0) - (x[1].at || 0)); // 먼저 되돌릴 수 있는 최근 합치기가 위로
   if (done.length) kids.push(el('section', { className:'dup-sec' }, el('h3', { className:'sec', textContent:`합친 책 ${done.length}` }), done.map(([id, w]) => {
     const back = el('button', { className:'copy', type:'button', textContent:'되돌리기' });
-    back.onclick = () => { if (confirm('이 합치기를 되돌릴까요? 합친 뒤 고친 저자·출판사·주제·연도는 합치기 전 값으로 돌아가요. 기록은 고친 내용 그대로 원래 칸으로 돌아가요.')) undoMerge(id).then(openDupTool).catch(saveFailed); };
+    back.onclick = async () => { if (await ask('이 합치기를 되돌릴까요? 합친 뒤 고친 저자·출판사·주제·연도는 합치기 전 값으로 돌아가요. 기록은 고친 내용 그대로 원래 칸으로 돌아가요.', '되돌리기')) undoMerge(id).then(openDupTool).catch(saveFailed); };
     const keep = D.priv.works[w.into]; // 남긴 책을 나중에 책장에서 뺐어도 되돌릴 수 있게 저장된 값을 본다
     return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:w.t || '제목 없음' }), el('span', { textContent:keep ? `«${keep.t || '제목 없음'}»에 합침${w.at ? ` · ${new Date(w.at + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')}` : ''}` : '합친 책을 찾지 못함' })), el('div', { className:'dup-tools' }, back));
   })));
@@ -1141,6 +1230,7 @@ async function undoMerge(id) {
 }
 $('fixDups').onclick = openDupTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
+if ($('memoOverlap')) $('memoOverlap').onclick = openMemoOverlap;
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };
 function themeChecks(selected) {
   const box = el('div', { className:'checks' }, THEMES.map(([t]) => el('label', { className:'check' }, el('input', { type:'checkbox', value:t, checked:selected.includes(t) }), t)));
@@ -1189,7 +1279,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     }
   };
   const del = w ? el('button', { className:'copy danger', type:'button', textContent:'책장에서 빼기' }) : null;
-  if (del) del.onclick = async () => { if (!confirm(`«${titleOf(w)}»을 책장에서 뺄까요?`)) return; try { await saveWork({ ...w, del:true }, '책장에서 뺐어요'); $('form').close(); if ($('sheet').open) $('sheet').close(); } catch (e) { toast('빼지 못했어요'); } };
+  if (del) del.onclick = async () => { if (!await ask(`«${titleOf(w)}»을 책장에서 뺄까요?`, '빼기')) return; try { await saveWork({ ...w, del:true }, '책장에서 뺐어요'); $('form').close(); if ($('sheet').open) $('sheet').close(); } catch (e) { toast('빼지 못했어요'); } };
   if (del) kids.push(el('div', { className:'memo-foot' }, del));
   showForm(isNew ? '책 추가' : '책 정보 고치기', kids, save);
 }
@@ -1211,7 +1301,7 @@ function openRecForm(w, i) {
   };
   if (i >= 0) {
     const del = el('button', { className:'copy danger', type:'button', textContent:'이 기록 지우기' });
-    del.onclick = async () => { if (!confirm('이 기록을 지울까요?')) return; try { const recs = w.recs.filter((_, x) => x !== i); await saveWork({ ...w, recs }, '기록을 지웠어요'); $('form').close(); openBook(w.id, $('sheet').returnEl); } catch (e) { toast('지우지 못했어요'); } };
+    del.onclick = async () => { if (!await ask('이 기록을 지울까요?')) return; try { const recs = w.recs.filter((_, x) => x !== i); await saveWork({ ...w, recs }, '기록을 지웠어요'); $('form').close(); openBook(w.id, $('sheet').returnEl); } catch (e) { toast('지우지 못했어요'); } };
     kids.push(el('div', { className:'memo-foot' }, del));
   }
   showForm(i >= 0 ? '기록 고치기' : '기록 더하기', kids, save);
@@ -1315,7 +1405,7 @@ async function saveBackup() {
 async function loadBackup(file) {
   const data = fb.parseBackup(await file.text());
   const count = (m) => Object.values(m || {}).filter((w) => !w.del).length;
-  if (!confirm(`지금 이 기기의 기록(${count(D.priv.works)}권)을 지우고 파일의 기록(${count(data.works)}권)으로 바꿀까요?`)) return;
+  if (!await ask(`지금 이 기기의 기록(${count(D.priv.works)}권)을 지우고 파일의 기록(${count(data.works)}권)으로 바꿀까요?`, '바꾸기')) return;
   await fb.replaceAll(data);
   D.priv = await fb.readPrivate();
   applyName(); renderWho(); refreshAll();
