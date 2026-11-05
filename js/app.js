@@ -831,7 +831,7 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
 }
 /* ---------- 인터넷에서 책 찾아 채우기 ---------- */
 // 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 카카오 책 검색을 앱스크립트 중계로 먼저 찾고, 키 없는 공개 목록을 그다음에 쓴다. 안 나오면 서점 검색으로 넘겨 준다
-const BOOK_RELAY = ''; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
+const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec'; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
 const RELAY_KEY = 'myshelf-kakao';
 let relayOff = false; // 범용판에서만 끌 수 있다
 try { relayOff = LOCAL && localStorage.getItem(RELAY_KEY) === 'off'; } catch (e) {}
@@ -857,7 +857,7 @@ async function searchBooks(q) {
       if (!r.ok) throw new Error(r.error || 'relay');
       const seen = new Set();
       return (r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '' }))
-        .filter((b) => { const k = [b.t, b.a, b.p].join('|'); if (seen.has(k)) return false; seen.add(k); return true; });
+        .filter((b) => { const k = dupNorm(b.t + b.a + b.p); if (seen.has(k)) return false; seen.add(k); return true; });
     }),
     async () => ((await getJson(`https://www.googleapis.com/books/v1/volumes?maxResults=6&printType=books&q=${enc}`)).items || []).map(({ volumeInfo:v }) => ({ t:v.title || '', a:(v.authors || []).join(', '), p:v.publisher || '', y:(v.publishedDate || '').slice(0, 4) })),
     async () => ((await getJson(`https://openlibrary.org/search.json?limit=6&fields=title,author_name,publisher,first_publish_year&q=${enc}`)).docs || []).map((d) => ({ t:d.title || '', a:(d.author_name || []).join(', '), p:(d.publisher || [])[0] || '', y:d.first_publish_year ? String(d.first_publish_year) : '' })),
