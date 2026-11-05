@@ -338,3 +338,11 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .only-box .check { color:var(--ink); font-weight:700; }
 .only-box small { color:var(--muted); font-size:.8rem; line-height:1.45; }
 .only-tag { margin-left:8px; padding:0 6px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:.72rem; font-weight:400; font-family:var(--font-body); vertical-align:middle; white-space:nowrap; }
+
+/* 책 고르기 후보·보관한 메모 */
+.found[hidden] { display:none; }
+.picks { margin-top:-4px; }
+.picks-more { font-size:.84rem; color:var(--muted); padding:2px 2px 0; }
+.dup-row .post-text { margin:0; }
+@media (prefers-reduced-motion: no-preference) { .picks:not([hidden]) { animation:picks-in .14s ease-out; } }
+@keyframes picks-in { from { opacity:0; transform:translateY(-3px); } }

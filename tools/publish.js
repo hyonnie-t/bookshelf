@@ -24,11 +24,13 @@ const heirs = new Set(mergedIds.filter((id) => books.has(id)).map(movedTo));
 const merged = new Set(mergedIds.map(movedTo));
 const staysPublic = (id, w) => !!w.t && !w.guess && (heirs.has(id) || (merged.has(id) && books.has(id)));
 const reviewed = new Set([...posts.values()].flatMap((p) => p.w.map(movedTo)));
+const blogged = new Set((JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'blog.json'), 'utf8')).posts || []).flatMap((p) => (p.w || []).map(movedTo)));
 Object.entries(works).forEach(([id, w]) => {
   w.id = id;
   const recs = w.recs || [];
   const done = ((w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread')) || (w.k === 'film' && !!w.wc) /* 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05) */ || (w.only === false && !!w.t && !w.guess); // 나만 보기를 직접 푼 칸
-  if (w.del || isOnlyMe(w) || (!done && !(reviewed.has(id) && !!w.t && !w.guess) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
+  const shelved = !books.has(id) && !(w.notes || []).length && (w.archived || []).length && !recs.length && !reviewed.has(id) && !blogged.has(id); // 메모를 다 보관한 칸. js/app.js rebuild와 같은 기준
+  if (w.del || isOnlyMe(w) || shelved || (!done && !(reviewed.has(id) && !!w.t && !w.guess) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
   const next = pick(w), prev = books.get(id);
   if (!prev) added++; else if (JSON.stringify(prev) !== JSON.stringify(next)) changed++;
   books.set(id, next);
@@ -40,5 +42,5 @@ const out = { at:new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10), b
 if (Object.keys(moved).length) out.moved = moved;
 fs.writeFileSync(OUT, JSON.stringify(out));
 const text = fs.readFileSync(OUT, 'utf8');
-if (/"(recs|notes|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
+if (/"(recs|notes|archived|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
 console.log({ 책:books.size, 글:posts.size, 추가:added, 변경:changed, 제외:removed, 크기KB:text.length / 1024 | 0 });

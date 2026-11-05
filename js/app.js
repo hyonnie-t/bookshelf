@@ -20,6 +20,11 @@ const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
 const D = { pub:null, blog:[], works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
+// 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
+const squeeze = (s) => (s || '').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
+const hasAll = (hay, q) => { const terms = (q || '').split(/\s+/).map(squeeze).filter(Boolean); return terms.length ? terms.every((t) => hay.includes(t)) : !(q || '').trim(); }; // 문장부호만 적으면 아무것도 안 찾는다
+// 그래도 없을 때만 쓰는 찾기: 제목에 글자 순서만 맞으면 찾는다(«레슨케미» → 레슨 인 케미스트리). 짧은 말은 엉뚱한 책까지 잡으니 세 글자부터
+const titleInOrder = (w, q) => { const s = squeeze(q); if (s.length < 3) return false; let i = 0; for (const c of squeeze(w.t)) if (c === s[i]) i++; return i === s.length; };
 const movedTo = (id) => { let n = 0; while (D.moved.has(id) && n++ < 9) id = D.moved.get(id); return id; };
 const VIEWS = ['shelf', 'library', 'posts', 'recap'];
 const LIB_KINDS = [['all','전체'],['own','소장'],['out','빌려준 책'],['in','빌려 온 책'],['unread','아직 안 읽음']];
@@ -35,7 +40,7 @@ function rebuild() {
     works.set(id, { recs:[], notes:[], ...pub, ...w, id, th:w.th || (DEMO ? pub.th : []) || [], y:w.y || pub.y || '', fd:w.fd || pub.fd || '' });
   });
   D.moved = new Map();
-  for (const [id, w] of works) { w.recs = w.recs || []; w.notes = w.notes || []; w.th = w.th || []; if (w.del) { if (w.into) D.moved.set(id, w.into); works.delete(id); } }
+  for (const [id, w] of works) { w.recs = w.recs || []; w.notes = w.notes || []; w.archived = w.archived || []; w.th = w.th || []; if (w.del) { if (w.into) D.moved.set(id, w.into); works.delete(id); } }
   // 공개본의 옮김 표(tools/publish.js). 주인이 되돌려 다시 살아난 책은 따르지 않는다
   Object.entries(D.pub.moved || {}).forEach(([from, to]) => { if (!works.has(from) && !D.moved.has(from)) D.moved.set(from, to); });
   const posts = new Map((D.pub.posts || []).map((p) => [p.c, { ...p, w:p.w || [] }]));
@@ -51,10 +56,13 @@ function rebuild() {
   D.posts.forEach((p) => p.w.forEach((id) => { if (!D.byWork.has(id)) D.byWork.set(id, []); D.byWork.get(id).push(p); }));
   works.forEach((w) => {
     const rv = D.byWork.get(w.id) || [];
-    w.hay = [w.t, w.a, w.p, ...w.notes.flatMap((n) => [n.l, n.b]), ...w.recs.flatMap((r) => [r.l, r.b]), ...rv.map((p) => p.x)].filter(Boolean).join(' ').toLowerCase();
+    if (!w.pub && !w.notes.length && w.archived.length && !w.recs.length && !rv.length) { works.delete(w.id); return; } // 메모를 다 보관해 글이 없는 칸은 책장에서 뺀다. 되돌리면 다시 꽂힌다(tools/publish.js와 같은 기준)
+    w.nameHay = squeeze([w.t, w.a, w.p].filter(Boolean).join(' '));
+    w.hay = squeeze([w.t, w.a, w.p, ...w.notes.flatMap((n) => [n.l, n.b]), ...w.recs.flatMap((r) => [r.l, r.b]), ...rv.map((p) => p.x)].filter(Boolean).join(' '));
     if (!w.y) { const d = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0]; if (d) w.y = d.slice(0, 4); }
     if (!w.fd) w.fd = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0] || '';
   });
+  D.posts.forEach((p) => { p.hay = squeeze([p.x, p.t, ...p.w.map((id) => { const w = works.get(id); return w ? titleOf(w) : ''; })].filter(Boolean).join(' ')); });
   // 내 서재는 비공개 칸(library)에만 있다. 읽은 책과는 w로 이어질 뿐 섞지 않는다
   D.lib = S.owner ? Object.entries(D.priv.library || {}).map(([id, v]) => ({ ...v, id, w:v.w ? movedTo(v.w) : '', st:v.st || 'own', loans:v.loans || [], th:v.th || [] })) : [];
 }
@@ -70,13 +78,13 @@ const inShelfKind = (w, k) => k === 'all' || (k === 'reading' ? isReading(w) : w
 
 /* ---------- 책장 ---------- */
 const isHidden = (w) => S.hideUnknown && !w.known && ['book','film','show'].includes(w.k);
-function matches(w) {
+function matches(w, loose) {
   if (!inShelfKind(w, S.kind)) return false;
   if (S.theme && !w.th.includes(S.theme)) return false;
   if (S.onlyIg && !reviewsOf(w).length) return false;
   if (S.onlyMe && !showsOnlyMe(w)) return false;
   if (isHidden(w) && !S.q && !S.onlyMe) return false; // 찾을 때는 숨긴 기록까지 찾아 준다
-  if (S.q && !w.hay.includes(S.q.toLowerCase())) return false;
+  if (S.q && !(loose ? titleInOrder(w, S.q) : hasAll(w.hay, S.q))) return false;
   return true;
 }
 function chips() {
@@ -128,15 +136,20 @@ function watch(sel) {
   io = io || new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('show'); io.unobserve(e.target); } }), { rootMargin:'0px 0px -5% 0px' });
   document.querySelectorAll(sel).forEach((n) => { if (!n.classList.contains('show')) io.observe(n); });
 }
+const NAMED_GROUP = '제목·저자 일치';
 function renderShelf() {
   queueJump();
   chips();
-  const rows = list().filter(matches);
+  let rows = list().filter((w) => matches(w));
+  const loose = !!S.q && !rows.length;
+  if (loose) rows = list().filter((w) => matches(w, true));
   const unit = S.kind === 'film' ? '편' : '권';
   $('count').textContent = `${rows.length}${unit}`;
   const byYear = {};
-  rows.forEach((w) => { (byYear[w.y || '날짜 없음'] = byYear[w.y || '날짜 없음'] || []).push(w); });
-  const ys = Object.keys(byYear).sort((a, b) => (a === '날짜 없음') - (b === '날짜 없음') || b.localeCompare(a)); // 날짜 없는 칸은 맨 아래
+  const named = new Set(S.q ? rows.filter((w) => hasAll(w.nameHay, S.q)) : []); // 서평·메모에만 나온 책에 묻히지 않게 제목·저자에 있는 책을 맨 위에 모은다
+  const groupOf = (w) => loose ? '비슷한 제목' : (named.size &&named.size < rows.length && named.has(w) ? NAMED_GROUP : w.y || '날짜 없음');
+  rows.forEach((w) => { (byYear[groupOf(w)] = byYear[groupOf(w)] || []).push(w); });
+  const ys = Object.keys(byYear).sort((a, b) => (b === NAMED_GROUP) - (a === NAMED_GROUP) || (a === '날짜 없음') - (b === '날짜 없음') || b.localeCompare(a)); // 날짜 없는 칸은 맨 아래
   if (LOCAL && !D.works.size) {
     const first = el('button', { className:'btn', type:'button', textContent:'첫 책 꽂기' });
     first.onclick = () => openBookForm(null);
@@ -381,9 +394,15 @@ function renderTome(w, item, from) {
     }
     if (w.notes.length) {
       body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, privateTag()));
-      w.notes.forEach((n) => body.push(el('div', { className:'memo' },
+      w.notes.forEach((n, i) => body.push(el('div', { className:'memo' },
         el('div', { className:'when', textContent:[n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음' }),
-        n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }))));
+        n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }),
+        memoTools(w, i))));
+    }
+    if (w.archived && w.archived.length) {
+      const open = el('button', { className:'copy', type:'button', textContent:`보관한 메모 ${w.archived.length}` });
+      open.onclick = () => openMemoBin(w.id);
+      body.push(el('div', { className:'memo-foot' }, open));
     }
     if (w.id) {
       const addRec = el('button', { className:'btn', type:'button', textContent:'기록 더하기' });
@@ -454,8 +473,7 @@ window.addEventListener('popstate', () => {
 /* ---------- 서평 글 목록 ---------- */
 const inKind = (p, k) => k === 'all' || (k === 'blog' ? !!p.blog : (p.k || 'etc') === k);
 function postRows() {
-  const q = S.pq.toLowerCase();
-  return D.posts.filter((p) => inKind(p, S.pKind) && (!q || p.x.toLowerCase().includes(q) || (p.t || '').toLowerCase().includes(q) || p.w.some((id) => { const w = D.works.get(id); return w && titleOf(w).toLowerCase().includes(q); })));
+  return D.posts.filter((p) => inKind(p, S.pKind) && hasAll(p.hay, S.pq));
 }
 function renderPosts(reset) {
   queueJump();
@@ -539,7 +557,7 @@ function libMatches(it) {
   if (S.lf === 'in' && it.st !== 'in') return false;
   if (S.lf === 'unread' && libRead(it)) return false;
   if (!S.lq) return true;
-  return [it.t, it.a, it.p, it.where, ...it.loans.map((x) => x.who)].filter(Boolean).join(' ').toLowerCase().includes(S.lq.toLowerCase());
+  return hasAll(squeeze([it.t, it.a, it.p, it.where, ...it.loans.map((x) => x.who)].filter(Boolean).join(' ')), S.lq);
 }
 function caseBook(it) {
   const l = openLoan(it), out = !!l && l.dir === 'out';
@@ -819,10 +837,10 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); setLede(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
-  const { hay, pub, ...rest } = w;
+  const { hay, nameHay, pub, ...rest } = w;
   return JSON.parse(JSON.stringify(rest));
 }
 async function saveWork(w, msg) {
@@ -840,6 +858,71 @@ async function saveLinks(p, ids, msg, stayOn) {
   refreshAll();
   if ($('sheet').open && stayOn) openBook(stayOn, $('sheet').returnEl);
   toast(msg);
+}
+
+/* ---------- 메모 보관·지우기 ---------- */
+// 보관한 메모는 같은 칸의 archived로 옮긴다. notes에서 빠지므로 책등·찾기·돌아보기·공개 반영에 쓰이지 않는다
+const memoOwner = (id) => { const w = D.priv.works[id]; return D.works.get(id) || { ...w, id, t:w.t || '', th:w.th || [], recs:w.recs || [], notes:w.notes || [], archived:w.archived || [] }; };
+const emptyAfter = (w, notes, archived) => !w.pub && !notes.length && !archived.length && !w.recs.length && !reviewsOf(w).length;
+function afterMemo() {
+  if (!$('sheet').open) return;
+  if (S.cur && S.cur.id && !D.works.has(S.cur.id)) closeBook(); else reshow();
+}
+let memoBusy = false; // 저장 중에 또 누르면 옛 내용으로 덮어써 앞 동작이 취소되므로 막는다
+async function memoSave(next, msg) {
+  if (memoBusy) return;
+  memoBusy = true;
+  try { await saveWork(next, msg); memoBusy = false; afterMemo(); }
+  catch (e) { memoBusy = false; console.error(e); toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); throw e; }
+}
+function memoTools(w, i) {
+  const keep = el('button', { className:'copy', type:'button', textContent:'보관' });
+  keep.onclick = () => {
+    const notes = w.notes.filter((_, x) => x !== i), gone = !w.pub && !notes.length && !w.recs.length && !reviewsOf(w).length;
+    memoSave({ ...w, notes, archived:[...w.archived, { ...w.notes[i], arcAt:today() }] }, gone ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
+  };
+  const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
+  del.onclick = () => {
+    const notes = w.notes.filter((_, x) => x !== i), empty = emptyAfter(w, notes, w.archived);
+    if (!confirm(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸에 남는 글이 없어서 책장에서도 빠져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
+    memoSave({ ...w, notes, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
+  };
+  return el('div', { className:'memo-foot' }, keep, del);
+}
+function archivedMemos(onlyId) {
+  return Object.entries(D.priv.works || {}).filter(([id, w]) => !w.del && (w.archived || []).length && (!onlyId || id === onlyId))
+    .flatMap(([id, w]) => w.archived.map((n, i) => ({ id, i, n })))
+    .sort((a, b) => (b.n.arcAt || '').localeCompare(a.n.arcAt || ''));
+}
+function openMemoBin(onlyId) {
+  const rows = archivedMemos(onlyId).map(({ id, i, n }) => {
+    const w = memoOwner(id);
+    const text = n.b || n.l || '본문 없음', long = text.length > 420;
+    const body = el('p', { className:'post-text' + (long ? ' clamp' : ''), textContent:text });
+    const back = el('button', { className:'copy', type:'button', textContent:'되돌리기' });
+    const { arcAt, ...restored } = n;
+    back.onclick = () => memoSave({ ...w, notes:[...w.notes, restored], archived:w.archived.filter((_, x) => x !== i) }, '메모를 되돌렸어요').then(() => openMemoBin(onlyId)).catch(() => {});
+    const del = el('button', { className:'copy danger', type:'button', textContent:'완전히 지우기' });
+    del.onclick = () => {
+      const archived = w.archived.filter((_, x) => x !== i), empty = emptyAfter(w, w.notes, archived);
+      if (!confirm(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸의 마지막 글이라 칸도 함께 사라져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
+      memoSave({ ...w, archived, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').then(() => openMemoBin(onlyId)).catch(() => {});
+    };
+    const tools = [back, del];
+    if (long) {
+      const more = el('button', { className:'copy', type:'button', textContent:'더 보기' });
+      more.onclick = () => { more.textContent = body.classList.toggle('clamp') ? '더 보기' : '접기'; };
+      tools.unshift(more);
+    }
+    return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:titleOf(w) }), el('span', { textContent:[n.d || '날짜 없음', n.arcAt ? `${n.arcAt} 보관` : ''].filter(Boolean).join(' · ') })), body, el('div', { className:'dup-tools' }, tools));
+  });
+  showForm(onlyId ? '이 책의 보관한 메모' : '보관한 메모', rows.length ? rows : [el('p', { className:'warn', textContent:'보관한 메모가 없어요.' })]);
+}
+function syncMemoBin() {
+  const b = $('memoBin');
+  if (!b) return;
+  const n = S.owner ? archivedMemos().length : 0;
+  b.hidden = !n; b.textContent = `보관한 메모 ${n}`;
 }
 
 /* ---------- 입력 양식 ---------- */
@@ -879,24 +962,37 @@ async function getJson(url, ms = 5000) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
   try { const r = await fetch(url, { signal:c.signal }); if (!r.ok) throw new Error(String(r.status)); return await r.json(); } finally { clearTimeout(t); }
 }
+const uniqueBooks = (rows) => { const seen = new Set(); return rows.filter((b) => { const k = dupNorm(b.t + b.a + b.p); if (seen.has(k)) return false; seen.add(k); return true; }); };
+async function fromRelay(q) {
+  const r = await getJson(`${BOOK_RELAY}?q=${encodeURIComponent(q)}`, 12000); // 앱스크립트는 오래 쉬면 깨어나는 데 몇 초 걸린다
+  if (!r.ok) throw new Error(r.error || 'relay');
+  return uniqueBooks((r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '' })));
+}
 async function searchBooks(q) {
   const enc = encodeURIComponent(q);
+  const fits = (b) => hasAll(squeeze(`${b.t} ${b.a}`), q); // 출판사는 넣지 않는다(«사피엔»이 출판사 이름만 맞는 책을 맞다고 보지 않게)
   const sources = [
     relayOn() && (async () => {
-      const r = await getJson(`${BOOK_RELAY}?q=${enc}`, 12000); // 앱스크립트는 오래 쉬면 깨어나는 데 몇 초 걸린다
-      if (!r.ok) throw new Error(r.error || 'relay');
-      const seen = new Set();
-      return (r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '' }))
-        .filter((b) => { const k = dupNorm(b.t + b.a + b.p); if (seen.has(k)) return false; seen.add(k); return true; });
+      const rows = await fromRelay(q);
+      if (rows.some(fits)) return rows;
+      // 카카오는 낱말 단위로 찾아 잘린 제목(«레슨 인 케미»)이나 띄엄띄엄 적은 말(«코끼리 장례식»)을 놓친다. 낱말을 줄여 다시 찾고 찾는 말이 다 들어 있는 책만 남긴다
+      const words = q.split(/\s+/);
+      const tries = words.length < 2 ? [] : [...new Set([words.slice(0, -1).join(' '), ...words.filter((x) => x.length >= 2)])].filter((x) => x !== q).slice(0, 3);
+      const more = (await Promise.allSettled(tries.map(fromRelay))).flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).filter(fits);
+      return more.length ? uniqueBooks(more).slice(0, 8) : rows;
     }),
     async () => ((await getJson(`https://www.googleapis.com/books/v1/volumes?maxResults=6&printType=books&q=${enc}`)).items || []).map(({ volumeInfo:v }) => ({ t:v.title || '', a:(v.authors || []).join(', '), p:v.publisher || '', y:(v.publishedDate || '').slice(0, 4) })),
     async () => ((await getJson(`https://openlibrary.org/search.json?limit=6&fields=title,author_name,publisher,first_publish_year&q=${enc}`)).docs || []).map((d) => ({ t:d.title || '', a:(d.author_name || []).join(', '), p:(d.publisher || [])[0] || '', y:d.first_publish_year ? String(d.first_publish_year) : '' })),
   ].filter(Boolean);
-  let failed = false;
+  let failed = false, loose = [];
   for (const source of sources) {
-    try { const rows = (await source()).filter((b) => b.t); if (rows.length) return { rows, failed:false }; } catch (e) { failed = true; console.warn('책 찾기 실패', e.message); }
+    try {
+      const rows = (await source()).filter((b) => b.t), fit = rows.filter(fits);
+      if (fit.length) return { rows:[...fit, ...rows.filter((b) => !fits(b))], failed:false };
+      if (!loose.length) loose = rows;
+    } catch (e) { failed = true; console.warn('책 찾기 실패', e.message); }
   }
-  return { rows:[], failed };
+  return { rows:loose, failed:failed && !loose.length, loose:!!loose.length };
 }
 const STORES = [['교보문고', 'https://search.kyobobook.co.kr/search?keyword='], ['알라딘', 'https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Book&SearchWord=']];
 function bookLookup(apply) {
@@ -915,10 +1011,10 @@ function bookLookup(apply) {
     if (!word) { q.focus(); return; }
     const mine = ++run;
     go.disabled = true; msg.hidden = false; msg.textContent = '찾는 중이에요'; found.replaceChildren();
-    const { rows, failed } = await searchBooks(word);
+    const { rows, failed, loose } = await searchBooks(word);
     if (mine !== run) return;
     go.disabled = false;
-    msg.textContent = rows.length ? '맞는 책을 누르면 아래 칸이 채워져요.' : failed ? '책 목록에 제대로 연결되지 않았어요. 인터넷을 확인하고 다시 찾거나, 서점에서 찾아 아래 칸에 적어 주세요.' : '여기서는 찾지 못했어요. 서점에서 찾아 아래 칸에 적어 주세요.';
+    msg.textContent = loose ? '찾는 말이 다 들어 있는 책은 없어요. 제목의 낱말을 끝까지 적어 보거나 서점에서 찾아 주세요. 아래는 비슷한 결과예요.' : rows.length ? '맞는 책을 누르면 아래 칸이 채워져요.' : failed ? '책 목록에 제대로 연결되지 않았어요. 인터넷을 확인하고 다시 찾거나, 서점에서 찾아 아래 칸에 적어 주세요.' : '여기서는 찾지 못했어요. 서점에서 찾아 아래 칸에 적어 주세요.';
     found.replaceChildren(...rows.map((b) => {
       const pick = el('button', { type:'button' }, el('strong', { textContent:b.t }), el('span', { textContent:[b.a, b.p, b.y].filter(Boolean).join(' · ') }));
       pick.onclick = () => { apply(b); found.replaceChildren(); msg.textContent = `«${b.t}» 정보를 채웠어요. 틀린 곳이 있으면 고쳐 주세요.`; };
@@ -984,7 +1080,7 @@ function openMergePick(w) {
   const pick = bookPicker(true, w.id);
   showForm(`«${titleOf(w)}»과 같은 책 고르기`, [field('같은 책', pick.input, '읽은 책에 있는 제목을 골라 주세요'), pick.dl], async () => {
     const hit = pick.pick();
-    if (!hit) throw fail('목록에 있는 책을 골라 주세요');
+    if (!hit) throw fail('아래 목록에서 책을 눌러 주세요');
     openMergeForm(w, hit, false);
     return 'stay';
   }, '다음');
@@ -1009,13 +1105,13 @@ async function mergeWorks(keep, drop) {
   const tag = (x) => ({ ...x, from:[...(x.from || []), drop.id] });
   const src = isOnlyMe(drop) && !drop.only && !isOnlyMe(keep) ? { ...drop, t:'', a:'', p:'', th:[], known:false, guess:false, y:'', fd:'' } : drop;
   const recs = [...keep.recs, ...drop.recs.map(tag)].sort((x, y) => (x.d || '').localeCompare(y.d || ''));
-  const next = storedWork({ ...keep, t:keep.t || src.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], a:keep.a || src.a || '', p:keep.p || src.p || '', th:[...new Set([...keep.th, ...src.th])], known:!!(keep.known || src.known), y:earliest(keep.y, src.y), fd:earliest(keep.fd, src.fd) });
+  const next = storedWork({ ...keep, t:keep.t || src.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], archived:[...keep.archived, ...drop.archived.map(tag)], a:keep.a || src.a || '', p:keep.p || src.p || '', th:[...new Set([...keep.th, ...src.th])], known:!!(keep.known || src.known), y:earliest(keep.y, src.y), fd:earliest(keep.fd, src.fd) });
   if (recs.length) { if (recs.every((r) => r.st === 'unread')) next.unread = true; else delete next.unread; }
   else if (keep.unread || drop.unread) next.unread = true;
   if (keep.guess && src.known && !src.guess) delete next.guess; // 확인된 책과 합쳤으면 더는 추정이 아니다
   if (keep.only || drop.only) next.only = true; // 한쪽이라도 나만 보기로 잠갔으면 합친 뒤에도 잠근다
   const was = { ...(keep.t ? {} : { t:'' }), a:keep.a || '', p:keep.p || '', th:keep.th, known:keep.known, unread:keep.unread, guess:keep.guess, only:keep.only, y:keep.y || '', fd:keep.fd || '' };
-  const gone = storedWork({ ...drop, recs:[], notes:[], del:true, into:keep.id, at:Date.now(), was });
+  const gone = storedWork({ ...drop, recs:[], notes:[], archived:[], del:true, into:keep.id, at:Date.now(), was });
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
   setPriv('works', drop.id, gone);
@@ -1033,9 +1129,9 @@ async function undoMerge(id) {
   const later = Object.values(D.priv.works).find((w) => w.del && w.into === stored.into && (w.at || 0) > (stored.at || 0));
   if (later) throw fail(`나중에 합친 «${later.t || '제목 없음'}»을 먼저 되돌려 주세요`);
   const { del, into, was, at, ...rest } = stored;
-  const recs = keep.recs || [], notes = keep.notes || [];
-  const back = JSON.parse(JSON.stringify({ ...rest, recs:recs.filter((x) => cameFrom(x, id)).map(stepBack), notes:notes.filter((x) => cameFrom(x, id)).map(stepBack) }));
-  const next = JSON.parse(JSON.stringify({ ...keep, ...(was || {}), th:(was && was.th) || [], recs:recs.filter((x) => !cameFrom(x, id)), notes:notes.filter((x) => !cameFrom(x, id)) }));
+  const recs = keep.recs || [], notes = keep.notes || [], archived = keep.archived || [];
+  const back = JSON.parse(JSON.stringify({ ...rest, recs:recs.filter((x) => cameFrom(x, id)).map(stepBack), notes:notes.filter((x) => cameFrom(x, id)).map(stepBack), archived:archived.filter((x) => cameFrom(x, id)).map(stepBack) }));
+  const next = JSON.parse(JSON.stringify({ ...keep, ...(was || {}), th:(was && was.th) || [], recs:recs.filter((x) => !cameFrom(x, id)), notes:notes.filter((x) => !cameFrom(x, id)), archived:archived.filter((x) => !cameFrom(x, id)) }));
   ['unread', 'guess', 'known', 'only'].forEach((k) => { if (!was || was[k] === undefined) delete next[k]; }); // 합치기 전에 없던 표시는 지운다
   await write('works', { [stored.into]:next, [id]:back }, 'update');
   setPriv('works', stored.into, next);
@@ -1044,6 +1140,7 @@ async function undoMerge(id) {
   toast('합치기 전으로 되돌렸어요');
 }
 $('fixDups').onclick = openDupTool;
+if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };
 function themeChecks(selected) {
   const box = el('div', { className:'checks' }, THEMES.map(([t]) => el('label', { className:'check' }, el('input', { type:'checkbox', value:t, checked:selected.includes(t) }), t)));
@@ -1122,17 +1219,31 @@ function openRecForm(w, i) {
 function bookPicker(required, exceptId) {
   const opts = list().filter((w) => w.t && w.id !== exceptId).sort((a, b) => a.t.localeCompare(b.t, 'ko'));
   const name = (w) => w.t + (w.a ? ` / ${w.a}` : '');
-  const dl = el('datalist', { id:'bookNames' }, opts.map((w) => el('option', { value:name(w) })));
-  const input = el('input', { type:'text', required, placeholder:'책 제목을 적으면 목록이 나와요' });
-  input.setAttribute('list', 'bookNames');
-  const pick = () => opts.find((w) => name(w) === input.value || w.t === input.value.trim());
+  const input = el('input', { type:'text', required, autocomplete:'off', placeholder:'제목이나 저자를 조금만 적어도 찾아요' });
+  const dl = el('ul', { className:'found picks', hidden:true });
+  let chosen = null; // 같은 제목·저자의 책이 둘이어도 누른 그 책으로 잇는다
+  const pick = () => { if (chosen) return chosen; const same = opts.filter((w) => name(w) === input.value || w.t === input.value.trim()); return same.length === 1 ? same[0] : undefined; };
+  const choose = (w) => { chosen = w; input.value = name(w); dl.hidden = true; dl.replaceChildren(); input.dispatchEvent(new Event('change', { bubbles:true })); };
+  input.addEventListener('input', () => {
+    const q = squeeze(input.value);
+    chosen = null;
+    let hits = !q || pick() ? [] : opts.filter((w) => hasAll(w.nameHay, input.value)).sort((a, b) => squeeze(b.t).includes(q) - squeeze(a.t).includes(q));
+    if (q && !hits.length && !pick()) hits = opts.filter((w) => titleInOrder(w, input.value));
+    dl.hidden = !hits.length;
+    dl.replaceChildren(...hits.slice(0, 8).map((w) => {
+      const b = el('button', { type:'button' }, el('strong', { textContent:w.t }), el('span', { textContent:[w.a, w.p, w.y].filter(Boolean).join(' · ') }));
+      b.onclick = () => choose(w);
+      return el('li', {}, b);
+    }));
+    if (hits.length > 8) dl.append(el('li', { className:'picks-more', textContent:`${hits.length - 8}권 더 있어요. 조금 더 적어 주세요.` }));
+  });
   return { input, dl, pick };
 }
 function openLinkForm(p) {
   const b = bookPicker(true);
   showForm('이 글을 어느 책과 이을까요?', [field('책', b.input), b.dl], async () => {
     const hit = b.pick();
-    if (!hit) throw fail('목록에 있는 책을 골라 주세요. 없는 책이면 «+ 책 추가»로 먼저 꽂아 주세요.');
+    if (!hit) throw fail('아래 목록에서 책을 눌러 주세요. 없는 책이면 «+ 책 추가»로 먼저 꽂아 주세요.');
     await saveLinks(p, [...new Set([...p.w, hit.id])], '이었어요');
   }, '잇기');
 }
@@ -1148,7 +1259,7 @@ function openPostForm() {
     if (!x.value.trim()) throw fail('글을 넣어 주세요');
     if (D.posts.some((p) => p.c === c)) throw fail('이미 들어 있는 글이에요');
     const hit = b.input.value.trim() ? b.pick() : null;
-    if (b.input.value.trim() && !hit) throw fail('목록에 있는 책을 골라 주세요. 없는 책이면 «+ 책 추가»로 먼저 꽂아 주세요.');
+    if (b.input.value.trim() && !hit) throw fail('아래 목록에서 책을 눌러 주세요. 없는 책이면 «+ 책 추가»로 먼저 꽂아 주세요.');
     const val = { c, d:d.value || today(), x:x.value.trim(), k:hit ? 'review' : 'etc', w:hit ? [hit.id] : [] };
     await write(`igAdded/${c}`, val);
     setPriv('igAdded', c, val);
