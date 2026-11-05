@@ -491,6 +491,7 @@ function renderRecap() {
 
 /* ---------- 내 서재 ---------- */
 const openLoan = (it) => it.loans.find((l) => !l.back);
+const fromWho = (who) => `${who}${/(도서관|학교|문고)$/.test(who || '') ? '에서' : '에게서'}`; // 관악중앙도서관에서, 민수에게서
 const isActive = (it) => it.st === 'own' || !!openLoan(it); // 빌려 온 책을 돌려주면 서가에서 빠지고 기록만 남는다
 const libWork = (it) => (it.w ? D.works.get(it.w) : null);
 const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
@@ -522,7 +523,7 @@ function caseBook(it) {
   if (!out) b.style.background = themeVar(th[0]);
   b.append(el('span', { textContent:label }));
   if (sub) b.append(el('small', { textContent:sub }));
-  const status = it.st === 'in' ? `${l.who}에게서 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
+  const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
   b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
   b.title = [title, status].join(' · ');
   b.dataset.lib = it.id;
@@ -533,7 +534,7 @@ function ledgerRow(it, l) {
   const i = it.loans.indexOf(l);
   const name = el('button', { className:'ledger-title', type:'button', textContent:it.t || '제목 없음' });
   name.onclick = () => openLib(it.id, name);
-  const meta = [l.dir === 'out' ? `${l.who}에게` : `${l.who}에게서`, l.d ? `${l.d} 빌림` : '', l.due ? `${l.due}까지` : '', l.back ? `${l.back} 돌아옴` : ''].filter(Boolean).join(' · ');
+  const meta = [l.dir === 'out' ? `${l.who}에게` : fromWho(l.who), l.d ? `${l.d} 빌림` : '', l.due ? `${l.due}까지` : '', l.back ? `${l.back} 돌아옴` : ''].filter(Boolean).join(' · ');
   const tools = el('div', { className:'ledger-tools' });
   if (!l.back) tools.append(backButton(it, i));
   const fix = el('button', { className:'copy', type:'button', textContent:'고치기' });
@@ -613,12 +614,12 @@ function libBox(it, w) {
     return el('div', { className:'libbox' }, add);
   }
   const l = openLoan(it);
-  const state = it.st === 'in' ? (l ? `빌려 온 책 · ${l.who}에게서` : '빌렸다가 돌려준 책') : l ? `소장 · 지금 ${l.who}에게 빌려줌` : `소장 · ${it.where || DEFAULT_WHERE}`;
+  const state = it.st === 'in' ? (l ? `빌려 온 책 · ${fromWho(l.who)}` : '빌렸다가 돌려준 책') : l ? `소장 · 지금 ${l.who}에게 빌려줌` : `소장 · ${it.where || DEFAULT_WHERE}`;
   const kids = [el('h3', { className:'sec', textContent:'내 서재' }), el('p', { className:'libstate', textContent:state })];
   it.loans.forEach((x, i) => {
     const fix = el('button', { className:'copy', type:'button', textContent:'고치기' });
     fix.onclick = () => openLoanForm(it, i);
-    const text = [x.dir === 'out' ? `${x.who}에게` : `${x.who}에게서`, x.d, x.due ? `${x.due}까지` : '', x.back ? `${x.back} 돌아옴` : ''].filter(Boolean).join(' · ');
+    const text = [x.dir === 'out' ? `${x.who}에게` : fromWho(x.who), x.d, x.due ? `${x.due}까지` : '', x.back ? `${x.back} 돌아옴` : ''].filter(Boolean).join(' · ');
     kids.push(el('div', { className:'loanline' + (isLate(x) ? ' late' : '') }, el('span', { textContent:text }), fix));
   });
   const tools = el('div', { className:'actions' });
