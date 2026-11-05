@@ -1,11 +1,11 @@
 /* 조용한 서가: 천 장정 같은 낮은 채도의 책등과 얇은 선반, 명조 제목 */
-:root {
+:root,[data-edition="base"] {
   --bg:#f3f4f2; --surface:#ffffff; --ink:#23272b; --muted:#646b70; --line:#c9cdcc; --strong:#3a4147; --plank:#8b8f8c;
   --accent:#2f3a45; --accent-ink:#ffffff; --chip:#ffffff; --focus:#2f3a45; --bar:#aebcc4;
   --t-소설:#e3c7cb; --t-에세이:#e7ddba; --t-역사:#c0d6c9; --t-철학:#d0cadf; --t-사회정치:#bdd0df; --t-여성:#e3c2b8; --t-과학환경:#cfd9b8; --t-사랑관계:#e6cfd9; --t-죽음상실:#d0d0d7; --t-일노동:#e3d0b6; --t-교육:#e2dfb8; --t-법:#c5cfe0; --t-SF판타지:#c9c1dc; --t-여행:#bcd7d7; --t-예술:#e3cfc0; --t-시:#d9d5e6; --t-심리:#dcd0da; --t-인문:#d8d6c4; --t-청소년그림책:#cfe0d4; --t-경제자기계발:#d6d4bf; --t-기타:#dcdbd6; --t-없음:#e0dfda;
   --font-title:"Gowun Batang","Apple SD Gothic Neo","Malgun Gothic",serif; --font-body:"Gowun Dodum","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]),[data-edition="base"]:not([data-theme="light"]) {
   --bg:#1f2225; --surface:#2a2e32; --ink:#eef0f0; --muted:#b4babd; --line:#4c5257; --strong:#c9cdcf; --plank:#6d7276;
   --accent:#dfe4e7; --accent-ink:#1f2225; --chip:#2a2e32; --focus:#ffffff; --bar:#5f7480; color-scheme:dark;
   --t-소설:#7d4f5b; --t-에세이:#6f6130; --t-역사:#3f6a58; --t-철학:#5c5484; --t-사회정치:#3f6480; --t-여성:#80554a; --t-과학환경:#55683a; --t-사랑관계:#7a5069; --t-죽음상실:#5a5a68; --t-일노동:#755a37; --t-교육:#696532; --t-법:#49598a; --t-SF판타지:#5a4d86; --t-여행:#39686a; --t-예술:#7a5844; --t-시:#5d5578; --t-심리:#6d5068; --t-인문:#5f5d48; --t-청소년그림책:#45684f; --t-경제자기계발:#5b5a40; --t-기타:#54575a; --t-없음:#4a4d50;
@@ -26,11 +26,11 @@ button { cursor:pointer; }
 .cover { margin-bottom:18px; }
 .cover h1 { font-size:clamp(1.7rem,4vw,2.3rem); line-height:1.2; }
 .cover p { margin:4px 0 0; color:var(--muted); font-size:.95rem; font-variant-numeric:tabular-nums; }
-.tabs { display:flex; gap:20px; margin-bottom:14px; border-bottom:1px solid var(--line); }
+.tabs { display:flex; gap:20px; min-width:0; }
 .tab { border:0; background:none; padding:6px 2px; margin-bottom:-1px; border-bottom:2px solid transparent; color:var(--muted); }
 .tab[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--accent); font-weight:700; }
 .filters { display:grid; gap:4px; margin-bottom:6px; }
-.bar { position:sticky; top:env(safe-area-inset-top,0px); z-index:5; background:var(--bg); padding-block:8px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; }
+.bar { background:var(--bg); padding-block:8px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; }
 .row { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding:4px; margin-inline:-4px; }
 @media (min-width:768px) { .row { flex-wrap:wrap; overflow:visible; } }
 .row::-webkit-scrollbar { display:none; }
@@ -153,8 +153,8 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .wrap { padding-bottom:88px; }
 
 /* 펼쳐지는 책: 왼쪽 면 책 정보, 오른쪽 면 글. 폰은 한 면 */
-:root { --paper:#fbf9f3; --paper-edge:#e4e0d4; --gutter:rgba(60,50,35,.16); --wood:#a48f76; --wood-deep:#8a7660; --case-back:#ebe5d9; --case-shade:rgba(60,45,25,.22); --late:#a3323a; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper:#2e3134; --paper-edge:#44484c; --gutter:rgba(0,0,0,.4); --wood:#5c4e41; --wood-deep:#493d33; --case-back:#26231f; --case-shade:rgba(0,0,0,.45); --late:#f0a4aa; } }
+:root,[data-edition="base"] { --paper:#fbf9f3; --paper-edge:#e4e0d4; --gutter:rgba(60,50,35,.16); --wood:#a48f76; --wood-deep:#8a7660; --case-back:#ebe5d9; --case-shade:rgba(60,45,25,.22); --late:#a3323a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]),[data-edition="base"]:not([data-theme="light"]) { --paper:#2e3134; --paper-edge:#44484c; --gutter:rgba(0,0,0,.4); --wood:#5c4e41; --wood-deep:#493d33; --case-back:#26231f; --case-shade:rgba(0,0,0,.45); --late:#f0a4aa; } }
 :root[data-theme="dark"] { --paper:#2e3134; --paper-edge:#44484c; --gutter:rgba(0,0,0,.4); --wood:#5c4e41; --wood-deep:#493d33; --case-back:#26231f; --case-shade:rgba(0,0,0,.45); --late:#f0a4aa; }
 #sheet { background:transparent; border:0; border-radius:0; padding:0; overflow:visible; width:calc(100vw - 24px); max-width:none; height:min(88dvh,44rem); max-height:none; }
 #sheet[open] { animation:none; }
@@ -241,3 +241,93 @@ details.ledger-part summary { cursor:pointer; font-family:var(--font-title); fon
 html[data-mode="local"] .cover { flex-wrap:wrap; }
 html[data-mode="local"] .who { flex:1 1 100%; flex-wrap:wrap; padding-top:0; }
 html[data-mode="local"] .who .me { flex:1 1 100%; }
+
+/* 위에 붙는 메뉴: 탭과 바로 가기. 화면 높이의 15%를 넘지 않게 찾기 칸은 붙이지 않는다 */
+.topnav { position:sticky; top:env(safe-area-inset-top,0px); z-index:5; background:var(--bg); margin-bottom:14px; border-bottom:1px solid var(--line); }
+.tabs-line { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.tabs-line > .copy { flex:none; }
+.tabs-line .tabs { overflow-x:auto; scrollbar-width:none; }
+.tabs-line .tabs::-webkit-scrollbar { display:none; }
+.tab { flex:none; white-space:nowrap; }
+@media (max-width:400px) { .tabs { gap:12px; } }
+.jump { position:relative; flex-wrap:nowrap !important; overflow-x:auto !important; padding-block:3px 6px; }
+@media (pointer:fine) { .jump .chip { min-height:30px; } }
+.jump .chip[aria-current="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+[data-jump] { scroll-margin-top:calc(var(--nav-h,90px) + env(safe-area-inset-top,0px) + 12px); }
+[data-jump]:focus { outline:none; }
+@media (max-height:500px) { .jump { display:none; } } /* 가로로 눕힌 폰: 책장을 가리지 않게 탭만 */
+
+/* 맨 위로: 스크롤을 내렸을 때만 나타난다 */
+.totop { position:fixed; right:max(16px,env(safe-area-inset-right,0px)); bottom:calc(68px + env(safe-area-inset-bottom,0px)); z-index:6; min-height:44px; padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); box-shadow:0 2px 10px rgba(0,0,0,.18); opacity:0; visibility:hidden; transform:translateY(8px); transition:opacity .2s ease, transform .2s ease, visibility .2s; }
+.fab[hidden] + .totop { bottom:calc(16px + env(safe-area-inset-bottom,0px)); }
+.totop.show { opacity:1; visibility:visible; transform:none; }
+
+/* 책 찾아 채우기 */
+.lookup { display:grid; gap:8px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+.lookup-row { display:flex; gap:8px; }
+.lookup-row input { flex:1 1 auto; min-width:0; border:1px solid var(--line); background:var(--surface); border-radius:6px; padding:8px 10px; }
+.lookup-row .btn { flex:none; }
+.found { list-style:none; margin:0; padding:0; display:grid; gap:4px; }
+.found button { width:100%; text-align:left; border:1px solid var(--line); border-radius:6px; background:var(--chip); padding:6px 10px; min-height:44px; }
+.found strong { display:block; font-family:var(--font-title); }
+.found span { font-size:.84rem; color:var(--muted); }
+.store-links { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:.84rem; color:var(--muted); }
+.lookup small { color:var(--muted); }
+
+/* 겹치는 책 고치기 */
+.dup-sec { display:grid; gap:0; }
+.dup-row { display:grid; gap:6px; padding:10px 0; border-top:1px solid var(--line); }
+.dup-book { margin:0; }
+.dup-book strong { font-family:var(--font-title); }
+.dup-book span { display:block; font-size:.84rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.dup-tools { display:flex; flex-wrap:wrap; gap:6px; }
+.keep-opt { display:flex; gap:8px; align-items:flex-start; padding:10px; border:1px solid var(--line); border-radius:8px; }
+.keep-opt:has(input:checked) { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+
+/* 색 에디션 고르기 */
+.ed-list { display:grid; gap:8px; }
+@media (min-width:560px) { .ed-list { grid-template-columns:1fr 1fr; } }
+.ed-opt { display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:8px; }
+.ed-opt:has(input:checked) { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.ed-opt b { font-family:var(--font-title); }
+.ed-swatch { grid-column:1 / -1; display:flex; align-items:flex-end; gap:2px; height:64px; padding:6px 8px 0; border-bottom:4px solid var(--plank); background:var(--bg); }
+.ed-swatch i { display:block; flex:1 1 0; border:1px solid rgba(0,0,0,.2); border-bottom:0; border-radius:2px 2px 0 0; }
+.ed-note { font-size:.84rem; color:var(--muted); margin:0; }
+
+/* 색 에디션: 기본(조용한 서가)은 맨 위의 값. 나머지는 주제 색을 한 기준색 둘레로 모은다. --h0 기준색, --k 퍼짐, --s 채도, --l 밝기, --j 밝기 차이 */
+[data-edition]:not([data-edition="base"]) {
+  --t-소설:hsl(calc(var(--h0) + var(--k) * -170) var(--s) var(--l));
+  --t-에세이:hsl(calc(var(--h0) + var(--k) * -130) var(--s) calc(var(--l) + var(--j) * 2));
+  --t-역사:hsl(calc(var(--h0) + var(--k) * -20) var(--s) calc(var(--l) - var(--j) * 2));
+  --t-철학:hsl(calc(var(--h0) + var(--k) * 90) var(--s) calc(var(--l) - var(--j)));
+  --t-사회정치:hsl(calc(var(--h0) + var(--k) * 30) var(--s) calc(var(--l) - var(--j) * 2));
+  --t-여성:hsl(calc(var(--h0) + var(--k) * -155) var(--s) calc(var(--l) - var(--j)));
+  --t-과학환경:hsl(calc(var(--h0) + var(--k) * -70) var(--s) var(--l));
+  --t-사랑관계:hsl(calc(var(--h0) + var(--k) * 150) var(--s) calc(var(--l) + var(--j)));
+  --t-죽음상실:hsl(calc(var(--h0) + var(--k) * 70) calc(var(--s) * .4) calc(var(--l) - var(--j)));
+  --t-일노동:hsl(calc(var(--h0) + var(--k) * -115) var(--s) calc(var(--l) - var(--j)));
+  --t-교육:hsl(calc(var(--h0) + var(--k) * -95) var(--s) calc(var(--l) + var(--j)));
+  --t-법:hsl(calc(var(--h0) + var(--k) * 50) var(--s) var(--l));
+  --t-SF판타지:hsl(calc(var(--h0) + var(--k) * 105) var(--s) calc(var(--l) - var(--j) * 2));
+  --t-여행:hsl(calc(var(--h0) + var(--k) * 5) var(--s) calc(var(--l) + var(--j)));
+  --t-예술:hsl(calc(var(--h0) + var(--k) * -145) var(--s) calc(var(--l) + var(--j)));
+  --t-시:hsl(calc(var(--h0) + var(--k) * 110) var(--s) calc(var(--l) + var(--j) * 2));
+  --t-심리:hsl(calc(var(--h0) + var(--k) * 130) var(--s) var(--l));
+  --t-인문:hsl(calc(var(--h0) + var(--k) * -85) calc(var(--s) * .6) calc(var(--l) + var(--j) * 2));
+  --t-청소년그림책:hsl(calc(var(--h0) + var(--k) * -35) var(--s) calc(var(--l) + var(--j) * 2));
+  --t-경제자기계발:hsl(calc(var(--h0) + var(--k) * -80) calc(var(--s) * .6) calc(var(--l) - var(--j)));
+  --t-기타:hsl(var(--h0) calc(var(--s) * .25) var(--l));
+  --t-없음:hsl(var(--h0) calc(var(--s) * .2) calc(var(--l) + var(--j)));
+}
+[data-edition="paper"] { --h0:35; --k:.28; --s:36%; --l:78%; --j:2.5%; --bg:#f5efe2; --surface:#fdfaf2; --ink:#2d261d; --muted:#685c4b; --line:#d6cbb6; --strong:#4a3f30; --plank:#97866c; --accent:#5c4326; --accent-ink:#ffffff; --chip:#fdfaf2; --focus:#5c4326; --bar:#c4ad8a; --paper:#fbf5e6; --paper-edge:#e5dac2; --gutter:rgba(70,50,20,.18); --wood:#a0835f; --wood-deep:#836744; --case-back:#ece2cd; --case-shade:rgba(70,45,15,.22); }
+[data-edition="forest"] { --h0:135; --k:.25; --s:28%; --l:77%; --j:2.5%; --bg:#eef3ec; --surface:#fafcf8; --ink:#1f2b23; --muted:#56675b; --line:#c4d1c5; --strong:#36473b; --plank:#7c917f; --accent:#2f5a40; --accent-ink:#ffffff; --chip:#fafcf8; --focus:#2f5a40; --bar:#a3bda9; --paper:#f7faf3; --paper-edge:#dce6d8; --gutter:rgba(30,60,35,.16); --wood:#7f9478; --wood-deep:#64795f; --case-back:#e3ebdf; --case-shade:rgba(25,50,30,.2); }
+[data-edition="sea"] { --h0:212; --k:.25; --s:38%; --l:80%; --j:2.5%; --bg:#eef2f7; --surface:#fbfcfe; --ink:#1c2733; --muted:#526173; --line:#c4cfdc; --strong:#344558; --plank:#7b8ea3; --accent:#24507e; --accent-ink:#ffffff; --chip:#fbfcfe; --focus:#24507e; --bar:#9db5cf; --paper:#f6f9fc; --paper-edge:#dbe4ee; --gutter:rgba(25,50,90,.16); --wood:#7d93ab; --wood-deep:#627890; --case-back:#e2e9f1; --case-shade:rgba(20,40,70,.2); }
+[data-edition="blossom"] { --h0:342; --k:.22; --s:52%; --l:84%; --j:2%; --bg:#fbf1f3; --surface:#fffafb; --ink:#33222a; --muted:#6f5a64; --line:#ecd3da; --strong:#563c48; --plank:#bc96a3; --accent:#a33d63; --accent-ink:#ffffff; --chip:#fffafb; --focus:#a33d63; --bar:#e3aec0; --paper:#fff8f9; --paper-edge:#f0dde2; --gutter:rgba(120,40,70,.14); --wood:#c39aa8; --wood-deep:#a87e8d; --case-back:#f6e6ea; --case-shade:rgba(110,50,70,.18); }
+[data-edition="ink"] { --h0:40; --k:.05; --s:10%; --l:80%; --j:3%; --bg:#f4f2ec; --surface:#fcfbf7; --ink:#1b1b1b; --muted:#5c5b57; --line:#cfccc3; --strong:#3a3936; --plank:#77756f; --accent:#1f1f1f; --accent-ink:#ffffff; --chip:#fcfbf7; --focus:#000000; --bar:#a6a39b; --paper:#faf8f2; --paper-edge:#e1ded4; --gutter:rgba(0,0,0,.14); --wood:#4a4845; --wood-deep:#363432; --case-back:#e9e6dd; --case-shade:rgba(0,0,0,.2); }
+@media (prefers-color-scheme: dark) {
+  [data-edition="paper"]:not([data-theme="light"]) { color-scheme:dark; --s:30%; --l:28%; --j:1.5%; --bg:#241f18; --surface:#2f2920; --ink:#f1e9da; --muted:#c0b49f; --line:#544a3b; --strong:#d4c8b3; --plank:#7b6c55; --accent:#e8d6b5; --accent-ink:#241f18; --chip:#2f2920; --focus:#ffffff; --bar:#7a6646; --paper:#2f2a21; --paper-edge:#4a4234; --gutter:rgba(0,0,0,.4); --wood:#5e4c36; --wood-deep:#4a3b29; --case-back:#29231a; --case-shade:rgba(0,0,0,.45); }
+  [data-edition="forest"]:not([data-theme="light"]) { color-scheme:dark; --s:26%; --l:31%; --j:1.5%; --bg:#18211c; --surface:#222d27; --ink:#e8f0ea; --muted:#aebdb2; --line:#43524a; --strong:#c8d5cc; --plank:#627468; --accent:#cfe6d6; --accent-ink:#18211c; --chip:#222d27; --focus:#ffffff; --bar:#4f6f5c; --paper:#242e28; --paper-edge:#3f4c44; --gutter:rgba(0,0,0,.4); --wood:#44574a; --wood-deep:#35463b; --case-back:#1c2620; --case-shade:rgba(0,0,0,.45); }
+  [data-edition="sea"]:not([data-theme="light"]) { color-scheme:dark; --s:32%; --l:30%; --j:1.5%; --bg:#141c27; --surface:#1e2835; --ink:#e6edf5; --muted:#a9b8c9; --line:#3e4d60; --strong:#c4d1df; --plank:#5d7088; --accent:#c9dcf0; --accent-ink:#141c27; --chip:#1e2835; --focus:#ffffff; --bar:#4a6785; --paper:#202a37; --paper-edge:#3a4758; --gutter:rgba(0,0,0,.4); --wood:#41546b; --wood-deep:#334358; --case-back:#18212d; --case-shade:rgba(0,0,0,.45); }
+  [data-edition="blossom"]:not([data-theme="light"]) { color-scheme:dark; --s:30%; --l:33%; --j:1.5%; --bg:#241a1f; --surface:#30232a; --ink:#f6e9ee; --muted:#c9b2bc; --line:#57414c; --strong:#dcc6d0; --plank:#836470; --accent:#f2c3d3; --accent-ink:#241a1f; --chip:#30232a; --focus:#ffffff; --bar:#8a5069; --paper:#32252c; --paper-edge:#4e3b45; --gutter:rgba(0,0,0,.4); --wood:#6a4c58; --wood-deep:#563c47; --case-back:#2a1e24; --case-shade:rgba(0,0,0,.45); }
+  [data-edition="ink"]:not([data-theme="light"]) { color-scheme:dark; --s:6%; --l:32%; --j:2%; --bg:#161616; --surface:#202020; --ink:#efefec; --muted:#b3b2ad; --line:#444444; --strong:#cfcfca; --plank:#6a6a66; --accent:#efefec; --accent-ink:#161616; --chip:#202020; --focus:#ffffff; --bar:#6b6b68; --paper:#222222; --paper-edge:#3e3e3e; --gutter:rgba(0,0,0,.4); --wood:#3c3a38; --wood-deep:#2d2c2a; --case-back:#1b1b1a; --case-shade:rgba(0,0,0,.5); }
+}

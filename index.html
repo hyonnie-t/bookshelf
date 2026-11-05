@@ -6,6 +6,7 @@
 <title>효니의 책장</title>
 <meta name="description" content="@hyonnie_books와 블로그에 쓴 책 이야기를 모은 책장">
 <meta name="theme-color" content="#f3f4f2">
+<script>try { var ed = localStorage.getItem('shelf-edition'); if (ed) document.documentElement.dataset.edition = ed; } catch (e) {}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -22,11 +23,17 @@
     </div>
     <div class="who" id="who"></div>
   </header>
-  <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-shelf" aria-selected="true" aria-controls="view-shelf">읽은 책</button>
-    <button class="tab owner-only" role="tab" id="tab-library" aria-selected="false" aria-controls="view-library" hidden>내 서재</button>
-    <button class="tab" role="tab" id="tab-posts" aria-selected="false" aria-controls="view-posts">서평</button>
-    <button class="tab" role="tab" id="tab-recap" aria-selected="false" aria-controls="view-recap">돌아보기</button>
+  <div class="topnav" id="topnav">
+    <div class="tabs-line">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-shelf" aria-selected="true" aria-controls="view-shelf">읽은 책</button>
+        <button class="tab owner-only" role="tab" id="tab-library" aria-selected="false" aria-controls="view-library" hidden>내 서재</button>
+        <button class="tab" role="tab" id="tab-posts" aria-selected="false" aria-controls="view-posts">서평</button>
+        <button class="tab" role="tab" id="tab-recap" aria-selected="false" aria-controls="view-recap">돌아보기</button>
+      </div>
+      <button class="copy" id="editionBtn" type="button">색 에디션</button>
+    </div>
+    <nav class="row jump" id="jump" aria-label="바로 가기" hidden></nav>
   </div>
   <section id="view-shelf" role="tabpanel" aria-labelledby="tab-shelf">
     <div class="filters">
@@ -36,6 +43,7 @@
         <button class="chip" id="onlyIg" type="button" aria-pressed="false">서평이 있는 책만</button>
         <button class="chip owner-only" id="showUnknown" type="button" aria-pressed="false" hidden>제목 확인 안 된 책 보이기</button>
       </div>
+      <div class="owner-only" hidden><button class="copy" id="fixDups" type="button">겹치는 책 고치기</button></div>
     </div>
     <div class="bar">
       <input class="search" id="q" type="search" placeholder="제목, 저자, 서평 내용 찾기" aria-label="찾기">
@@ -73,6 +81,7 @@
 </div>
 
 <button class="fab owner-only" id="addBook" type="button" hidden>+ 책 추가</button>
+<button class="totop" id="toTop" type="button">↑ 맨 위로</button>
 <dialog id="sheet" aria-labelledby="sheet-title"><div class="tome" id="sheet-body"></div></dialog>
 <dialog id="form" aria-labelledby="form-title"><form class="sheet" id="form-body" method="dialog"></form></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
