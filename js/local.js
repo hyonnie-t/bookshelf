@@ -72,7 +72,7 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const arr = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
 const safeKey = (k) => /^[A-Za-z0-9_-]{1,80}$/.test(k) && !k.startsWith('__');
 function cleanWork(w) {
-  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:Number.isInteger(r.r) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; const from = Array.isArray(r.from) ? r.from.filter((x) => typeof x === 'string' && safeKey(x)) : []; if (from.length) o.from = from; return o; });
+  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:typeof r.r === 'number' && Number.isInteger(r.r * 2) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; const from = Array.isArray(r.from) ? r.from.filter((x) => typeof x === 'string' && safeKey(x)) : []; if (from.length) o.from = from; return o; });
   const o = { t:str(w.t), a:str(w.a), p:str(w.p), k:KINDS.has(w.k) ? w.k : 'book', th:Array.isArray(w.th) ? w.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.y).slice(0, 4), fd:day(w.fd) || str(w.fd).slice(0, 4), known:true, recs, notes:[] };
   if (w.unread === true) o.unread = true;
   if (w.del === true) o.del = true;

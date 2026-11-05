@@ -25,6 +25,7 @@
 - 앱 파일을 바꾸면 `sw.js`의 `VERSION`을 올린다(네트워크 우선이라 옛 캐시 정리용).
 - 공개 반영 순서: `npx.cmd firebase-tools database:get /users/<uid>/bookshelf --project timetable-af612 -o private.local.json` → `node tools/publish.js private.local.json` → private.local.json 지우기 → 커밋·푸시. (`private*.json`, `*.local.json`은 gitignore)
 - 실제 Firebase 쓰기 시험은 효니가 시킬 때만 한다. 기능 시험은 `?demo=1`.
+- 별점은 0.5 단위(`r`: 0~5, 효니 결정 2026-11-05). 0은 «최하», 표시는 `starText`, 단계 목록은 `RATING_STEPS`.
 - 화면 확인은 폰 375 · 태블릿 768 · PC 1280, 다크 모드까지.
 - 인스타 글은 레포에 사진을 넣지 않고 글과 주소만 둔다. 새 글을 한꺼번에 받을 때는 내장 브라우저에서 내 계정 화면을 읽기만 한다. 파일 내려받기는 내장 브라우저에서 안 되므로 주소 `#`로 내 PC 임시 서버에 넘긴다.
 - 움직임: 서평 카드 떠오름, 선반 나타남, 책 창은 표지가 넘어가며 펼쳐지고 덮인다(`.tome.opening/.closing`, 평소에는 표지 요소가 숨어 있어 움직임을 꺼도 그대로 읽힌다). `prefers-reduced-motion`에서 끈다. 중간 장면은 애니메이션을 `pause`하고 `currentTime`을 정해 찍는다.

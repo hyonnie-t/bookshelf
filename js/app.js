@@ -126,7 +126,8 @@ function renderShelf() {
   queueJump();
   chips();
   const rows = list().filter(matches);
-  $('count').textContent = `${rows.length}권`;
+  const unit = S.kind === 'film' ? '편' : '권';
+  $('count').textContent = `${rows.length}${unit}`;
   const byYear = {};
   rows.forEach((w) => { (byYear[w.y || '날짜 없음'] = byYear[w.y || '날짜 없음'] || []).push(w); });
   const ys = Object.keys(byYear).sort((a, b) => b.localeCompare(a));
@@ -143,7 +144,7 @@ function renderShelf() {
     return;
   }
   $('shelves').replaceChildren(...ys.map((y) => jumpMark(el('section', { className:'shelf' },
-    el('div', { className:'shelf-head' }, el('h2', { textContent:y }), el('span', { textContent:`${byYear[y].length}권` })),
+    el('div', { className:'shelf-head' }, el('h2', { textContent:y }), el('span', { textContent:`${byYear[y].length}${unit}` })),
     el('div', { className:'rack' }, byYear[y].sort((a, b) => a.fd.localeCompare(b.fd)).map(spine))), y)));
   watch('.shelf');
 }
@@ -334,9 +335,9 @@ function renderTome(w, item, from) {
       body.push(el('div', { className:'blank-page' }, kids));
     }
     if (w.recs.length) {
-      body.push(el('h3', { className:'sec', textContent:'내 독서 기록' }));
+      body.push(el('h3', { className:'sec', textContent:w.k === 'film' ? '내 감상 기록' : '내 독서 기록' }));
       w.recs.forEach((r, i) => {
-        const score = r.r == null ? '' : r.r === 0 ? '최하' : '★'.repeat(r.r);
+        const score = r.r == null ? '' : starText(r.r);
         const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
         edit.onclick = () => openRecForm(w, i);
         body.push(el('div', { className:'memo' },
@@ -481,7 +482,7 @@ function renderRecap() {
     const maxR = Math.max(1, ...Object.values(rc));
     const best = books.filter((w) => w.recs.some((r) => r.r === 5));
     cards.push(el('div', { className:'card span2' }, el('h2', { textContent:LOCAL ? '별점' : '별점 (나만 보임)' }), el('p', { className:'sub', textContent:`별점을 남긴 ${Object.values(rc).reduce((a, b) => a + b, 0)}건` }),
-      [5, 4, 3, 2, 1, 0].filter((r) => rc[r]).map((r) => hbar(r === 0 ? '최하' : `${r}점`, rc[r], maxR, 'var(--bar)')),
+      RATING_STEPS.filter((r) => rc[r]).map((r) => hbar(r === 0 ? '최하' : `${r}점`, rc[r], maxR, 'var(--bar)')),
       best.length ? el('h2', { textContent:'5점을 준 책', style:'margin-top:16px;margin-bottom:8px' }) : null,
       best.length ? el('div', { className:'again' }, best.map((w) => { const b = el('button', { className:'chip', type:'button', textContent:titleOf(w) }); b.onclick = () => openBook(w.id, b); return b; })) : null));
   }
@@ -890,6 +891,9 @@ function dupPairs() {
   named.forEach(([a, x], i) => {
     for (let j = i + 1; j < named.length; j++) {
       const [b, y] = named[j];
+      // 왓챠 작품은 코드가 다르면 다른 작품이고(리메이크 등), 같은 제목의 책·공연과도 다른 작품이다
+      if (a.wc && b.wc) continue;
+      if ((a.wc || b.wc) && a.k !== b.k) continue;
       const same = x === y;
       if ((same || (Math.min(x.length, y.length) >= 3 && (x.startsWith(y) || y.startsWith(x)))) && !skip[pairKey(a.id, b.id)]) out.push({ a, b, same });
     }
@@ -992,8 +996,11 @@ function themeChecks(selected) {
   box.values = () => [...box.querySelectorAll('input:checked')].map((i) => i.value);
   return box;
 }
+// 별점은 0.5 단위(효니 결정 2026-11-05). 0은 «최하», 0.5는 ½
+const RATING_STEPS = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, .5, 0];
+function starText(r) { return r === 0 ? '최하' : '★'.repeat(Math.floor(r)) + (r % 1 ? '½' : ''); }
 function ratingSelect(v) {
-  const s = el('select', {}, ...[['', '남기지 않음'], ['5','★★★★★'], ['4','★★★★'], ['3','★★★'], ['2','★★'], ['1','★'], ['0','최하']].map(([val, t]) => el('option', { value:val, textContent:t })));
+  const s = el('select', {}, ...[['', '남기지 않음'], ...RATING_STEPS.map((r) => [String(r), starText(r)])].map(([val, t]) => el('option', { value:val, textContent:t })));
   s.value = v == null ? '' : String(v);
   return s;
 }
