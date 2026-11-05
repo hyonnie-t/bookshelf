@@ -18,6 +18,7 @@
 - `tools/publish.js` 공개 반영: 앱에서 고친 책 정보·연결을 public.json에 넣는다. 기록·메모·별점은 옮기지 않는다
 - `data/blog.json` 티스토리 책 글(카테고리 «현의 문장들» 또는 태그·제목 괄호가 책 제목과 같은 글). 앞부분 180자와 주소만. `tools/fetch-blog.js`가 만들고 `.github/workflows/blog.yml`이 매일 06:20(KST) 돌린다
 - 읽는 중: 다 읽은 기록 없이 미완독·읽는 중 표시가 있는 책은 «읽는 중» 칸으로 빠지고 읽은 권수에서 제외. 공개 화면은 `public.json`의 `st:'reading'`으로 안다(`tools/publish.js`가 채운다)
+- 왓챠피디아(2026-11-05): 영화·시리즈는 `works`에 `k:'film'`, `wc`(왓챠 작품 코드), `recs[{d r l:'왓챠' b cd rd}]`로 넣었다. 하루 10건 이상 평가한 날은 본 날짜가 아니므로 `d`를 비우고 `rd`에만 둔다(앱이 `d`로 연도를 채우기 때문). 공개본에는 제목·연도만 간다. 만드는 도구는 `tools/import-watcha.js`. 왓챠 API는 공식 앱 외 요청을 막으므로(`not_allowed_client`) 내장 브라우저에서 평가·달력·코멘트 화면을 내려 가며 읽는다. 그 책 평가 47건은 넣지 않았다
 - `tools/serve.js` 내 PC 확인용 서버(launch 이름 `bookshelf`, 포트 8780)
 
 ## 규칙
