@@ -41,7 +41,38 @@ export async function watchAuth(cb) {
 }
 // 로그인 버튼이 보일 때 미리 불러 둔다. 눌린 뒤에 불러오면 사파리가 팝업을 막는다(누름 동작이 끊김).
 export function warm() { load().catch(() => {}); }
+// 아이폰 홈 화면 앱은 로그인 팝업의 결과를 돌려받지 못한다. 그때는 구글 로그인 페이지로 이동했다가
+// 주소 뒤 #id_token 으로 돌아오는 방식을 쓴다(구글 클라우드 콘솔에 아래 REDIRECT 주소를 허용해 둬야 한다).
+const CLIENT = '797690266953-4eeq083i7vukr0hgi0kqteni30kbj8k8.apps.googleusercontent.com'; // 공개 값(파이어베이스 웹 클라이언트)
+const REDIRECT = 'https://hyonnie-t.github.io/bookshelf/';
+const NONCE = 'shelf-nonce';
+export const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+export function startRedirect() {
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  try { localStorage.setItem(NONCE, nonce); } catch (e) {}
+  const q = new URLSearchParams({ client_id: CLIENT, redirect_uri: REDIRECT, response_type: 'id_token', scope: 'openid email profile', nonce, prompt: 'select_account' });
+  location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + q);
+}
+// 돌아온 주소의 #id_token 을 꺼내고 주소에서 지운다(토큰은 어디에도 출력하지 않는다)
+export function takeIdToken() {
+  if (!/[#&]id_token=/.test(location.hash)) return '';
+  const tok = new URLSearchParams(location.hash.slice(1)).get('id_token') || '';
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  return tok;
+}
+export async function finishRedirect(idToken) {
+  let p = {};
+  try { p = JSON.parse(decodeURIComponent(escape(atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { throw new Error('bad token'); }
+  let want = ''; try { want = localStorage.getItem(NONCE) || ''; localStorage.removeItem(NONCE); } catch (e) {}
+  if (!want || p.nonce !== want || p.aud !== CLIENT) throw new Error('nonce mismatch');
+  const s = await load();
+  const r = await s.authM.signInWithCredential(s.auth, s.authM.GoogleAuthProvider.credential(idToken));
+  if (!isOwner(r.user)) { await s.authM.signOut(s.auth); return null; }
+  flag.set(true);
+  return r.user;
+}
 export async function signIn() {
+  if (isStandalone()) { startRedirect(); return 'redirect'; }
   const s = sdk || await load();
   const r = await s.authM.signInWithPopup(s.auth, new s.authM.GoogleAuthProvider());
   if (!isOwner(r.user)) { await s.authM.signOut(s.auth); return null; }

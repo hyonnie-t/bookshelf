@@ -822,6 +822,7 @@ function renderWho() {
       inBtn.disabled = true;
       try {
         const u = await fb.signIn();
+        if (u === 'redirect') return; // 구글 로그인 페이지로 넘어가는 중
         if (!u) toast('이 책장의 주인 계정이 아니에요');
         else await enterOwner(u);
       } catch (e) { if (e && e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') { console.error(e); toast('로그인하지 못했어요'); } }
@@ -910,6 +911,9 @@ async function start() {
   }
   renderWho(); refreshAll(); route();
   if (DEMO) { await enterOwner({ uid:'demo' }); route(); return; }
-  fb.watchAuth((u) => { if (fb.isOwner(u) && !S.owner) enterOwner(u).then(route); else if (!u && S.owner) leaveOwner(); }).catch((e) => console.error(e));
+  const back = fb.takeIdToken();
+  (back ? fb.finishRedirect(back).then((u) => { if (!u) toast('이 책장의 주인 계정이 아니에요'); }).catch((e) => { console.error(e); toast('로그인하지 못했어요'); }) : Promise.resolve())
+    .then(() => fb.watchAuth((u) => { if (fb.isOwner(u) && !S.owner) enterOwner(u).then(route); else if (!u && S.owner) leaveOwner(); }))
+    .catch((e) => console.error(e));
 }
 start();
