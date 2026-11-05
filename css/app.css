@@ -346,3 +346,12 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .dup-row .post-text { margin:0; }
 @media (prefers-reduced-motion: no-preference) { .picks:not([hidden]) { animation:picks-in .14s ease-out; } }
 @keyframes picks-in { from { opacity:0; transform:translateY(-3px); } }
+
+/* 확인 창·겹치는 메모 */
+.ask-dlg { width:min(24rem,calc(100vw - 32px)); padding:18px; }
+.ask-text { margin:0 0 14px; line-height:1.6; }
+.ask-dlg .actions { justify-content:flex-end; }
+.btn.danger { background:#a3323a; border-color:#a3323a; color:#fff; }
+.overlap-pick { color:var(--ink); }
+.overlap-note { color:var(--muted); }
+.dup-row .memo-foot { justify-content:space-between; }
