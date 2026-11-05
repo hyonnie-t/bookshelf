@@ -1,4 +1,4 @@
-// 범용판(/my/) 저장소: 기록을 쓰는 사람의 브라우저(IndexedDB)에만 둔다. 서버로 보내는 곳이 없다.
+// 범용판(/my/) 저장소: 기록을 쓰는 사람의 브라우저(IndexedDB)에만 둔다. 기록을 서버로 보내는 곳이 없다(책 찾기는 찾는 말만 공개 목록에 보낸다).
 // app.js가 쓰는 fb.js의 읽기·쓰기와 같은 모양을 맞췄다. 데이터 모양은 주인 Firebase의 bookshelf 칸과 같다.
 const DB = 'my-bookshelf', STORE = 'kv', KEY = 'data', APP = 'my-bookshelf', VERSION = 1;
 const KINDS = new Set(['book', 'film', 'show', 'trip', 'other', 'wishlist']);
@@ -72,10 +72,19 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const arr = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
 const safeKey = (k) => /^[A-Za-z0-9_-]{1,80}$/.test(k) && !k.startsWith('__');
 function cleanWork(w) {
-  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:Number.isInteger(r.r) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; return o; });
+  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:Number.isInteger(r.r) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; const from = Array.isArray(r.from) ? r.from.filter((x) => typeof x === 'string' && safeKey(x)) : []; if (from.length) o.from = from; return o; });
   const o = { t:str(w.t), a:str(w.a), p:str(w.p), k:KINDS.has(w.k) ? w.k : 'book', th:Array.isArray(w.th) ? w.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.y).slice(0, 4), fd:day(w.fd) || str(w.fd).slice(0, 4), known:true, recs, notes:[] };
   if (w.unread === true) o.unread = true;
   if (w.del === true) o.del = true;
+  if (safeKey(str(w.into))) { // 겹치는 책 합치기 되돌리기용
+    o.into = str(w.into);
+    o.at = Number.isFinite(w.at) ? w.at : 0;
+    if (isObj(w.was)) {
+      o.was = { a:str(w.was.a), p:str(w.was.p), th:Array.isArray(w.was.th) ? w.was.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.was.y).slice(0, 4), fd:day(w.was.fd) || str(w.was.fd).slice(0, 4), known:true };
+      if (w.was.unread === true) o.was.unread = true;
+      if (w.was.t === '') o.was.t = '';
+    }
+  }
   return o;
 }
 function cleanLib(b) {
@@ -90,7 +99,10 @@ export function parseBackup(text) {
   try { j = JSON.parse(text); } catch (e) { throw bad(); }
   if (!isObj(j) || j.app !== APP || !isObj(j.data)) throw bad();
   const d = j.data, out = { works:cleanMap(d.works, cleanWork), library:cleanMap(d.library, cleanLib) };
-  if (isObj(d.meta)) out.meta = { name:str(d.meta.name).slice(0, 40), lastBackup:day(d.meta.lastBackup) };
+  if (isObj(d.meta)) {
+    out.meta = { name:str(d.meta.name).slice(0, 40), lastBackup:day(d.meta.lastBackup) };
+    if (isObj(d.meta.notDup)) out.meta.notDup = Object.fromEntries(Object.keys(d.meta.notDup).filter((k) => /^[A-Za-z0-9_~-]{1,170}$/.test(k)).map((k) => [k, true]));
+  }
   return out;
 }
 export const replaceAll = (data) => { const v = clone(data); return mutate((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, v); }); };
