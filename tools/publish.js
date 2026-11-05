@@ -1,12 +1,14 @@
 // 공개 반영: 앱에서 고친 책 정보·서평 연결을 data/public.json에 넣는다. 기록·메모·별점은 절대 옮기지 않는다.
 // 준비: npx.cmd firebase-tools database:get /users/<주인uid>/bookshelf --project timetable-af612 -o private.local.json
 // 사용: node tools/publish.js private.local.json   → 바뀐 개수만 출력. 그 뒤 git commit·push
+// 나만 보기(only): 켠 칸은 공개본에서 뺀다. 정한 적 없으면 책·영화가 아닌 칸은 나만 본다. js/app.js의 isOnlyMe와 같은 기준
 const fs = require('fs'), path = require('path');
 const OUT = path.join(__dirname, '..', 'data', 'public.json');
 const pub = JSON.parse(fs.readFileSync(OUT, 'utf8'));
 const priv = JSON.parse(fs.readFileSync(process.argv[2], 'utf8').replace(/^\uFEFF/, ''));
 const books = new Map(pub.books.map((b) => [b.id, b]));
 const works = priv.works || {};
+const isOnlyMe = (w) => w.only === undefined ? !['book','film'].includes(w.k || 'book') : !!w.only;
 let changed = 0, removed = 0, added = 0;
 const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || (w.wc ? '' : w.fd) || ''; /* 왓챠에서 온 작품은 공개본에 평가한 날을 넣지 않는다 */ const recs = w.recs || []; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; return o; };
 const posts = new Map(pub.posts.map((p) => [p.c, p]));
@@ -25,8 +27,8 @@ const reviewed = new Set([...posts.values()].flatMap((p) => p.w.map(movedTo)));
 Object.entries(works).forEach(([id, w]) => {
   w.id = id;
   const recs = w.recs || [];
-  const done = ((w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread')) || (w.k === 'film' && !!w.wc); // 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05)
-  if (w.del || (!done && !reviewed.has(id) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
+  const done = ((w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread')) || (w.k === 'film' && !!w.wc) /* 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05) */ || (w.only === false && !!w.t && !w.guess); // 나만 보기를 직접 푼 칸
+  if (w.del || isOnlyMe(w) || (!done && !(reviewed.has(id) && !!w.t && !w.guess) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
   const next = pick(w), prev = books.get(id);
   if (!prev) added++; else if (JSON.stringify(prev) !== JSON.stringify(next)) changed++;
   books.set(id, next);

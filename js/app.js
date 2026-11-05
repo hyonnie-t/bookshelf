@@ -17,7 +17,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
 const D = { pub:null, blog:[], works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 const movedTo = (id) => { let n = 0; while (D.moved.has(id) && n++ < 9) id = D.moved.get(id); return id; };
@@ -60,6 +60,9 @@ function rebuild() {
 }
 const titleOf = (w) => w.t || { book:'제목 미확인 책', film:'제목 미확인 영화', show:'제목 미확인 공연', trip:'여행 기록', other:'제목 없는 글', wishlist:'읽을 목록' }[w.k] || '제목 없음';
 const reviewsOf = (w) => D.byWork.get(w.id) || [];
+// 나만 보기: 직접 정한 값이 먼저다. 정한 적 없으면 책·영화가 아닌 칸(여행·공연·다른 글·읽을 목록)은 나만 본다. tools/publish.js와 같은 기준
+const isOnlyMe = (w) => w.only === undefined ? !['book','film'].includes(w.k || 'book') : !!w.only;
+const showsOnlyMe = (w) => S.owner && !LOCAL && isOnlyMe(w);
 const list = () => [...D.works.values()];
 // 다 읽은 기록이 없고 미완독·읽는 중 표시가 있는 책. 공개 화면은 public.json의 st로 안다
 const isReading = (w) => w.k === 'book' && !w.recs.some((r) => r.st !== 'unread') && (w.st === 'reading' || !!w.unread || w.recs.some((r) => r.st === 'unread') || w.notes.some((n) => n.s === 'reading'));
@@ -71,7 +74,8 @@ function matches(w) {
   if (!inShelfKind(w, S.kind)) return false;
   if (S.theme && !w.th.includes(S.theme)) return false;
   if (S.onlyIg && !reviewsOf(w).length) return false;
-  if (isHidden(w) && !S.q) return false; // 찾을 때는 숨긴 기록까지 찾아 준다
+  if (S.onlyMe && !showsOnlyMe(w)) return false;
+  if (isHidden(w) && !S.q && !S.onlyMe) return false; // 찾을 때는 숨긴 기록까지 찾아 준다
   if (S.q && !w.hay.includes(S.q.toLowerCase())) return false;
   return true;
 }
@@ -79,6 +83,7 @@ function chips() {
   const all = list().filter((w) => !isHidden(w));
   $('onlyIg').setAttribute('aria-pressed', S.onlyIg);
   $('showUnknown').setAttribute('aria-pressed', !S.hideUnknown);
+  if ($('onlyMe')) { $('onlyMe').setAttribute('aria-pressed', S.onlyMe); $('onlyMe').textContent = `나만 보기 ${list().filter(showsOnlyMe).length}`; }
   const count = (k) => all.filter((w) => inShelfKind(w, k)).length;
   const kinds = KINDS.filter(([k]) => k === 'all' ? false : count(k));
   const rows = kinds.length > 1 ? [...kinds, ['all','전체']] : [];
@@ -104,15 +109,16 @@ function spine(w) {
   const label = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
   const cols = label.length <= 8 ? 1 : label.length <= 16 ? 2 : 3;
   const len = rv.reduce((a, p) => a + p.x.length, 0) + w.notes.reduce((a, n) => a + (n.len || 0), 0);
-  const h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (w.guess || isReading(w) ? 18 : 0));
+  const mark = w.guess ? '추정' : isReading(w) ? '미완' : showsOnlyMe(w) ? '나만' : '';
+  const h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (mark ? 18 : 0));
   const wd = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9);
-  const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (w.guess || isReading(w) ? ' guess' : '') + (rv.length ? ' has-ig' : '') });
+  const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
   b.style.background = themeVar(w.th[0]);
   b.append(el('span', { textContent:label }));
-  if (w.guess || isReading(w)) b.append(el('i', { className:'est', textContent:w.guess ? '추정' : '미완' }));
+  if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
-  b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개`);
+  b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
   b.onclick = () => openBook(w.id, b);
   return el('div', { className:'slot' }, b);
 }
@@ -139,7 +145,7 @@ function renderShelf() {
   }
   if (!ys.length) {
     const reset = el('button', { className:'btn', type:'button', textContent:'조건 풀기' });
-    reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:false, onlyIg:false }); $('q').value = ''; renderShelf(); };
+    reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:false, onlyIg:false, onlyMe:false }); $('q').value = ''; renderShelf(); };
     $('shelves').replaceChildren(el('div', { className:'empty' }, el('div', { textContent:'조건에 맞는 책이 없어요. 종류나 주제를 바꿔 보세요.' }), reset));
     return;
   }
@@ -307,6 +313,32 @@ function openLib(libId, from) {
   S.cur = { lib:libId };
   renderTome({ t:it.t, a:it.a, p:it.p, k:'book', th:it.th, recs:[], notes:[] }, it, from);
 }
+const privateTag = () => LOCAL ? null : el('span', { className:'only-tag', textContent:'나만 보기' });
+// 공개 페이지(data/public.json)는 tools/publish.js로만 바뀐다. 그래서 지금 방문자에게 어떻게 보이는지를 그대로 적는다
+function onlyMeText(w) {
+  const on = isOnlyMe(w), rv = reviewsOf(w).some((p) => !p.blog);
+  const merged = [...D.moved].some(([from, to]) => to === w.id && (D.pub.books || []).some((b) => b.id === from)); // 이 칸에 합쳐졌지만 공개본에는 아직 남은 책
+  if (on && (w.pub || merged)) return '공개 페이지에는 아직 남아 있어요. 다음 공개 반영 때 내려가요.';
+  if (on) return rv ? '방문자에게 이 책이 안 보여요. 이어진 인스타 글은 공개로 남고 책 연결만 빠져요.' : '방문자에게 안 보여요.';
+  if (w.pub) return '방문자에게 책 정보(제목·저자·주제·날짜)와 인스타 글이 보여요. 기록과 메모는 나만 봐요.';
+  if (!w.t || w.guess) return '제목을 확인하기 전까지는 공개되지 않아요.';
+  const done = w.k === 'book' && w.known && w.recs.some((r) => r.st !== 'unread');
+  if (w.only === false || done || rv) return '다음 공개 반영 때 책 정보(제목·저자·주제·날짜)가 올라가요. 기록과 메모는 나만 봐요.';
+  return '아직 공개 페이지에 없어요. 다 읽은 기록을 남기면 다음 공개 반영 때 책 정보가 올라가요.';
+}
+function onlyMeBox(w) {
+  const input = el('input', { type:'checkbox', checked:isOnlyMe(w) });
+  input.onchange = async () => {
+    input.disabled = true;
+    const next = { ...w, only:input.checked };
+    if (!input.checked && ['book','film'].includes(w.k || 'book')) delete next.only;
+    try { await saveWork(next, input.checked ? '나만 보기로 바꿨어요' : '나만 보기를 풀었어요'); reshow(); }
+    catch (e) { console.error(e); input.checked = !input.checked; input.disabled = false; toast('바꾸지 못했어요'); }
+  };
+  return el('div', { className:'only-box' + (isOnlyMe(w) ? ' on' : '') },
+    el('label', { className:'check' }, input, ' 나만 보기'),
+    el('small', { textContent:onlyMeText(w) }));
+}
 function reshow() {
   if (!$('sheet').open || !S.cur) return;
   if (S.cur.lib) openLib(S.cur.lib, $('sheet').returnEl); else openBook(S.cur.id, $('sheet').returnEl);
@@ -335,7 +367,7 @@ function renderTome(w, item, from) {
       body.push(el('div', { className:'blank-page' }, kids));
     }
     if (w.recs.length) {
-      body.push(el('h3', { className:'sec', textContent:w.k === 'film' ? '내 감상 기록' : '내 독서 기록' }));
+      body.push(el('h3', { className:'sec' }, w.k === 'film' ? '내 감상 기록' : '내 독서 기록', privateTag()));
       w.recs.forEach((r, i) => {
         const score = r.r == null ? '' : starText(r.r);
         const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
@@ -348,7 +380,7 @@ function renderTome(w, item, from) {
       });
     }
     if (w.notes.length) {
-      body.push(el('h3', { className:'sec', textContent:`아이폰 메모 ${w.notes.length}` }));
+      body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, privateTag()));
       w.notes.forEach((n) => body.push(el('div', { className:'memo' },
         el('div', { className:'when', textContent:[n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음' }),
         n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }))));
@@ -360,6 +392,7 @@ function renderTome(w, item, from) {
       editBook.onclick = () => openBookForm(w);
       const merge = el('button', { className:'copy', type:'button', textContent:'같은 책과 합치기' });
       merge.onclick = () => openMergePick(w);
+      if (!LOCAL) left.push(onlyMeBox(w));
       left.push(el('div', { className:'actions' }, addRec, editBook, merge));
     }
   }
@@ -955,12 +988,14 @@ const earliest = (x, y) => [x, y].filter(Boolean).sort()[0] || '';
 async function mergeWorks(keep, drop) {
   // 옮긴 기록에 어디서 왔는지 표시한다. 되돌릴 때 이 표시로 찾으므로 합친 뒤 고친 내용도 함께 돌아간다
   const tag = (x) => ({ ...x, from:[...(x.from || []), drop.id] });
+  const src = isOnlyMe(drop) && !drop.only && !isOnlyMe(keep) ? { ...drop, t:'', a:'', p:'', th:[], known:false, guess:false, y:'', fd:'' } : drop;
   const recs = [...keep.recs, ...drop.recs.map(tag)].sort((x, y) => (x.d || '').localeCompare(y.d || ''));
-  const next = storedWork({ ...keep, t:keep.t || drop.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], a:keep.a || drop.a || '', p:keep.p || drop.p || '', th:[...new Set([...keep.th, ...drop.th])], known:!!(keep.known || drop.known), y:earliest(keep.y, drop.y), fd:earliest(keep.fd, drop.fd) });
+  const next = storedWork({ ...keep, t:keep.t || src.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], a:keep.a || src.a || '', p:keep.p || src.p || '', th:[...new Set([...keep.th, ...src.th])], known:!!(keep.known || src.known), y:earliest(keep.y, src.y), fd:earliest(keep.fd, src.fd) });
   if (recs.length) { if (recs.every((r) => r.st === 'unread')) next.unread = true; else delete next.unread; }
   else if (keep.unread || drop.unread) next.unread = true;
-  if (keep.guess && drop.known && !drop.guess) delete next.guess; // 확인된 책과 합쳤으면 더는 추정이 아니다
-  const was = { ...(keep.t ? {} : { t:'' }), a:keep.a || '', p:keep.p || '', th:keep.th, known:keep.known, unread:keep.unread, guess:keep.guess, y:keep.y || '', fd:keep.fd || '' };
+  if (keep.guess && src.known && !src.guess) delete next.guess; // 확인된 책과 합쳤으면 더는 추정이 아니다
+  if (keep.only || drop.only) next.only = true; // 한쪽이라도 나만 보기로 잠갔으면 합친 뒤에도 잠근다
+  const was = { ...(keep.t ? {} : { t:'' }), a:keep.a || '', p:keep.p || '', th:keep.th, known:keep.known, unread:keep.unread, guess:keep.guess, only:keep.only, y:keep.y || '', fd:keep.fd || '' };
   const gone = storedWork({ ...drop, recs:[], notes:[], del:true, into:keep.id, at:Date.now(), was });
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
@@ -982,7 +1017,7 @@ async function undoMerge(id) {
   const recs = keep.recs || [], notes = keep.notes || [];
   const back = JSON.parse(JSON.stringify({ ...rest, recs:recs.filter((x) => cameFrom(x, id)).map(stepBack), notes:notes.filter((x) => cameFrom(x, id)).map(stepBack) }));
   const next = JSON.parse(JSON.stringify({ ...keep, ...(was || {}), th:(was && was.th) || [], recs:recs.filter((x) => !cameFrom(x, id)), notes:notes.filter((x) => !cameFrom(x, id)) }));
-  ['unread', 'guess', 'known'].forEach((k) => { if (!was || was[k] === undefined) delete next[k]; }); // 합치기 전에 없던 표시는 지운다
+  ['unread', 'guess', 'known', 'only'].forEach((k) => { if (!was || was[k] === undefined) delete next[k]; }); // 합치기 전에 없던 표시는 지운다
   await write('works', { [stored.into]:next, [id]:back }, 'update');
   setPriv('works', stored.into, next);
   setPriv('works', id, back);
@@ -1202,7 +1237,7 @@ function leaveOwner() {
   if ($('form').open) $('form').close();
   if ($('sheet').open) $('sheet').close();
   $('sheet-body').replaceChildren(); $('form-body').replaceChildren();
-  S.owner = false; S.user = null; D.priv = {}; S.cur = null; S.lf = 'all'; S.lq = ''; S.lastWhere = ''; S.pastOpen = false; $('lq').value = '';
+  S.owner = false; S.user = null; D.priv = {}; S.cur = null; S.onlyMe = false; S.lf = 'all'; S.lq = ''; S.lastWhere = ''; S.pastOpen = false; $('lq').value = '';
   if (S.kind !== 'book') S.kind = 'book';
   if (S.view === 'library') show('shelf');
   renderWho(); refreshAll();
@@ -1227,6 +1262,7 @@ window.addEventListener('hashchange', route);
 $('q').addEventListener('input', (e) => { const had = !!S.q; S.q = e.target.value.trim(); if (S.q && !had) { S.prevKind = S.kind; S.kind = 'all'; } if (!S.q && had && S.prevKind) { S.kind = S.prevKind; S.prevKind = ''; } renderShelf(); });
 $('pq').addEventListener('input', (e) => { S.pq = e.target.value.trim(); renderPosts(true); });
 $('showUnknown').onclick = () => { S.hideUnknown = !S.hideUnknown; renderShelf(); setLede(); };
+if ($('onlyMe')) $('onlyMe').onclick = () => { S.onlyMe = !S.onlyMe; S.kind = S.onlyMe ? 'all' : 'book'; renderShelf(); };
 $('onlyIg').onclick = () => { S.onlyIg = !S.onlyIg; renderShelf(); };
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
