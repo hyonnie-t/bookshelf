@@ -130,7 +130,7 @@ function renderShelf() {
   $('count').textContent = `${rows.length}${unit}`;
   const byYear = {};
   rows.forEach((w) => { (byYear[w.y || '날짜 없음'] = byYear[w.y || '날짜 없음'] || []).push(w); });
-  const ys = Object.keys(byYear).sort((a, b) => b.localeCompare(a));
+  const ys = Object.keys(byYear).sort((a, b) => (a === '날짜 없음') - (b === '날짜 없음') || b.localeCompare(a)); // 날짜 없는 칸은 맨 아래
   if (LOCAL && !D.works.size) {
     const first = el('button', { className:'btn', type:'button', textContent:'첫 책 꽂기' });
     first.onclick = () => openBookForm(null);
@@ -326,7 +326,7 @@ function renderTome(w, item, from) {
   const rvBlog = rv.filter((p) => p.blog), rvIg = rv.filter((p) => !p.blog);
   if (rvBlog.length) body.push(el('h3', { className:'sec', textContent:`블로그 글 ${rvBlog.length}` }), rvBlog.map((p) => postBlock(p)));
   if (rvIg.length) body.push(el('h3', { className:'sec', textContent:`인스타 서평 ${rvIg.length}` }), rvIg.map((p) => postBlock(p, { ownerTools:true, inWork:w.id })));
-  else if (!S.owner) body.push(el('p', { className:'warn', textContent:'아직 쓴 서평이 없는 책이에요.' }));
+  else if (!S.owner) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
   if (S.owner) {
     left.push(libBox(item, w));
     if (!rv.length && !w.recs.length && !w.notes.length) {
@@ -363,7 +363,7 @@ function renderTome(w, item, from) {
       left.push(el('div', { className:'actions' }, addRec, editBook, merge));
     }
   }
-  const share = el('button', { className:'copy', type:'button', textContent:'이 책 링크 복사' });
+  const share = el('button', { className:'copy', type:'button', textContent:w.k === 'film' ? '이 작품 링크 복사' : '이 책 링크 복사' });
   share.onclick = () => copy(`${location.origin}${location.pathname}#book/${encodeURIComponent(w.id)}`);
   if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
