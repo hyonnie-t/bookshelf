@@ -60,7 +60,11 @@ export async function writePath(path, value) {
   const s = await load();
   await s.dbM.set(child(s, path), value);
 }
-export async function newId() {
+export async function updatePath(path, value) {
   const s = await load();
-  return s.dbM.push(child(s, 'works')).key;
+  await s.dbM.update(child(s, path), value);
+}
+export async function newId(path = 'works') {
+  const s = await load();
+  return s.dbM.push(child(s, path)).key;
 }
