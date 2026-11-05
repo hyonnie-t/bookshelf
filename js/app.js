@@ -14,8 +14,12 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:false, onlyIg:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null };
-const D = { pub:null, works:new Map(), posts:[], byWork:new Map(), priv:{} };
+const S = { kind:'book', theme:'', q:'', hideUnknown:false, onlyIg:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
+const D = { pub:null, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[] };
+const VIEWS = ['shelf', 'library', 'posts', 'recap'];
+const LIB_KINDS = [['all','전체'],['own','소장'],['out','빌려준 책'],['in','빌려 온 책'],['unread','아직 안 읽음']];
+const DEFAULT_WHERE = '내 책장';
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ---------- 데이터 ---------- */
 function rebuild() {
@@ -42,6 +46,8 @@ function rebuild() {
     if (!w.y) { const d = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0]; if (d) w.y = d.slice(0, 4); }
     if (!w.fd) w.fd = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0] || '';
   });
+  // 내 서재는 비공개 칸(library)에만 있다. 읽은 책과는 w로 이어질 뿐 섞지 않는다
+  D.lib = S.owner ? Object.entries(D.priv.library || {}).map(([id, v]) => ({ ...v, id, st:v.st || 'own', loans:v.loans || [], th:v.th || [] })) : [];
 }
 const titleOf = (w) => w.t || { book:'제목 미확인 책', film:'제목 미확인 영화', show:'제목 미확인 공연', trip:'여행 기록', other:'제목 없는 글', wishlist:'읽을 목록' }[w.k] || '제목 없음';
 const reviewsOf = (w) => D.byWork.get(w.id) || [];
@@ -157,23 +163,45 @@ function postBlock(p, { showBooks = false, ownerTools = false, inWork = null } =
   kids.push(foot);
   return el('article', { className:'memo post' }, kids);
 }
-function openBook(id, from) {
+function openBook(id, from, item) {
   const w = D.works.get(id);
   if (!w) { toast('이 책을 찾지 못했어요'); return; }
+  S.cur = item ? { lib:item.id } : { id };
+  renderTome(w, item || (S.owner ? libByWork(id) : null), from);
+}
+// 서재의 책: 읽은 책과 이어져 있으면 그 기록까지, 아니면 서재 정보만 펼친다
+function openLib(libId, from) {
+  const it = D.lib.find((x) => x.id === libId);
+  if (!it) { toast('이 책을 찾지 못했어요'); return; }
+  const w = libWork(it);
+  if (w) { openBook(w.id, from, it); return; }
+  S.cur = { lib:libId };
+  renderTome({ t:it.t, a:it.a, p:it.p, k:'book', th:it.th, recs:[], notes:[] }, it, from);
+}
+function reshow() {
+  if (!$('sheet').open || !S.cur) return;
+  if (S.cur.lib) openLib(S.cur.lib, $('sheet').returnEl); else openBook(S.cur.id, $('sheet').returnEl);
+}
+// 왼쪽 면은 책 정보, 오른쪽 면은 글. 폰에서는 한 면으로 이어진다
+function renderTome(w, item, from) {
   const close = el('button', { className:'close', type:'button', textContent:'×', ariaLabel:'닫기' });
-  close.onclick = () => $('sheet').close();
+  close.onclick = closeBook;
   const kindName = (KINDS.find((k) => k[0] === w.k) || [,''])[1];
   const rv = reviewsOf(w);
-  const body = [
-    el('div', { className:'sheet-head' },
-      el('div', { style:'min-width:0' }, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:[w.a, w.p, kindName === '책' ? '' : kindName].filter(Boolean).join(' · ') })),
-      close),
-  ];
-  if (w.th.length) body.push(el('div', {}, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
-  if (w.guess && S.owner) body.push(el('p', { className:'warn', textContent:'제목과 저자는 메모 내용으로 추정한 것이에요. 틀렸으면 고쳐 주세요.' }));
+  const byline = [w.a, w.p, kindName === '책' ? '' : kindName].filter(Boolean).join(' · ');
+  const left = [el('div', { className:'title-page' }, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }))];
+  if (w.th.length) left.push(el('div', { className:'title-tags' }, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
+  if (w.guess && S.owner) left.push(el('p', { className:'warn', textContent:'제목과 저자는 메모 내용으로 추정한 것이에요. 틀렸으면 고쳐 주세요.' }));
+  const body = [];
   if (rv.length) body.push(el('h3', { className:'sec', textContent:`인스타 서평 ${rv.length}` }), rv.map((p) => postBlock(p, { ownerTools:true, inWork:w.id })));
   else if (!S.owner) body.push(el('p', { className:'warn', textContent:'아직 쓴 서평이 없는 책이에요.' }));
   if (S.owner) {
+    left.push(libBox(item, w));
+    if (!rv.length && !w.recs.length && !w.notes.length) {
+      const kids = [el('p', { className:'warn', textContent:w.id ? '아직 남긴 글이 없어요.' : '아직 읽은 기록이 없어요.' })];
+      if (!w.id) { const go = el('button', { className:'btn', type:'button', textContent:'읽고 기록 남기기' }); go.onclick = () => openBookForm(null, { pre:item }); kids.push(go); }
+      body.push(el('div', { className:'blank-page' }, kids));
+    }
     if (w.recs.length) {
       body.push(el('h3', { className:'sec', textContent:'내 독서 기록' }));
       w.recs.forEach((r, i) => {
@@ -193,29 +221,66 @@ function openBook(id, from) {
         el('div', { className:'when', textContent:[n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음' }),
         n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }))));
     }
-    const addRec = el('button', { className:'btn', type:'button', textContent:'기록 더하기' });
-    addRec.onclick = () => openRecForm(w, -1);
-    const editBook = el('button', { className:'btn ghost', type:'button', textContent:'책 정보 고치기' });
-    editBook.onclick = () => openBookForm(w);
-    body.push(el('div', { className:'actions' }, addRec, editBook));
+    if (w.id) {
+      const addRec = el('button', { className:'btn', type:'button', textContent:'기록 더하기' });
+      addRec.onclick = () => openRecForm(w, -1);
+      const editBook = el('button', { className:'btn ghost', type:'button', textContent:'책 정보 고치기' });
+      editBook.onclick = () => openBookForm(w);
+      left.push(el('div', { className:'actions' }, addRec, editBook));
+    }
   }
   const share = el('button', { className:'copy', type:'button', textContent:'이 책 링크 복사' });
   share.onclick = () => copy(`${location.origin}${location.pathname}#book/${encodeURIComponent(w.id)}`);
-  if (w.pub) body.push(el('div', { className:'memo-foot share' }, share));
-  $('sheet-body').replaceChildren(...body.flat());
+  if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
+  // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
+  const flip = el('div', { className:'flip' },
+    el('div', { className:'flip-front' }, el('strong', { textContent:titleOf(w) }), w.a ? el('span', { textContent:w.a }) : null),
+    el('div', { className:'flip-back' }));
+  flip.setAttribute('aria-hidden', 'true');
+  flip.firstChild.style.backgroundColor = themeVar(w.th[0]);
+  const rightLeaf = el('div', { className:'leaf r', tabIndex:0 }, body.flat());
+  rightLeaf.setAttribute('role', 'region');
+  rightLeaf.setAttribute('aria-label', '서평과 기록');
+  const tome = $('sheet-body');
+  tome.replaceChildren(el('div', { className:'pages' }, el('div', { className:'leaf l' }, left), rightLeaf), close, flip);
   if (from || !$('sheet').open) $('sheet').returnEl = from;
-  if (!$('sheet').open) { $('sheet').showModal(); pushDlg('sheet'); }
-  $('sheet').scrollTop = 0;
+  if (!$('sheet').open) {
+    clearTimeout(tomeT);
+    tome.classList.remove('closing', 'opening');
+    $('sheet').showModal(); pushDlg('sheet');
+    if (!calm()) { tome.classList.add('opening'); tomeT = setTimeout(() => tome.classList.remove('opening'), 760); }
+  }
 }
-$('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) $('sheet').close(); });
-$('sheet').addEventListener('close', () => { const r = $('sheet').returnEl; if (r && r.isConnected) r.focus(); popDlg('sheet'); });
+let tomeT;
+function closeBook() {
+  const s = $('sheet'), tome = $('sheet-body');
+  if (!s.open || tome.classList.contains('closing')) return;
+  if (calm()) { s.close(); return; }
+  clearTimeout(tomeT);
+  tome.classList.remove('opening');
+  tome.classList.add('closing');
+  tomeT = setTimeout(() => { if (s.open) s.close(); }, 320);
+}
+$('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeBook(); });
+$('sheet').addEventListener('cancel', (e) => { e.preventDefault(); closeBook(); });
+$('sheet').addEventListener('close', () => {
+  clearTimeout(tomeT);
+  $('sheet-body').classList.remove('closing', 'opening');
+  let r = $('sheet').returnEl;
+  if (r && !r.isConnected && r.dataset.lib) r = [...document.querySelectorAll('.lbook')].find((b) => b.dataset.lib === r.dataset.lib); // 저장으로 책장을 다시 그렸을 때
+  if (r && r.isConnected) r.focus();
+  popDlg('sheet');
+});
 // 창을 열 때 기록을 하나 쌓아, 폰의 뒤로 가기가 앱을 떠나지 않고 창만 닫게 한다
 function pushDlg(id) { try { history.pushState({ dlg:id }, '', location.href); } catch (e) {} }
-function popDlg(id) { if (history.state && history.state.dlg === id) history.back(); }
+// 양식과 책 창이 한꺼번에 닫히면 앞의 back이 끝나기 전에 뒤의 창이 닫히므로, 진행 중인 back을 세어 함께 뺀다
+let popping = 0;
+function popDlg(id) { if (popping || (history.state && history.state.dlg === id)) { popping++; history.back(); } }
 window.addEventListener('popstate', () => {
+  popping = Math.max(0, popping - 1);
   const top = history.state && history.state.dlg;
   if ($('form').open && top !== 'form') $('form').close();
-  if ($('sheet').open && top !== 'form' && top !== 'sheet') $('sheet').close();
+  if ($('sheet').open && top !== 'form' && top !== 'sheet') closeBook();
   if (!top && location.hash.startsWith('#book/')) history.replaceState(null, '', location.pathname + location.search);
 });
 
@@ -287,15 +352,302 @@ function renderRecap() {
   box.replaceChildren(...cards.filter(Boolean));
 }
 
+/* ---------- 내 서재 ---------- */
+const openLoan = (it) => it.loans.find((l) => !l.back);
+const isActive = (it) => it.st === 'own' || !!openLoan(it); // 빌려 온 책을 돌려주면 서가에서 빠지고 기록만 남는다
+const libWork = (it) => (it.w ? D.works.get(it.w) : null);
+const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
+const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !w.unread; };
+const libThemes = (it) => (it.th.length ? it.th : (libWork(it) || {}).th || []);
+const isLate = (l) => !!l.due && !l.back && l.due < today();
+const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
+function libMatches(it) {
+  const l = openLoan(it);
+  if (S.lf === 'own' && it.st !== 'own') return false;
+  if (S.lf === 'out' && !(l && l.dir === 'out')) return false;
+  if (S.lf === 'in' && it.st !== 'in') return false;
+  if (S.lf === 'unread' && libRead(it)) return false;
+  if (!S.lq) return true;
+  return [it.t, it.a, it.p, it.where, ...it.loans.map((x) => x.who)].filter(Boolean).join(' ').toLowerCase().includes(S.lq.toLowerCase());
+}
+function caseBook(it) {
+  const l = openLoan(it), out = !!l && l.dir === 'out';
+  const title = it.t || '제목 없음', th = libThemes(it);
+  // 플랫한 색면에 얇은 줄과 저자만 더한다(효니 선택 2026-11-05). 빌려준 책은 빈자리로 보인다
+  const label = title.length > 24 ? title.slice(0, 23) + '…' : title;
+  const sub = out ? `${l.who.slice(0, 6)}에게` : (it.a || '').split(/[\/,]/)[0].trim().slice(0, 6);
+  const h = 146 + Math.abs(hash(title)) % 50;
+  const perCol = Math.max(5, Math.floor((h - 30 - sub.length * 12) / 15));
+  const cols = Math.min(3, Math.ceil(label.length / perCol));
+  const b = el('button', { type:'button', className:`spine lbook band${Math.abs(hash(title + it.id)) % 3}${out ? ' gone' : ''}` });
+  b.style.height = h + 'px';
+  b.style.width = 14 + cols * 18 + Math.abs(hash(title + 'w')) % 14 + 'px';
+  if (!out) b.style.background = themeVar(th[0]);
+  b.append(el('span', { textContent:label }));
+  if (sub) b.append(el('small', { textContent:sub }));
+  const status = it.st === 'in' ? `${l.who}에게서 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
+  b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
+  b.title = [title, status].join(' · ');
+  b.dataset.lib = it.id;
+  b.onclick = () => openLib(it.id, b);
+  return el('div', { className:'lslot' }, b);
+}
+function ledgerRow(it, l) {
+  const i = it.loans.indexOf(l);
+  const name = el('button', { className:'ledger-title', type:'button', textContent:it.t || '제목 없음' });
+  name.onclick = () => openLib(it.id, name);
+  const meta = [l.dir === 'out' ? `${l.who}에게` : `${l.who}에게서`, l.d ? `${l.d} 빌림` : '', l.due ? `${l.due}까지` : '', l.back ? `${l.back} 돌아옴` : ''].filter(Boolean).join(' · ');
+  const tools = el('div', { className:'ledger-tools' });
+  if (!l.back) tools.append(backButton(it, i));
+  const fix = el('button', { className:'copy', type:'button', textContent:'고치기' });
+  fix.onclick = () => openLoanForm(it, i);
+  tools.append(fix);
+  return el('li', { className:'ledger-row' + (isLate(l) ? ' late' : '') },
+    el('div', { className:'ledger-main' }, name, el('div', { className:'when', textContent:meta }), isLate(l) ? el('strong', { className:'late-tag', textContent:'약속한 날 지남' }) : null), tools);
+}
+function backButton(it, i) {
+  const l = it.loans[i];
+  const b = el('button', { className:'copy', type:'button', textContent:l.dir === 'out' ? '돌려받았어요' : '돌려줬어요' });
+  b.onclick = () => {
+    const loans = it.loans.map((x, n) => (n === i ? { ...x, back:today() } : x));
+    saveLib({ ...it, loans }, l.dir === 'out' ? '서가에 다시 꽂았어요' : '돌려준 기록을 남겼어요').then(reshow).catch(saveFailed);
+  };
+  return b;
+}
+const saveFailed = (e) => { console.error(e); toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); };
+function renderLedger() {
+  const loans = D.lib.flatMap((it) => it.loans.map((l) => [it, l]));
+  const byDue = (a, b) => (a[1].due || '9').localeCompare(b[1].due || '9');
+  const open = loans.filter(([, l]) => !l.back);
+  const out = open.filter(([, l]) => l.dir === 'out').sort(byDue), inn = open.filter(([, l]) => l.dir === 'in').sort(byDue);
+  const past = loans.filter(([, l]) => l.back).sort((a, b) => b[1].back.localeCompare(a[1].back));
+  const part = (title, rows) => (rows.length ? el('section', { className:'ledger-part' }, el('h3', { className:'sec', textContent:`${title} ${rows.length}` }), el('ul', { className:'ledger-list' }, rows.map(([it, l]) => ledgerRow(it, l)))) : null);
+  const kids = [part('빌려준 책', out), part('빌려 온 책', inn)].filter(Boolean);
+  if (past.length) {
+    const box = el('details', { className:'ledger-part', open:S.pastOpen }, el('summary', { textContent:`지난 기록 ${past.length}` }), el('ul', { className:'ledger-list' }, past.map(([it, l]) => ledgerRow(it, l))));
+    box.ontoggle = () => { S.pastOpen = box.open; };
+    kids.push(box);
+  }
+  if (!kids.length && D.lib.length) kids.push(el('p', { className:'warn', textContent:'책장의 책을 누르면 빌려준 기록을 남길 수 있어요.' }));
+  $('ledger').replaceChildren(...kids);
+}
+function renderLibrary() {
+  if (!S.owner) { ['cases', 'ledger', 'libKinds'].forEach((id) => $(id).replaceChildren()); $('lcount').textContent = ''; return; }
+  const act = D.lib.filter(isActive);
+  const count = { all:act.length, own:act.filter((x) => x.st === 'own').length, out:act.filter((x) => { const l = openLoan(x); return l && l.dir === 'out'; }).length, in:act.filter((x) => x.st === 'in').length, unread:act.filter((x) => !libRead(x)).length };
+  $('libKinds').replaceChildren(...LIB_KINDS.map(([k, label]) => {
+    const b = el('button', { className:'chip', type:'button', textContent:`${label} ${count[k]}` });
+    b.setAttribute('aria-pressed', S.lf === k);
+    b.onclick = () => { S.lf = k; renderLibrary(); };
+    return b;
+  }));
+  const rows = act.filter(libMatches);
+  $('lcount').textContent = `${rows.length}권`;
+  renderLedger();
+  if (!act.length) {
+    const one = el('button', { className:'btn', type:'button', textContent:'한 권 꽂기' }); one.onclick = () => openLibForm(null);
+    const many = el('button', { className:'btn ghost', type:'button', textContent:'여러 권 한꺼번에 꽂기' }); many.onclick = openManyForm;
+    $('cases').replaceChildren(el('section', { className:'lib-group' }, el('div', { className:'empty' }, el('div', { textContent:'아직 꽂은 책이 없어요. 가진 책과 빌려 온 책을 꽂아 보세요.' }), el('div', { className:'actions' }, one, many)), el('div', { className:'case' })));
+    return;
+  }
+  if (!rows.length) {
+    const reset = el('button', { className:'btn', type:'button', textContent:'조건 풀기' });
+    reset.onclick = () => { S.lf = 'all'; S.lq = ''; $('lq').value = ''; renderLibrary(); };
+    $('cases').replaceChildren(el('div', { className:'empty' }, el('div', { textContent:'조건에 맞는 책이 없어요.' }), reset));
+    return;
+  }
+  const groups = new Map();
+  rows.filter((x) => x.st === 'own').forEach((x) => { const k = x.where || DEFAULT_WHERE; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+  const order = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], 'ko'));
+  const inn = rows.filter((x) => x.st === 'in');
+  if (inn.length) order.push(['빌려 온 책', inn]);
+  // 주제 색이 모이도록 주제, 제목 순으로 꽂는다
+  const key = (x) => (libThemes(x)[0] || '힣') + (x.t || '');
+  $('cases').replaceChildren(...order.map(([name, books]) => el('section', { className:'lib-group shelf' },
+    el('div', { className:'shelf-head' }, el('h2', { textContent:name }), el('span', { textContent:`${books.length}권` })),
+    el('div', { className:'case' }, [...books].sort((a, b) => key(a).localeCompare(key(b), 'ko')).map(caseBook)))));
+  watch('.lib-group.shelf');
+}
+function libBox(it, w) {
+  if (!it) {
+    const add = el('button', { className:'btn ghost', type:'button', textContent:'내 서재에 꽂기' });
+    add.onclick = () => openLibForm(null, { work:w });
+    return el('div', { className:'libbox' }, add);
+  }
+  const l = openLoan(it);
+  const state = it.st === 'in' ? (l ? `빌려 온 책 · ${l.who}에게서` : '빌렸다가 돌려준 책') : l ? `소장 · 지금 ${l.who}에게 빌려줌` : `소장 · ${it.where || DEFAULT_WHERE}`;
+  const kids = [el('h3', { className:'sec', textContent:'내 서재' }), el('p', { className:'libstate', textContent:state })];
+  it.loans.forEach((x, i) => {
+    const fix = el('button', { className:'copy', type:'button', textContent:'고치기' });
+    fix.onclick = () => openLoanForm(it, i);
+    const text = [x.dir === 'out' ? `${x.who}에게` : `${x.who}에게서`, x.d, x.due ? `${x.due}까지` : '', x.back ? `${x.back} 돌아옴` : ''].filter(Boolean).join(' · ');
+    kids.push(el('div', { className:'loanline' + (isLate(x) ? ' late' : '') }, el('span', { textContent:text }), fix));
+  });
+  const tools = el('div', { className:'actions' });
+  if (l) tools.append(backButton(it, it.loans.indexOf(l)));
+  else if (it.st === 'own') { const lend = el('button', { className:'copy', type:'button', textContent:'빌려주기' }); lend.onclick = () => openLoanForm(it, -1); tools.append(lend); }
+  if (it.st === 'in') {
+    const mine = el('button', { className:'copy', type:'button', textContent:'내 책이 됐어요' });
+    mine.onclick = () => {
+      const loans = it.loans.map((x) => (x.back ? x : { ...x, back:today() }));
+      saveLib({ ...it, st:'own', loans }, '내 책으로 옮겼어요').then(reshow).catch(saveFailed);
+    };
+    tools.append(mine);
+  }
+  const edit = el('button', { className:'copy', type:'button', textContent:'서재 정보 고치기' });
+  edit.onclick = () => openLibForm(it);
+  tools.append(edit);
+  kids.push(tools);
+  return el('div', { className:'libbox' }, kids);
+}
+async function saveLib(it, msg) {
+  const data = JSON.parse(JSON.stringify(it));
+  delete data.id;
+  await write(`library/${it.id}`, data);
+  setPriv('library', it.id, data);
+  refreshAll();
+  toast(msg);
+}
+const newLibId = (n = 0) => (DEMO ? Promise.resolve(`demo${Date.now()}${n}`) : fb.newId('library'));
+function nameList(id, names) { return el('datalist', { id }, [...new Set(names.filter(Boolean))].map((v) => el('option', { value:v }))); }
+function whereInput(value) {
+  const i = el('input', { type:'text', value, placeholder:DEFAULT_WHERE });
+  i.setAttribute('list', 'whereNames');
+  return i;
+}
+const whereList = () => nameList('whereNames', D.lib.map((x) => x.where));
+function openLibForm(it, { work } = {}) {
+  const isNew = !it, seed = it || work || {};
+  let newId = '';
+  const pickr = bookPicker(true);
+  const t = pickr.input;
+  t.value = seed.t || '';
+  const a = el('input', { type:'text', value:seed.a || '' });
+  const p = el('input', { type:'text', value:seed.p || '' });
+  const where = whereInput(it ? it.where || '' : S.lastWhere);
+  const th = themeChecks(seed.th || []);
+  t.addEventListener('change', () => {
+    const hit = pickr.pick();
+    if (!hit) return;
+    t.value = hit.t; a.value = hit.a || ''; p.value = hit.p || '';
+    th.querySelectorAll('input').forEach((c) => { c.checked = hit.th.includes(c.value); });
+  });
+  const kids = [field('제목', t, '읽은 책에 있으면 목록에서 골라 주세요. 서평과 이어져요'), pickr.dl, field('저자', a), field('출판사', p)];
+  let st, who, d, due;
+  if (isNew) {
+    st = el('select', {}, el('option', { value:'own', textContent:'내 책' }), el('option', { value:'in', textContent:'빌려 온 책' }));
+    who = el('input', { type:'text' }); who.setAttribute('list', 'peopleNames');
+    d = el('input', { type:'date', value:today() }); due = el('input', { type:'date' });
+    const loanBox = el('div', { className:'sub-fields', hidden:true }, field('누구에게서', who), nameList('peopleNames', D.lib.flatMap((x) => x.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due));
+    const whereField = field('어느 칸에 꽂을까요', where, '집, 교무실처럼 적으면 칸이 나뉘어요. 비워도 돼요');
+    st.onchange = () => { loanBox.hidden = st.value !== 'in'; whereField.hidden = st.value === 'in'; };
+    kids.push(field('구분', st), loanBox, whereField, whereList());
+  } else if (it.st === 'own') kids.push(field('어느 칸에 꽂을까요', where), whereList());
+  kids.push(field('주제', th, '책등 색이 이 주제로 정해져요'));
+  const save = async () => {
+    const hit = pickr.pick();
+    const title = hit ? hit.t : t.value.trim();
+    if (!title) throw fail('제목을 적어 주세요');
+    if (isNew && D.lib.some((x) => isActive(x) && norm(x.t) === norm(title))) throw fail('이미 내 서재에 있는 책이에요');
+    const link = hit ? hit.id : it && it.t === title ? it.w || '' : work && work.t === title ? work.id : '';
+    if (isNew && !newId) newId = await newLibId(); // 저장을 다시 눌러도 같은 칸에 쓰여 책이 겹치지 않는다
+    const base = isNew ? { id:newId, st:st.value, added:today(), loans:[] } : { ...it };
+    Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), w:link, th:th.values() });
+    if (base.st === 'own') { base.where = where.value.trim(); S.lastWhere = base.where; }
+    if (isNew && base.st === 'in') {
+      if (!who.value.trim()) throw fail('누구에게서 빌렸는지 적어 주세요');
+      base.loans = [{ dir:'in', who:who.value.trim(), d:d.value, due:due.value }];
+    }
+    S.lf = 'all';
+    await saveLib(base, isNew ? '서재에 꽂았어요' : '고쳤어요');
+    reshow();
+  };
+  if (it) {
+    const del = el('button', { className:'copy danger', type:'button', textContent:'서재에서 빼기' });
+    del.onclick = async () => {
+      if (!confirm(`«${it.t}»을 내 서재에서 뺄까요? 빌린 기록도 함께 지워져요.`)) return;
+      try {
+        await write(`library/${it.id}`, null);
+        setPriv('library', it.id, null);
+        const stay = S.cur && S.cur.id;
+        refreshAll();
+        $('form').close();
+        if (stay) reshow(); else if ($('sheet').open) $('sheet').close();
+        toast('서재에서 뺐어요');
+      } catch (e) { saveFailed(e); }
+    };
+    kids.push(el('div', { className:'memo-foot' }, del));
+  }
+  showForm(isNew ? '내 서재에 꽂기' : '서재 정보 고치기', kids, save);
+}
+function openManyForm() {
+  const x = el('textarea', { rows:10, placeholder:'한 줄에 한 권씩 적어 주세요\n이방인 / 알베르 카뮈\n코스모스' });
+  const where = whereInput(S.lastWhere);
+  const ids = new Map(); // 저장을 다시 눌러도 같은 줄은 같은 칸에 쓰인다
+  showForm('여러 권 한꺼번에 꽂기', [field('책 목록', x, '«제목 / 저자»로 적어요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), field('어느 칸에 꽂을까요', where, '비워도 돼요'), whereList()], async () => {
+    const lines = x.value.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
+    const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t)));
+    const works = new Map(list().filter((w) => w.t && w.k === 'book').map((w) => [norm(w.t), w]));
+    const add = {};
+    let linked = 0, skipped = 0, n = 0;
+    for (const line of lines) {
+      const [rawT, ...rest] = line.split(/\s+\/\s+/); // AC/DC처럼 제목 속 빗금은 자르지 않는다
+      const title = rawT.trim(), author = rest.join(' / ').trim();
+      if (!title || have.has(norm(title))) { skipped++; continue; }
+      have.add(norm(title));
+      const hit = works.get(norm(title));
+      if (hit) linked++;
+      if (!ids.has(norm(title))) ids.set(norm(title), await newLibId(ids.size));
+      n++;
+      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : ''), p:hit ? hit.p || '' : '', w:hit ? hit.id : '', th:hit ? hit.th : [], st:'own', where:where.value.trim(), added:today(), loans:[] };
+    }
+    if (!n) throw fail('새로 꽂을 책이 없어요. 모두 이미 서재에 있어요.');
+    await write('library', add, 'update');
+    Object.entries(add).forEach(([id, v]) => setPriv('library', id, JSON.parse(JSON.stringify(v))));
+    S.lastWhere = where.value.trim(); S.lf = 'all';
+    refreshAll();
+    toast([`${n}권 꽂았어요`, linked ? `읽은 책과 이은 책 ${linked}권` : '', skipped ? `이미 있는 책 ${skipped}권은 뺐어요` : ''].filter(Boolean).join(' · '));
+  }, '꽂기');
+}
+function openLoanForm(it, i) {
+  const editing = i >= 0, l = editing ? it.loans[i] : { dir:'out' };
+  const who = el('input', { type:'text', required:true, value:l.who || '' });
+  who.setAttribute('list', 'peopleNames');
+  const d = el('input', { type:'date', value:editing ? l.d || '' : today() });
+  const due = el('input', { type:'date', value:l.due || '' });
+  const back = el('input', { type:'date', value:l.back || '' });
+  const kids = [field(l.dir === 'out' ? '누구에게' : '누구에게서', who), nameList('peopleNames', D.lib.flatMap((x) => x.loans.map((y) => y.who))), field(l.dir === 'out' ? '빌려준 날' : '빌린 날', d), field(l.dir === 'out' ? '돌려받기로 한 날' : '돌려주기로 한 날', due, '정하지 않았으면 비워 두세요')];
+  if (editing) kids.push(field('돌아온 날', back, '아직 안 돌아왔으면 비워 두세요'));
+  const save = async () => {
+    if (!who.value.trim()) throw fail('이름을 적어 주세요');
+    const next = { ...l, who:who.value.trim(), d:d.value, due:due.value };
+    if (editing && back.value) next.back = back.value; else delete next.back;
+    const loans = [...it.loans];
+    if (editing) loans[i] = next; else loans.push(next);
+    await saveLib({ ...it, loans }, editing ? '고쳤어요' : '빌려준 기록을 남겼어요');
+    reshow();
+  };
+  if (editing && l.dir === 'out') {
+    const del = el('button', { className:'copy danger', type:'button', textContent:'이 기록 지우기' });
+    del.onclick = async () => {
+      if (!confirm('이 기록을 지울까요?')) return;
+      try { await saveLib({ ...it, loans:it.loans.filter((_, n) => n !== i) }, '기록을 지웠어요'); $('form').close(); reshow(); } catch (e) { saveFailed(e); }
+    };
+    kids.push(el('div', { className:'memo-foot' }, del));
+  }
+  showForm(editing ? '빌린 기록 고치기' : `«${it.t}» 빌려주기`, kids, save);
+}
+
 /* ---------- 저장 ---------- */
-async function write(path, value) {
+async function write(path, value, how) {
   if (DEMO) { console.info('[demo] 저장 안 함', path); return; }
   if (navigator.onLine === false) throw fail('인터넷이 끊겨 있어요. 연결되면 다시 눌러 주세요.');
   // Firebase 저장은 끊기면 응답 없이 기다리므로 시간을 정해 알린다. 늦게라도 연결되면 저장될 수 있다
-  await Promise.race([fb.writePath(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
+  await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderPosts(); renderRecap(); setLede(); };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); setLede(); };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, pub, ...rest } = w;
@@ -347,14 +699,15 @@ function ratingSelect(v) {
   s.value = v == null ? '' : String(v);
   return s;
 }
-function openBookForm(w) {
-  const isNew = !w;
-  const t = el('input', { type:'text', required:true, value:w ? w.t || '' : '' });
-  const a = el('input', { type:'text', value:w ? w.a || '' : '' });
-  const p = el('input', { type:'text', value:w ? w.p || '' : '' });
+function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽은 책으로 옮길 때
+  const isNew = !w, seed = w || pre || {};
+  let newId = ''; // 저장을 다시 눌러도 같은 칸에 쓰여 책이 겹치지 않는다
+  const t = el('input', { type:'text', required:true, value:seed.t || '' });
+  const a = el('input', { type:'text', value:seed.a || '' });
+  const p = el('input', { type:'text', value:seed.p || '' });
   const k = el('select', {}, ...KINDS.filter(([x]) => x !== 'all').map(([x, l]) => el('option', { value:x, textContent:l })));
   k.value = w ? w.k : 'book';
-  const th = themeChecks(w ? w.th : []);
+  const th = themeChecks(seed.th || []);
   const kids = [field('제목', t), field('저자', a), field('출판사', p), field('종류', k), field('주제', th)];
   let d, r, l, b;
   if (isNew) {
@@ -364,11 +717,13 @@ function openBookForm(w) {
   const save = async () => {
     const title = t.value.trim();
     if (!title) throw fail('제목을 적어 주세요');
-    const base = isNew ? { id: DEMO ? `demo${Date.now()}` : await fb.newId(), recs:[], notes:[], known:true } : { ...w };
+    if (isNew && !newId) newId = DEMO ? `demo${Date.now()}` : await fb.newId();
+    const base = isNew ? { id:newId, recs:[], notes:[], known:true } : { ...w };
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), k:k.value, th:th.values(), known:true });
     delete base.guess;
     if (isNew) { base.recs = [{ d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
-    await saveWork(base, isNew ? '책장에 꽂았어요' : '고쳤어요');
+    await saveWork(base, isNew ? '읽은 책에 꽂았어요' : '고쳤어요');
+    if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
     else { // 다른 종류를 보고 있어도 꽂힌 걸 바로 보여 준다. 양식의 기록이 먼저 빠진 뒤 연다
       let tries = 0;
@@ -481,27 +836,33 @@ function leaveOwner() {
   if ($('form').open) $('form').close();
   if ($('sheet').open) $('sheet').close();
   $('sheet-body').replaceChildren(); $('form-body').replaceChildren();
-  S.owner = false; S.user = null; D.priv = {};
+  S.owner = false; S.user = null; D.priv = {}; S.cur = null; S.lf = 'all'; S.lq = ''; S.lastWhere = ''; S.pastOpen = false; $('lq').value = '';
   if (S.kind !== 'book') S.kind = 'book';
+  if (S.view === 'library') show('shelf');
   renderWho(); refreshAll();
 }
 function show(v, quiet) {
-  ['shelf', 'posts', 'recap'].forEach((x) => { $(`view-${x}`).hidden = x !== v; $(`tab-${x}`).setAttribute('aria-selected', x === v); });
+  if (v === 'library' && !S.owner) return;
+  S.view = v;
+  VIEWS.forEach((x) => { $(`view-${x}`).hidden = x !== v; $(`tab-${x}`).setAttribute('aria-selected', x === v); });
+  $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
   if (v === 'posts') watch('.rise');
 }
-['shelf', 'posts', 'recap'].forEach((v) => { $(`tab-${v}`).onclick = () => show(v); });
+VIEWS.forEach((v) => { $(`tab-${v}`).onclick = () => show(v); });
 function route() {
   const h = location.hash;
   if (h.startsWith('#book/')) { let id = ''; try { id = decodeURIComponent(h.slice(6)); } catch (e) {} show('shelf', true); openBook(id); return; }
-  if (['#posts', '#recap', '#shelf'].includes(h)) show(h.slice(1), true);
+  if (VIEWS.map((v) => `#${v}`).includes(h)) show(h.slice(1), true);
 }
 window.addEventListener('hashchange', route);
 $('q').addEventListener('input', (e) => { const had = !!S.q; S.q = e.target.value.trim(); if (S.q && !had) { S.prevKind = S.kind; S.kind = 'all'; } if (!S.q && had && S.prevKind) { S.kind = S.prevKind; S.prevKind = ''; } renderShelf(); });
 $('pq').addEventListener('input', (e) => { S.pq = e.target.value.trim(); renderPosts(true); });
 $('hideUnknown').addEventListener('change', (e) => { S.hideUnknown = e.target.checked; renderShelf(); });
 $('onlyIg').addEventListener('change', (e) => { S.onlyIg = e.target.checked; renderShelf(); });
-$('addBook').onclick = () => openBookForm(null);
+$('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
+$('addMany').onclick = () => openManyForm();
+$('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : openBookForm(null));
 $('addPost').onclick = () => openPostForm();
 $('form').addEventListener('click', (e) => { if (e.target === $('form')) $('form').close(); });
 $('form').addEventListener('close', () => {

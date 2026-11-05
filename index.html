@@ -23,7 +23,8 @@
     <div class="who" id="who"></div>
   </header>
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-shelf" aria-selected="true" aria-controls="view-shelf">책장</button>
+    <button class="tab" role="tab" id="tab-shelf" aria-selected="true" aria-controls="view-shelf">읽은 책</button>
+    <button class="tab owner-only" role="tab" id="tab-library" aria-selected="false" aria-controls="view-library" hidden>내 서재</button>
     <button class="tab" role="tab" id="tab-posts" aria-selected="false" aria-controls="view-posts">서평</button>
     <button class="tab" role="tab" id="tab-recap" aria-selected="false" aria-controls="view-recap">돌아보기</button>
   </div>
@@ -41,6 +42,19 @@
     <div id="shelves"></div>
     <p class="note" id="foot"></p>
   </section>
+  <section id="view-library" role="tabpanel" aria-labelledby="tab-library" hidden>
+    <div class="filters">
+      <div class="row" id="libKinds" role="group" aria-label="서재 보기"></div>
+      <div><button class="copy" id="addMany" type="button">+ 여러 권 한꺼번에 꽂기</button></div>
+    </div>
+    <div class="bar">
+      <input class="search" id="lq" type="search" placeholder="제목, 저자, 빌린 사람 찾기" aria-label="서재에서 찾기">
+      <span class="count" id="lcount" aria-live="polite"></span>
+    </div>
+    <div id="cases"></div>
+    <div id="ledger"></div>
+    <p class="note">내 서재와 빌린 기록은 로그인한 나에게만 보여요.</p>
+  </section>
   <section id="view-posts" role="tabpanel" aria-labelledby="tab-posts" hidden>
     <div class="filters">
       <div class="row" id="postKinds" role="group" aria-label="글 종류"></div>
@@ -57,7 +71,7 @@
 </div>
 
 <button class="fab owner-only" id="addBook" type="button" hidden>+ 책 추가</button>
-<dialog id="sheet" aria-labelledby="sheet-title"><div class="sheet" id="sheet-body"></div></dialog>
+<dialog id="sheet" aria-labelledby="sheet-title"><div class="tome" id="sheet-body"></div></dialog>
 <dialog id="form" aria-labelledby="form-title"><form class="sheet" id="form-body" method="dialog"></form></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 <script type="module" src="js/app.js"></script>

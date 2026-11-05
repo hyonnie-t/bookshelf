@@ -150,3 +150,89 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 @media (min-width:768px) { dialog { width:min(40rem,calc(100vw - 48px)); } }
 @media (prefers-reduced-motion: reduce) { .rise,.shelf { opacity:1; transform:none; } }
 .wrap { padding-bottom:88px; }
+
+/* 펼쳐지는 책: 왼쪽 면 책 정보, 오른쪽 면 글. 폰은 한 면 */
+:root { --paper:#fbf9f3; --paper-edge:#e4e0d4; --gutter:rgba(60,50,35,.16); --wood:#a48f76; --wood-deep:#8a7660; --case-back:#ebe5d9; --case-shade:rgba(60,45,25,.22); --late:#a3323a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper:#2e3134; --paper-edge:#44484c; --gutter:rgba(0,0,0,.4); --wood:#5c4e41; --wood-deep:#493d33; --case-back:#26231f; --case-shade:rgba(0,0,0,.45); --late:#f0a4aa; } }
+:root[data-theme="dark"] { --paper:#2e3134; --paper-edge:#44484c; --gutter:rgba(0,0,0,.4); --wood:#5c4e41; --wood-deep:#493d33; --case-back:#26231f; --case-shade:rgba(0,0,0,.45); --late:#f0a4aa; }
+#sheet { background:transparent; border:0; border-radius:0; padding:0; overflow:visible; width:calc(100vw - 24px); max-width:none; height:min(88dvh,44rem); max-height:none; }
+#sheet[open] { animation:none; }
+.tome { --shift:0%; position:relative; height:100%; perspective:2200px; }
+.pages { height:100%; overflow-y:auto; overscroll-behavior:contain; background:var(--paper); border-radius:4px 10px 10px 4px; box-shadow:2px 0 0 var(--paper-edge),4px 0 0 var(--paper),5px 0 0 var(--paper-edge),0 14px 40px rgba(0,0,0,.35); }
+.leaf { display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:10px; padding:18px; }
+.leaf.l { padding-top:52px; border-bottom:1px solid var(--line); }
+.leaf:focus-visible { outline-offset:-3px; }
+.leaf .post-text { font-family:var(--font-title); font-size:1rem; line-height:1.85; }
+.title-page { text-align:center; display:grid; gap:6px; }
+.title-page h2 { font-size:1.5rem; line-height:1.35; }
+.title-page .by { color:var(--muted); margin:0; }
+.title-tags { text-align:center; }
+.leaf.l .warn { text-align:center; }
+.leaf.l .actions { justify-content:center; }
+.tome > .close { position:absolute; top:10px; right:12px; z-index:2; }
+.libbox { display:grid; gap:6px; padding-top:10px; border-top:1px solid var(--line); justify-items:start; }
+.libbox > .btn { justify-self:center; }
+.libbox .sec { margin:0; }
+.libstate { margin:0; }
+.leaf.l .libbox .actions { padding-top:4px; justify-content:flex-start; }
+.loanline { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; justify-content:space-between; width:100%; font-size:.88rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.loanline.late span { color:var(--late); font-weight:700; }
+.blank-page { display:grid; gap:12px; justify-items:center; text-align:center; padding-block:32px; }
+.leaf .memo-foot.share { justify-content:center; border-top:0; padding-top:0; }
+@media (min-width:720px) {
+  #sheet { width:min(62rem,calc(100vw - 48px)); }
+  .tome { --shift:-25%; }
+  .pages { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:visible; background:none; box-shadow:none; }
+  .leaf { min-height:0; overflow-y:auto; overscroll-behavior:contain; background-color:var(--paper); padding:28px 30px; }
+  .leaf.l { padding-top:44px; border-bottom:0; border-radius:10px 0 0 10px; background-image:linear-gradient(to left,var(--gutter),transparent 34px); box-shadow:-2px 0 0 var(--paper-edge),-4px 0 0 var(--paper),-5px 0 0 var(--paper-edge),0 14px 40px rgba(0,0,0,.35); }
+  .leaf.r { padding-top:52px; border-radius:0 10px 10px 0; background-image:linear-gradient(to right,var(--gutter),transparent 34px); box-shadow:2px 0 0 var(--paper-edge),4px 0 0 var(--paper),5px 0 0 var(--paper-edge),0 14px 40px rgba(0,0,0,.35); }
+  .title-page { padding-top:9%; padding-bottom:6px; }
+  .title-page h2 { font-size:1.75rem; }
+}
+/* 표지: 상자가 먼저 펼쳐지고 글자는 뒤에 나타난다. 평소에는 없는 요소라 움직임을 꺼도 그대로 읽힌다 */
+.flip { display:none; position:absolute; top:0; bottom:0; left:0; width:100%; z-index:3; transform-origin:left center; transform-style:preserve-3d; pointer-events:none; }
+@media (min-width:720px) { .flip { left:50%; width:50%; } }
+.flip-front,.flip-back { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; border-radius:3px 10px 10px 3px; }
+.flip-front { display:grid; align-content:center; justify-items:center; gap:10px; padding:32px; text-align:center; color:var(--ink); background-image:linear-gradient(to right,rgba(0,0,0,.2),transparent 16px); box-shadow:inset 0 0 0 1px rgba(0,0,0,.18),inset 0 0 0 9px rgba(255,255,255,.14); font-family:var(--font-title); }
+.flip-front strong { font-size:1.45rem; line-height:1.35; }
+.flip-front span { font-size:.92rem; }
+.flip-back { transform:rotateY(180deg); background-color:var(--paper); border-radius:10px 3px 3px 10px; background-image:linear-gradient(to left,var(--gutter),transparent 34px); }
+.tome.opening .flip,.tome.closing .flip { display:block; }
+.tome.opening { animation:tome-in .68s cubic-bezier(.45,.05,.3,1) both; }
+.tome.opening .flip { animation:flip-open .62s .06s cubic-bezier(.45,.05,.3,1) both; }
+.tome.opening .leaf.l { animation:leaf-late .68s step-end both; }
+.tome.opening .leaf > *,.tome.opening > .close { animation:ink-in .24s .5s ease both; }
+.tome.closing { animation:tome-out .3s cubic-bezier(.45,.05,.3,1) both; }
+.tome.closing .flip { animation:flip-shut .3s cubic-bezier(.45,.05,.3,1) both; }
+.tome.closing .leaf.l,.tome.closing > .close { visibility:hidden; }
+@keyframes tome-in { 0% { transform:translateX(var(--shift)) scale(.95); opacity:0; } 14% { opacity:1; } 100% { transform:none; opacity:1; } }
+@keyframes tome-out { 0% { transform:none; opacity:1; } 86% { opacity:1; } 100% { transform:translateX(var(--shift)) scale(.95); opacity:0; } }
+@keyframes flip-open { from { transform:rotateY(0); } to { transform:rotateY(-180deg); } }
+@keyframes flip-shut { from { transform:rotateY(-180deg); } to { transform:rotateY(0); } }
+@keyframes leaf-late { 0% { visibility:hidden; } 100% { visibility:visible; } }
+@keyframes ink-in { from { opacity:0; } to { opacity:1; } }
+
+/* 내 서재: 선반이 이어진 진짜 책장 */
+.lib-group { margin-top:22px; }
+.lib-group .empty { margin:0 0 14px; }
+.lib-group .shelf-head { margin-bottom:8px; }
+.case { --row:216px; --plank:10px; display:flex; flex-wrap:wrap; align-content:flex-start; min-height:calc(var(--row) * 2 + 24px); padding:0 6px; border:solid var(--wood); border-width:10px 12px 14px; border-bottom-color:var(--wood-deep); border-radius:4px 4px 2px 2px; background:repeating-linear-gradient(to bottom,var(--case-shade) 0,transparent 14px,transparent calc(var(--row) - var(--plank)),var(--wood) calc(var(--row) - var(--plank)),var(--wood) var(--row)),var(--case-back); }
+.lslot { display:flex; align-items:flex-end; height:calc(var(--row) - var(--plank)); margin-bottom:var(--plank); padding-inline:.5px; }
+.lbook { justify-content:space-between; gap:6px; padding:20px 2px 8px; }
+.lbook span { flex:1 1 0; min-height:0; }
+.lbook small { flex:none; font-family:var(--font-body); font-weight:400; font-size:.7rem; white-space:nowrap; }
+.lbook.band1::before,.lbook.band2::before { content:""; position:absolute; left:0; right:0; top:9px; border-top:1px solid currentColor; opacity:.45; }
+.lbook.band2::before { height:4px; border-bottom:1px solid currentColor; }
+.lbook.gone { background:none; border:1px dashed var(--muted); border-bottom:0; color:var(--muted); font-weight:400; }
+.lbook.gone::before { display:none; }
+#ledger { margin-top:22px; display:grid; gap:14px; }
+.ledger-list { list-style:none; margin:6px 0 0; padding:0; }
+.ledger-row { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; justify-content:space-between; padding:10px 0; border-top:1px solid var(--line); }
+.ledger-main { min-width:0; flex:1 1 16rem; display:grid; gap:2px; justify-items:start; }
+.ledger-title { border:0; background:none; padding:0; font-family:var(--font-title); font-weight:700; text-align:left; }
+.ledger-title:hover { text-decoration:underline; }
+.ledger-row .when { font-size:.86rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.late-tag { font-size:.84rem; color:var(--late); }
+.ledger-tools { display:flex; gap:6px; flex:none; }
+details.ledger-part summary { cursor:pointer; font-family:var(--font-title); font-weight:700; padding-block:6px; }
+.sub-fields { display:grid; gap:10px; padding:10px 12px; border-left:3px solid var(--line); }

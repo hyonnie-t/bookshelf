@@ -2,12 +2,13 @@
 
 ## 무엇인지
 배포 https://hyonnie-t.github.io/bookshelf/ . 효니의 책과 인스타 @hyonnie_books 서평을 모은 웹앱(2026-11-05, 옛 아티팩트 «효니의 책장»을 옮김).
-공개 범위(효니 결정 2026-11-05): 책 정보와 인스타에 이미 공개한 글은 누구나 본다. 아이폰 메모·노션 기록·한 줄 평·별점은 주인 로그인 뒤에만 보인다.
+공개 범위(효니 결정 2026-11-05): 책 정보와 인스타에 이미 공개한 글은 누구나 본다. 아이폰 메모·노션 기록·한 줄 평·별점은 주인 로그인 뒤에만 보인다. «내 서재» 탭(소장 목록·빌린 기록, 사람 이름 포함)도 주인 로그인 뒤에만 보인다(공개 여부는 효니에게 확인 전 기본값, 2026-11-05).
 
 ## 구조
-- `index.html` 뼈대, `css/app.css` 차분한 서가 스타일, `js/app.js` 화면 전부(책장·서평·돌아보기·입력 양식), `js/fb.js` 로그인과 비공개 저장, `sw.js` 앱 파일 캐시(비공개 기록은 캐시 안 함)
+- `index.html` 뼈대, `css/app.css` 차분한 서가 스타일, `js/app.js` 화면 전부(읽은 책·내 서재·서평·돌아보기·입력 양식), `js/fb.js` 로그인과 비공개 저장, `sw.js` 앱 파일 캐시(비공개 기록은 캐시 안 함)
 - `data/public.json` 공개 데이터(books, posts). 비공개 칸을 넣지 않는다
-- 비공개 데이터: 시간표 앱과 같은 Firebase(timetable-af612) RTDB `users/{주인uid}/bookshelf`의 `works`·`igLinks`·`igAdded`. 규칙상 본인만 읽고 쓴다. 주인은 `js/fb.js`의 OWNER_UID
+- 비공개 데이터: 시간표 앱과 같은 Firebase(timetable-af612) RTDB `users/{주인uid}/bookshelf`의 `works`·`igLinks`·`igAdded`·`library`. 규칙상 본인만 읽고 쓴다. 주인은 `js/fb.js`의 OWNER_UID
+- `library/{id}` 내 서재의 책: `t a p th where added`, `st`(own 소장/in 빌려 온 책), `w`(이어진 읽은 책 id, 없으면 빈 값), `loans[]`(`dir` out/in, `who d due back`). 빌려 온 책을 돌려주면 서가에서 빠지고 지난 기록에만 남는다. 읽은 책(`works`)에 섞지 않아 돌아보기 숫자가 그대로다. `tools/publish.js`는 이 칸을 읽지 않는다
 - `demo/private.json` 가짜 기록. `?demo=1`로 주인 화면을 시험하고 저장은 메모리에만 한다
 - `tools/build-data.js` 처음 한 번 쓴 데이터 생성기. 원본은 `클로드작업\산출물\내 책장`, 비공개 시드 `private-seed.json`도 거기 있다(레포 밖). 다시 돌리면 앱에서 고친 내용과 어긋나므로 시드를 다시 올리지 않는다
 - `tools/publish.js` 공개 반영: 앱에서 고친 책 정보·연결을 public.json에 넣는다. 기록·메모·별점은 옮기지 않는다
@@ -20,4 +21,5 @@
 - 실제 Firebase 쓰기 시험은 효니가 시킬 때만 한다. 기능 시험은 `?demo=1`.
 - 화면 확인은 폰 375 · 태블릿 768 · PC 1280, 다크 모드까지.
 - 인스타 글은 레포에 사진을 넣지 않고 글과 주소만 둔다. 새 글을 한꺼번에 받을 때는 내장 브라우저에서 내 계정 화면을 읽기만 한다. 파일 내려받기는 내장 브라우저에서 안 되므로 주소 `#`로 내 PC 임시 서버에 넘긴다.
-- 움직임: 서평 카드 떠오름, 선반 나타남, `prefers-reduced-motion`에서 끈다.
+- 움직임: 서평 카드 떠오름, 선반 나타남, 책 창은 표지가 넘어가며 펼쳐지고 덮인다(`.tome.opening/.closing`, 평소에는 표지 요소가 숨어 있어 움직임을 꺼도 그대로 읽힌다). `prefers-reduced-motion`에서 끈다. 중간 장면은 애니메이션을 `pause`하고 `currentTime`을 정해 찍는다.
+- 내장 브라우저 창이 가려져 있으면 화면 프레임이 멈춰 dialog의 `close` 이벤트가 캡처 전까지 늦게 온다. 앱 버그로 착각하지 않는다(2026-11-05).
