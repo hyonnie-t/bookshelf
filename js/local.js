@@ -1,4 +1,4 @@
-// 범용판(/my/) 저장소: 기록을 쓰는 사람의 브라우저(IndexedDB)에만 둔다. 기록을 서버로 보내는 곳이 없다(책 찾기는 찾는 말만 공개 목록에 보낸다).
+// 범용판(/my/) 저장소: 기록을 쓰는 사람의 브라우저(IndexedDB)에만 둔다. 기록을 서버로 보내는 곳이 없다(책 찾기는 찾는 말만 보낸다. 앱스크립트 중계를 거쳐 카카오 책 검색으로, 그다음 구글 도서·오픈 라이브러리로. 양식에서 카카오를 끌 수 있다).
 // app.js가 쓰는 fb.js의 읽기·쓰기와 같은 모양을 맞췄다. 데이터 모양은 주인 Firebase의 bookshelf 칸과 같다.
 const DB = 'my-bookshelf', STORE = 'kv', KEY = 'data', APP = 'my-bookshelf', VERSION = 1;
 const KINDS = new Set(['book', 'film', 'show', 'trip', 'other', 'wishlist']);
