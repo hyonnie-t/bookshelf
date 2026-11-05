@@ -331,3 +331,10 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
   [data-edition="blossom"]:not([data-theme="light"]) { color-scheme:dark; --s:30%; --l:33%; --j:1.5%; --bg:#241a1f; --surface:#30232a; --ink:#f6e9ee; --muted:#c9b2bc; --line:#57414c; --strong:#dcc6d0; --plank:#836470; --accent:#f2c3d3; --accent-ink:#241a1f; --chip:#30232a; --focus:#ffffff; --bar:#8a5069; --paper:#32252c; --paper-edge:#4e3b45; --gutter:rgba(0,0,0,.4); --wood:#6a4c58; --wood-deep:#563c47; --case-back:#2a1e24; --case-shade:rgba(0,0,0,.45); }
   [data-edition="ink"]:not([data-theme="light"]) { color-scheme:dark; --s:6%; --l:32%; --j:2%; --bg:#161616; --surface:#202020; --ink:#efefec; --muted:#b3b2ad; --line:#444444; --strong:#cfcfca; --plank:#6a6a66; --accent:#efefec; --accent-ink:#161616; --chip:#202020; --focus:#ffffff; --bar:#6b6b68; --paper:#222222; --paper-edge:#3e3e3e; --gutter:rgba(0,0,0,.4); --wood:#3c3a38; --wood-deep:#2d2c2a; --case-back:#1b1b1a; --case-shade:rgba(0,0,0,.5); }
 }
+
+/* 나만 보기 */
+.only-box { display:grid; gap:2px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface); text-align:left; }
+.only-box.on { border-color:var(--strong); }
+.only-box .check { color:var(--ink); font-weight:700; }
+.only-box small { color:var(--muted); font-size:.8rem; line-height:1.45; }
+.only-tag { margin-left:8px; padding:0 6px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:.72rem; font-weight:400; font-family:var(--font-body); vertical-align:middle; white-space:nowrap; }
