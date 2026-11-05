@@ -32,8 +32,10 @@
     <div class="filters">
       <div class="row" id="kinds" role="group" aria-label="종류"></div>
       <div class="row" id="themes" role="group" aria-label="주제"></div>
-      <label class="check"><input type="checkbox" id="onlyIg"> 인스타 서평이 있는 책만</label>
-      <label class="check owner-only" hidden><input type="checkbox" id="hideUnknown"> 제목 확인 안 된 기록 숨기기</label>
+      <div class="row" role="group" aria-label="더 고르기">
+        <button class="chip" id="onlyIg" type="button" aria-pressed="false">인스타 서평이 있는 책만</button>
+        <button class="chip owner-only" id="showUnknown" type="button" aria-pressed="false" hidden>제목 확인 안 된 책 보이기</button>
+      </div>
     </div>
     <div class="bar">
       <input class="search" id="q" type="search" placeholder="제목, 저자, 서평 내용 찾기" aria-label="찾기">

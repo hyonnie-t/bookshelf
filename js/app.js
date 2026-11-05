@@ -14,7 +14,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:false, onlyIg:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'' };
 const D = { pub:null, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[] };
 const VIEWS = ['shelf', 'library', 'posts', 'recap'];
 const LIB_KINDS = [['all','전체'],['own','소장'],['out','빌려준 책'],['in','빌려 온 책'],['unread','아직 안 읽음']];
@@ -54,16 +54,19 @@ const reviewsOf = (w) => D.byWork.get(w.id) || [];
 const list = () => [...D.works.values()];
 
 /* ---------- 책장 ---------- */
+const isHidden = (w) => S.hideUnknown && !w.known && ['book','film','show'].includes(w.k);
 function matches(w) {
   if (S.kind !== 'all' && w.k !== S.kind) return false;
   if (S.theme && !w.th.includes(S.theme)) return false;
   if (S.onlyIg && !reviewsOf(w).length) return false;
-  if (S.hideUnknown && !w.known && ['book','film','show'].includes(w.k)) return false;
+  if (isHidden(w) && !S.q) return false; // 찾을 때는 숨긴 기록까지 찾아 준다
   if (S.q && !w.hay.includes(S.q.toLowerCase())) return false;
   return true;
 }
 function chips() {
-  const all = list();
+  const all = list().filter((w) => !isHidden(w));
+  $('onlyIg').setAttribute('aria-pressed', S.onlyIg);
+  $('showUnknown').setAttribute('aria-pressed', !S.hideUnknown);
   const count = (k) => k === 'all' ? all.length : all.filter((w) => w.k === k).length;
   const kinds = KINDS.filter(([k]) => k === 'all' ? false : count(k));
   const rows = kinds.length > 1 ? [...kinds, ['all','전체']] : [];
@@ -116,7 +119,7 @@ function renderShelf() {
   const ys = Object.keys(byYear).sort((a, b) => b.localeCompare(a));
   if (!ys.length) {
     const reset = el('button', { className:'btn', type:'button', textContent:'조건 풀기' });
-    reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:false, onlyIg:false }); $('q').value = ''; $('hideUnknown').checked = false; $('onlyIg').checked = false; renderShelf(); };
+    reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:false, onlyIg:false }); $('q').value = ''; renderShelf(); };
     $('shelves').replaceChildren(el('div', { className:'empty' }, el('div', { textContent:'조건에 맞는 책이 없어요. 종류나 주제를 바꿔 보세요.' }), reset));
     return;
   }
@@ -799,7 +802,7 @@ function openPostForm() {
 
 /* ---------- 머리·탭·로그인 ---------- */
 function setLede() {
-  const books = list().filter((w) => w.k === 'book').length, reviews = D.posts.filter((p) => p.k === 'review').length;
+  const books = list().filter((w) => w.k === 'book' && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review').length;
   $('lede').textContent = `책 ${books}권, 인스타 서평 ${reviews}개`;
   $('foot').textContent = S.owner
     ? '내 기록과 메모, 별점은 로그인한 나에게만 보여요. 고친 내용은 바로 저장되고, 공개 화면에는 다음 공개 반영 때 들어가요. 제목을 못 찾은 메모는 점선 책등으로 꽂아 뒀어요.'
@@ -858,8 +861,8 @@ function route() {
 window.addEventListener('hashchange', route);
 $('q').addEventListener('input', (e) => { const had = !!S.q; S.q = e.target.value.trim(); if (S.q && !had) { S.prevKind = S.kind; S.kind = 'all'; } if (!S.q && had && S.prevKind) { S.kind = S.prevKind; S.prevKind = ''; } renderShelf(); });
 $('pq').addEventListener('input', (e) => { S.pq = e.target.value.trim(); renderPosts(true); });
-$('hideUnknown').addEventListener('change', (e) => { S.hideUnknown = e.target.checked; renderShelf(); });
-$('onlyIg').addEventListener('change', (e) => { S.onlyIg = e.target.checked; renderShelf(); });
+$('showUnknown').onclick = () => { S.hideUnknown = !S.hideUnknown; renderShelf(); setLede(); };
+$('onlyIg').onclick = () => { S.onlyIg = !S.onlyIg; renderShelf(); };
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
 $('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : openBookForm(null));
