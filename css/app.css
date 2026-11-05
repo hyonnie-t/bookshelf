@@ -272,8 +272,6 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .found strong { display:block; font-family:var(--font-title); }
 .found span { font-size:.84rem; color:var(--muted); }
 .store-links { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:.84rem; color:var(--muted); }
-.lookup-opt { display:flex; gap:8px; align-items:center; min-height:44px; font-size:.84rem; }
-.lookup-opt input { width:18px; height:18px; flex:none; margin:0; }
 .lookup small { color:var(--muted); }
 
 /* 겹치는 책 고치기 */

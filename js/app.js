@@ -833,11 +833,7 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
 /* ---------- 인터넷에서 책 찾아 채우기 ---------- */
 // 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 카카오 책 검색을 앱스크립트 중계로 먼저 찾고, 키 없는 공개 목록을 그다음에 쓴다. 안 나오면 서점 검색으로 넘겨 준다
 const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec'; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
-const RELAY_KEY = 'myshelf-kakao';
-let relayOff = false; // 범용판에서만 끌 수 있다
-try { relayOff = LOCAL && localStorage.getItem(RELAY_KEY) === 'off'; } catch (e) {}
-const relayOn = () => !!BOOK_RELAY && !relayOff;
-function setRelay(on) { relayOff = !on; try { on ? localStorage.removeItem(RELAY_KEY) : localStorage.setItem(RELAY_KEY, 'off'); } catch (e) {} }
+const relayOn = () => !!BOOK_RELAY && !LOCAL; // 범용판은 효니 키를 쓰는 중계를 쓰지 않는다(효니 결정 2026-11-05)
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 // 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
 const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
@@ -899,17 +895,9 @@ function bookLookup(apply) {
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small');
-  const showNote = () => {
-    const via = LOCAL ? '이 앱을 만든 사람의 구글 앱스크립트' : '구글 앱스크립트';
-    note.textContent = relayOn() ? `찾는 말만 ${via}를 거쳐 카카오 책 검색으로 보내요. 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.';
-  };
-  showNote();
-  const useRelay = el('input', { type:'checkbox', checked:relayOn() });
-  useRelay.onchange = () => { setRelay(useRelay.checked); showNote(); };
-  const opt = LOCAL && BOOK_RELAY ? el('label', { className:'lookup-opt' }, useRelay, el('span', { textContent:'카카오 책 검색도 쓰기' })) : null;
+  const note = el('small', { textContent:relayOn() ? '찾는 말만 구글 앱스크립트를 거쳐 카카오 책 검색으로 보내요. 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.' : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go), msg, found,
-    el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), opt, note);
+    el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
 
 /* ---------- 겹치는 책 고치기 ---------- */
