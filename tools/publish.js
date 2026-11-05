@@ -8,7 +8,7 @@ const priv = JSON.parse(fs.readFileSync(process.argv[2], 'utf8').replace(/^\uFEF
 const books = new Map(pub.books.map((b) => [b.id, b]));
 const works = priv.works || {};
 let changed = 0, removed = 0, added = 0;
-const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || w.fd || ''; const recs = w.recs || []; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; return o; };
+const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || (w.wc ? '' : w.fd) || ''; /* 왓챠에서 온 작품은 공개본에 평가한 날을 넣지 않는다 */ const recs = w.recs || []; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; return o; };
 const posts = new Map(pub.posts.map((p) => [p.c, p]));
 Object.values(priv.igAdded || {}).forEach((p) => { if (!posts.has(p.c)) { added++; } posts.set(p.c, { c:p.c, d:p.d, x:p.x, k:p.k || 'review', w:p.w || [] }); });
 Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && JSON.stringify(p.w) !== JSON.stringify(l.w || [])) { p.w = l.w || []; p.k = l.k || p.k; changed++; } });
@@ -25,7 +25,7 @@ const reviewed = new Set([...posts.values()].flatMap((p) => p.w.map(movedTo)));
 Object.entries(works).forEach(([id, w]) => {
   w.id = id;
   const recs = w.recs || [];
-  const done = (w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread');
+  const done = ((w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread')) || (w.k === 'film' && !!w.wc); // 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05)
   if (w.del || (!done && !reviewed.has(id) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
   const next = pick(w), prev = books.get(id);
   if (!prev) added++; else if (JSON.stringify(prev) !== JSON.stringify(next)) changed++;
