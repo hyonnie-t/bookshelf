@@ -30,7 +30,8 @@
 - 공개 반영 순서: `npx.cmd firebase-tools database:get /users/<uid>/bookshelf --project timetable-af612 -o private.local.json` → `node tools/publish.js private.local.json` → private.local.json 지우기 → 커밋·푸시. (`private*.json`, `*.local.json`은 gitignore)
 - 실제 Firebase 쓰기 시험은 효니가 시킬 때만 한다. 기능 시험은 `?demo=1`.
 - 별점은 0.5 단위(`r`: 0~5, 효니 결정 2026-11-05). 0은 «최하», 표시는 `starText`, 단계 목록은 `RATING_STEPS`.
-- 화면 확인은 폰 375 · 태블릿 768 · PC 1280, 다크 모드까지.
+- 화면 확인은 폰 375 · 태블릿 768·1180 · PC 1280, 눕힌 폰 812×375, 다크 모드까지. 터치 규칙은 폭 768 미만 흉내에서만 켜지므로 태블릿은 규칙을 직접 넣어 잰다.
+- 접는 칸(2026-11-07): 읽은 책 탭의 주제·순서·더 고르기(`filterPanel`)와 관리 도구(`toolsPanel`)는 접어 둔다. 첫 책이 화면 아래로 밀리지 않게 하려는 것이다. 접혀 있어도 걸린 조건은 단추 글자에 보인다(`foldSummary`). 펼친 상태는 기기별 localStorage(`shelf-fold`, 범용판 `myshelf-fold`). 터치 규칙은 `css/app.css` 끝에 둔다(앞에 두면 `.copy` 기본값에 덮인다).
 - 인스타 글은 레포에 사진을 넣지 않고 글과 주소만 둔다. 새 글을 한꺼번에 받을 때는 내장 브라우저에서 내 계정 화면을 읽기만 한다. 파일 내려받기는 내장 브라우저에서 안 되므로 주소 `#`로 내 PC 임시 서버에 넘긴다.
 - 움직임: 서평 카드 떠오름, 선반 나타남, 책 창은 표지가 넘어가며 펼쳐지고 덮인다(`.tome.opening/.closing`, 평소에는 표지 요소가 숨어 있어 움직임을 꺼도 그대로 읽힌다). `prefers-reduced-motion`에서 끈다. 중간 장면은 애니메이션을 `pause`하고 `currentTime`을 정해 찍는다.
 - 내장 브라우저 창이 가려져 있으면 화면 프레임이 멈춰 dialog의 `close` 이벤트와 부드러운 스크롤, 등장 효과가 캡처할 때만 조금씩 진행된다. 앱 버그로 착각하지 않는다(2026-11-05).

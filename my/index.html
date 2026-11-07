@@ -37,15 +37,21 @@
     <nav class="row jump" id="jump" aria-label="바로 가기" hidden></nav>
   </div>
   <section id="view-shelf" role="tabpanel" aria-labelledby="tab-shelf">
-    <div class="filters">
+    <div class="filters folded">
       <div class="row" id="kinds" role="group" aria-label="종류"></div>
+      <div class="fold-bar">
+        <button class="chip fold-btn" id="foldFilters" type="button" aria-expanded="false" aria-controls="filterPanel"><span id="foldLabel">주제·순서</span></button>
+        <button class="chip fold-btn owner-only" id="foldTools" type="button" aria-expanded="false" aria-controls="toolsPanel" hidden>관리</button>
+      </div>
+      <div class="fold-panel" id="filterPanel" hidden>
       <div class="row" id="themes" role="group" aria-label="주제"></div>
       <div class="row" id="shelfSort" role="group" aria-label="책 순서"></div>
       <div class="row" hidden>
         <button class="chip" id="onlyIg" type="button" aria-pressed="false" hidden></button>
         <button class="chip" id="showUnknown" type="button" aria-pressed="false" hidden></button>
       </div>
-      <div class="owner-only" hidden><button class="copy" id="fixDups" type="button">겹치는 책 고치기</button></div>
+      </div>
+      <div class="fold-panel fold-tools" id="toolsPanel" hidden><button class="copy" id="fixDups" type="button">겹치는 책 고치기</button></div>
     </div>
     <div class="bar">
       <input class="search" id="q" type="search" placeholder="제목, 저자, 기록 내용 찾기" aria-label="찾기">
