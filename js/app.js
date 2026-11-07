@@ -112,6 +112,7 @@ function chips() {
     b.onclick = () => { S.theme = S.theme === t ? '' : t; renderShelf(); };
     return b;
   }));
+  foldSummary();
 }
 function spine(w) {
   const rv = reviewsOf(w), items = w.notes.length + w.recs.length + rv.length;
@@ -141,6 +142,26 @@ function watch(sel) {
 }
 const NAMED_GROUP = '제목·저자 일치';
 const ORDERS = [['new','최신순'],['old','오래된순']];
+/* 접는 칸: 첫 화면에 책이 보이도록 주제·순서와 관리 도구를 접어 둔다. 펼친 상태는 기기별로 기억한다 */
+const FOLD_KEY = LOCAL ? 'myshelf-fold' : 'shelf-fold';
+const fold = { filters:false, tools:false };
+try { (localStorage.getItem(FOLD_KEY) || '').split(',').forEach((k) => { if (k in fold) fold[k] = true; }); } catch (e) {}
+function syncFold() {
+  $('filterPanel').hidden = !fold.filters;
+  $('toolsPanel').hidden = !(fold.tools && S.owner);
+  $('foldFilters').setAttribute('aria-expanded', fold.filters);
+  $('foldTools').setAttribute('aria-expanded', fold.tools);
+}
+function toggleFold(k) {
+  fold[k] = !fold[k];
+  try { localStorage.setItem(FOLD_KEY, Object.keys(fold).filter((x) => fold[x]).join(',')); } catch (e) {}
+  syncFold();
+}
+function foldSummary() {
+  const on = [S.theme, S.order === 'old' ? '오래된순' : '', S.onlyIg ? '서평 있는 책' : '', S.owner && !LOCAL && !S.hideUnknown ? '제목 미확인 포함' : '', S.onlyMe ? '나만 보기' : ''].filter(Boolean);
+  $('foldLabel').textContent = on.length ? `주제·순서: ${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}` : ''}` : '주제·순서';
+  $('foldFilters').classList.toggle('on', on.length > 0);
+}
 const ORDER_KEY = LOCAL ? 'myshelf-order' : 'shelf-order';
 try { if (localStorage.getItem(ORDER_KEY) === 'old') S.order = 'old'; } catch (e) {}
 function syncOrder() {
@@ -1821,6 +1842,7 @@ function renderLocalTools(box) {
 function renderWho() {
   const box = $('who');
   document.querySelectorAll('.owner-only').forEach((n) => { n.hidden = !S.owner; });
+  syncFold();
   if (LOCAL) { renderLocalTools(box); return; }
   if (S.owner) {
     const out = el('button', { className:'copy', type:'button', textContent:'로그아웃' });
@@ -1879,6 +1901,9 @@ $('pq').addEventListener('input', (e) => { S.pq = e.target.value.trim(); renderP
 $('showUnknown').onclick = () => { S.hideUnknown = !S.hideUnknown; renderShelf(); setLede(); };
 if ($('onlyMe')) $('onlyMe').onclick = () => { S.onlyMe = !S.onlyMe; S.kind = S.onlyMe ? 'all' : 'book'; renderShelf(); };
 $('onlyIg').onclick = () => { S.onlyIg = !S.onlyIg; renderShelf(); };
+$('foldFilters').onclick = () => toggleFold('filters');
+$('foldTools').onclick = () => toggleFold('tools');
+syncFold();
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
 $('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : openBookForm(null));
