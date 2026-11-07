@@ -71,9 +71,24 @@ const day = (v) => { const s = str(v); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const arr = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
 const safeKey = (k) => /^[A-Za-z0-9_-]{1,80}$/.test(k) && !k.startsWith('__');
+// 밑줄: 문장이 없는 칸은 버리고, id가 없거나 겹치면 새로 준다(고치기·지우기가 id로 찾는다)
+function cleanMarks(list) {
+  const seen = new Set();
+  return arr(list).filter((m) => str(m.q).trim()).map((m, i) => {
+    let id = str(m.id);
+    if (!/^[A-Za-z0-9-]{1,40}$/.test(id) || seen.has(id)) id = `m${Date.now().toString(36)}${i}${Math.random().toString(36).slice(2, 6)}`;
+    seen.add(id);
+    const o = { id, d:day(m.d), p:str(m.p), q:str(m.q), why:str(m.why) };
+    const from = Array.isArray(m.from) ? m.from.filter((x) => typeof x === 'string' && safeKey(x)) : [];
+    if (from.length) o.from = from;
+    return o;
+  });
+}
 function cleanWork(w) {
   const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:typeof r.r === 'number' && Number.isInteger(r.r * 2) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; const from = Array.isArray(r.from) ? r.from.filter((x) => typeof x === 'string' && safeKey(x)) : []; if (from.length) o.from = from; return o; });
   const o = { t:str(w.t), a:str(w.a), p:str(w.p), k:KINDS.has(w.k) ? w.k : 'book', th:Array.isArray(w.th) ? w.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.y).slice(0, 4), fd:day(w.fd) || str(w.fd).slice(0, 4), known:true, recs, notes:[] };
+  const marks = cleanMarks(w.marks);
+  if (marks.length) o.marks = marks;
   if (w.unread === true) o.unread = true;
   if (w.del === true) o.del = true;
   if (safeKey(str(w.into))) { // 겹치는 책 합치기 되돌리기용

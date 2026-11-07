@@ -1,6 +1,7 @@
 // 공개 반영: 앱에서 고친 책 정보·서평 연결을 data/public.json에 넣는다. 기록·메모·별점은 절대 옮기지 않는다.
 // 준비: npx.cmd firebase-tools database:get /users/<주인uid>/bookshelf --project timetable-af612 -o private.local.json
 // 사용: node tools/publish.js private.local.json   → 바뀐 개수만 출력. 그 뒤 git commit·push
+// 밑줄(marks)은 저작물 문장이고 비공개 칸이라 옮기지 않는다. 밑줄을 그어도 공개 여부는 바뀌지 않는다
 // 나만 보기(only): 켠 칸은 공개본에서 뺀다. 정한 적 없으면 책·영화가 아닌 칸은 나만 본다. js/app.js의 isOnlyMe와 같은 기준
 const fs = require('fs'), path = require('path');
 const OUT = path.join(__dirname, '..', 'data', 'public.json');
@@ -22,14 +23,14 @@ const absorbed = new Set([...mergedIds.map(movedTo), ...Object.values(pub.moved 
 // 공개 책을 물려받은 칸은 기록이 없어도 공개본에 남긴다. 제목이 없거나 추정인 칸은 메모에서 나온 말이라 올리지 않는다
 const heirs = new Set(mergedIds.filter((id) => books.has(id)).map(movedTo));
 const merged = new Set(mergedIds.map(movedTo));
-const staysPublic = (id, w) => !!w.t && !w.guess && (heirs.has(id) || (merged.has(id) && books.has(id)));
+const staysPublic = (id, w) => !!w.t && !w.guess && (heirs.has(id) || (merged.has(id) && books.has(id)) || (books.has(id) && (w.marks || []).length > 0)); // 이미 공개된 책은 밑줄만 저장해 비공개 칸이 생겨도 빠지지 않는다
 const reviewed = new Set([...posts.values()].flatMap((p) => p.w.map(movedTo)));
 const blogged = new Set((JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'blog.json'), 'utf8')).posts || []).flatMap((p) => (p.w || []).map(movedTo)));
 Object.entries(works).forEach(([id, w]) => {
   w.id = id;
   const recs = w.recs || [];
   const done = ((w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread')) || (w.k === 'film' && !!w.wc) /* 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05) */ || (w.only === false && !!w.t && !w.guess); // 나만 보기를 직접 푼 칸
-  const shelved = !books.has(id) && !(w.notes || []).length && (w.archived || []).length && !recs.length && !reviewed.has(id) && !blogged.has(id); // 메모를 다 보관한 칸. js/app.js rebuild와 같은 기준
+  const shelved = !books.has(id) && !(w.notes || []).length && (w.archived || []).length && !(w.marks || []).length && !recs.length && !reviewed.has(id) && !blogged.has(id); // 메모를 다 보관한 칸. js/app.js rebuild와 같은 기준
   if (w.del || isOnlyMe(w) || shelved || (!done && !(reviewed.has(id) && !!w.t && !w.guess) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
   const next = pick(w), prev = books.get(id);
   if (!prev) added++; else if (JSON.stringify(prev) !== JSON.stringify(next)) changed++;
@@ -42,5 +43,5 @@ const out = { at:new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10), b
 if (Object.keys(moved).length) out.moved = moved;
 fs.writeFileSync(OUT, JSON.stringify(out));
 const text = fs.readFileSync(OUT, 'utf8');
-if (/"(recs|notes|archived|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
+if (/"(recs|notes|archived|marks|q|why|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
 console.log({ 책:books.size, 글:posts.size, 추가:added, 변경:changed, 제외:removed, 크기KB:text.length / 1024 | 0 });
