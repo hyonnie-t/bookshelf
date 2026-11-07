@@ -450,9 +450,20 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .word-chip.w3 { font-size:1.22rem; }
 .word-chip[aria-expanded="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .word-chip[aria-expanded="true"] b { color:inherit; }
-.rise.show .word-chip { animation:wordIn .24s ease both; animation-delay:calc(var(--i) * 12ms); }
+.rise.show:not(.drawn) .word-chip { animation:wordIn .24s ease both; animation-delay:calc(var(--i) * 12ms); }
 @keyframes wordIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
 .word-card .drill-slot { scroll-margin-top:64px; }
+.net { position:relative; margin-bottom:10px; scroll-margin-top:64px; }
+.net .word-chip { position:absolute; left:0; top:0; }
+.net .word-chip.near { border-color:var(--accent); }
+.net-lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.net-lines line { stroke:color-mix(in srgb, var(--muted) 75%, var(--surface)); stroke-width:1; transition:opacity .2s ease, stroke-width .2s ease; }
+.net-lines line.strong { stroke-width:1.6; }
+.net.has-on .net-lines line { opacity:.25; }
+.net.has-on .net-lines line.on { opacity:1; stroke:var(--accent); stroke-width:2; }
+.rise.show:not(.drawn) .net-lines { animation:netIn .5s ease .25s both; }
+@keyframes netIn { from { opacity:0; } to { opacity:1; } }
+.word-more { margin-bottom:10px; }
 .word-near { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
 .word-near-l { flex:1 1 100%; font-size:.84rem; color:var(--muted); }
 .word-lines { list-style:none; margin:4px 0 8px; padding:0 0 0 12px; display:grid; gap:6px; }

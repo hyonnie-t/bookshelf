@@ -1,7 +1,7 @@
 // 효니의 책장: 공개 화면은 data/public.json(책·인스타 서평), 주인 로그인 뒤에는 비공개 기록을 겹쳐 보여 주고 고칠 수 있다.
 import * as remote from './fb.js';
 import * as local from './local.js';
-import { buildWordIndex, narrowIndex, relatedWords, wordDoc, WORD_KINDS } from './words.js';
+import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -647,6 +647,7 @@ function closeDrill(refocus) {
   document.querySelectorAll('#recap [aria-expanded="true"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
   document.querySelectorAll('#recap .drill-slot').forEach((s) => s.replaceChildren());
   if (refocus && on) on.focus();
+  markNet($('wordMap'));
 }
 function drillable(btn, key, title, getRows, slot) {
   const own = slot || el('div', { className:'drill-slot' });
@@ -659,7 +660,7 @@ function drillable(btn, key, title, getRows, slot) {
     S.drill = key; S.drillN = DRILL_PAGE;
     btn.setAttribute('aria-expanded', 'true');
     fillDrill(own, title, getRows());
-    own.scrollIntoView({ block:own.closest('.word-card') ? 'start' : 'nearest', behavior:smooth() }); // 낱말 칩은 많아서 목록이 화면 밖에서 시작한다
+    if (own.closest('.word-card')) scrollWordMap(own); else own.scrollIntoView({ block:'nearest', behavior:smooth() });
   };
   if (opened) fillDrill(own, title, getRows());
   return slot ? btn : [btn, own];
@@ -877,6 +878,7 @@ function renderRecap() {
       reviewed.length ? el('div', { className:'again' }, reviewed.map(([w, n]) => { const b = el('button', { className:'chip', type:'button', textContent:`${titleOf(w)} ×${n}` }); b.onclick = () => openBook(w.id, b); return b; })) : null));
   }
   box.replaceChildren(...cards.filter(Boolean));
+  placeNet($('wordMap'));
   if (redraw) return; // 보고 있는 화면을 기간·저장으로 다시 그릴 때는 카드가 깜박이지 않게 움직임을 뺀다
   box.querySelectorAll('.card').forEach((c) => c.classList.add('rise'));
   watch('#recap .rise');
@@ -884,7 +886,9 @@ function renderRecap() {
 
 /* ---------- 낱말 지도 ---------- */
 // 주인 화면에만 그린다(공개 화면에서는 부르지 않고, 공개 파일에 낱말을 넣지 않는다). 글을 다 훑으므로 돌아보기를 볼 때 만들고, 저장해 책장이 다시 만들어지면 다시 만든다
-const WORD_SHOW = 30, WORD_MAX = 120, W = { src:null, idx:[] };
+const WORD_MAX = 120, W = { src:null, idx:[] };
+// 연결망에 넣는 낱말 수: 폰 폭에서는 칩이 겹치지 않을 만큼만. 나머지는 «낱말 더 보기»의 칩 목록으로 본다
+const netCount = () => { const w = $('recap').clientWidth || innerWidth; return w < 560 ? 18 : w < 900 ? 28 : 40; };
 function wordIndex() {
   if (W.src !== D.works) {
     W.src = D.works;
@@ -923,11 +927,16 @@ function openWord(word) {
   closeDrill();
   S.drill = `w:${word}`; S.drillN = DRILL_PAGE;
   const card = $('wordMap');
-  if (wordsFor(card.dataset.ry).findIndex((x) => x.word === word) >= WORD_SHOW) S.wordAll = true; // 접혀 있는 낱말일 때만 펼친다
+  if (wordsFor(card.dataset.ry).findIndex((x) => x.word === word) >= netCount()) S.wordAll = true; // 접혀 있는 낱말일 때만 펼친다
   drawWordMap(card);
   const chip = [...card.querySelectorAll('[data-word]')].find((b) => b.dataset.word === word);
   if (chip) chip.focus({ preventScroll:true });
-  card.querySelector('.drill-slot').scrollIntoView({ block:'start', behavior:smooth() });
+  scrollWordMap(card.querySelector('.drill-slot'));
+}
+function scrollWordMap(slot) {
+  const net = slot.closest('.word-card').querySelector('.net');
+  const fits = net && slot.getBoundingClientRect().top - net.getBoundingClientRect().top + 220 < innerHeight;
+  (fits ? net : slot).scrollIntoView({ block:'start', behavior:smooth() });
 }
 function wordCard(ry) {
   const card = el('div', { className:'card span2 word-card', id:'wordMap' });
@@ -935,30 +944,86 @@ function wordCard(ry) {
   if (S.view === 'recap') drawWordMap(card); else card.dataset.pending = '1';
   return card;
 }
+function wordChip(x, i, idx, slot, card) {
+  const size = i < 5 ? 3 : i < 15 ? 2 : 1; // 한 낱말이 유난히 많아도 크기가 고르게 갈리도록 순위로 나눈다
+  const b = el('button', { className:`chip word-chip w${size}`, type:'button' }, x.word, el('b', { textContent:x.books.length }));
+  b.dataset.word = x.word;
+  b.style.setProperty('--i', Math.min(i, 30));
+  b.setAttribute('aria-label', `${x.word}, ${x.books.length}권에 나옴`);
+  drillable(b, `w:${x.word}`, `«${x.word}» 나온 책`, () => wordRows(x, idx), slot);
+  b.addEventListener('click', () => markNet(card));
+  return b;
+}
 function drawWordMap(card) {
   delete card.dataset.pending;
+  if (card.querySelector('.net')) card.classList.add('drawn'); // 같은 카드를 다시 그릴 때는 움직이지 않는다
   const ry = card.dataset.ry, idx = wordsFor(ry);
   const title = el('h2', {}, '낱말 지도 ', privateTag());
   if (idx.length < 3) {
     card.replaceChildren(title, el('p', { className:'sub', textContent:ry ? `${ry}년에 읽은 책에는 두 권 이상에 나온 낱말이 아직 적어요.` : '메모와 밑줄이 쌓이면 두 권 이상에 나온 낱말을 모아 보여 줄게요.' }));
     return;
   }
-  const slot = el('div', { className:'drill-slot' });
-  const shown = idx.slice(0, S.wordAll ? WORD_MAX : WORD_SHOW);
-  const chips = shown.map((x, i) => {
-    const size = i < 5 ? 3 : i < 15 ? 2 : 1; // 한 낱말이 유난히 많아도 크기가 고르게 갈리도록 순위로 나눈다
-    const b = el('button', { className:`chip word-chip w${size}`, type:'button' }, x.word, el('b', { textContent:x.books.length }));
-    b.dataset.word = x.word;
-    b.style.setProperty('--i', Math.min(i, 30));
-    b.setAttribute('aria-label', `${x.word}, ${x.books.length}권에 나옴`);
-    return drillable(b, `w:${x.word}`, `«${x.word}» 나온 책`, () => wordRows(x, idx), slot);
-  });
-  const more = !S.wordAll && idx.length > WORD_SHOW ? el('button', { className:'copy', type:'button', textContent:`낱말 더 보기 (${Math.min(idx.length, WORD_MAX) - WORD_SHOW}개)` }) : null;
-  if (more) more.onclick = () => { S.wordAll = true; drawWordMap(card); const next = card.querySelectorAll('[data-word]')[shown.length]; if (next) next.focus({ preventScroll:true }); };
+  const slot = el('div', { className:'drill-slot' }), count = netCount();
+  const { nodes, edges } = wordGraph(idx, count);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'net-lines');
+  svg.setAttribute('aria-hidden', 'true');
+  const top = Math.max(...edges.map((e) => e.w), 0);
+  edges.forEach((e) => { const line = document.createElementNS('http://www.w3.org/2000/svg', 'line'); if (e.w >= top * .6) line.setAttribute('class', 'strong'); line.dataset.a = nodes[e.a].word; line.dataset.b = nodes[e.b].word; svg.append(line); });
+  const net = el('div', { className:'net', role:'group', ariaLabel:`낱말 연결망, 낱말 ${nodes.length}개` }, svg, nodes.map((x, i) => wordChip(x, i, idx, slot, card)));
+  net.edges = edges;
+  const rest = idx.slice(count, WORD_MAX);
+  const cloud = S.wordAll && rest.length ? el('div', { className:'word-cloud' }, rest.map((x, i) => wordChip(x, count + i, idx, slot, card))) : null;
+  const more = !S.wordAll && rest.length ? el('button', { className:'copy word-more', type:'button', textContent:`낱말 더 보기 (${rest.length}개)` }) : null;
+  if (more) more.onclick = () => { S.wordAll = true; drawWordMap(card); const next = card.querySelector('.word-cloud [data-word]'); if (next) next.focus({ preventScroll:true }); };
   card.replaceChildren(title,
-    el('p', { className:'sub', textContent:`${ry ? `${ry}년에 읽은 책의` : '내'} ${LOCAL ? '메모·밑줄' : '메모·밑줄·서평'}에서 두 권 이상에 나온 낱말이에요. 숫자는 이어진 책 수이고, 누르면 그 문장이 나와요` }),
-    el('div', { className:'word-cloud' }, chips), ...(more ? [more] : []), slot);
+    el('p', { className:'sub', textContent:`${ry ? `${ry}년에 읽은 책의` : '내'} ${LOCAL ? '메모·밑줄' : '메모·밑줄·서평'}에서 두 권 이상에 나온 낱말이에요. 선은 같은 책에 함께 나오는 낱말을 잇고, 숫자는 이어진 책 수예요. 누르면 그 문장이 나와요` }),
+    net, ...(more ? [more] : []), ...(cloud ? [cloud] : []), slot);
+  placeNet(card);
 }
+// 칩의 실제 크기를 재서 자리를 정한다. 화면에 붙어 있어야 잴 수 있어 renderRecap도 그린 뒤에 부른다
+function placeNet(card) {
+  const net = card && card.querySelector('.net');
+  if (!net || !net.isConnected || !net.clientWidth) return;
+  const chips = [...net.querySelectorAll('.word-chip')], width = net.clientWidth;
+  const { height, points } = layoutGraph(chips.map((b) => ({ w:b.offsetWidth, h:b.offsetHeight })), net.edges, width);
+  net.style.height = `${height}px`;
+  net.dataset.width = width;
+  chips.forEach((b, i) => { b.style.left = `${points[i].x}px`; b.style.top = `${points[i].y}px`; });
+  const center = (i) => [points[i].x + chips[i].offsetWidth / 2, points[i].y + chips[i].offsetHeight / 2];
+  net.querySelectorAll('line').forEach((line, i) => { const e = net.edges[i], [x1, y1] = center(e.a), [x2, y2] = center(e.b); line.setAttribute('x1', x1); line.setAttribute('y1', y1); line.setAttribute('x2', x2); line.setAttribute('y2', y2); });
+  markNet(card);
+}
+// 고른 낱말의 선과 이웃을 드러낸다
+function markNet(card) {
+  const net = card && card.querySelector('.net');
+  if (!net) return;
+  const word = S.drill.startsWith('w:') ? S.drill.slice(2) : '', near = new Set();
+  net.querySelectorAll('line').forEach((line) => {
+    const on = !!word && (line.dataset.a === word || line.dataset.b === word);
+    line.classList.toggle('on', on);
+    if (on) { near.add(line.dataset.a); near.add(line.dataset.b); }
+  });
+  net.classList.toggle('has-on', near.size > 0);
+  net.querySelectorAll('.word-chip').forEach((b) => b.classList.toggle('near', near.has(b.dataset.word)));
+}
+// 폭이 바뀌면 자리를 다시 정한다. 낱말 수가 달라지는 폭이면 다시 그린다
+function fitNet() {
+  const card = $('wordMap'), net = card && card.querySelector('.net');
+  if (!net || S.view !== 'recap' || card.dataset.pending) return;
+  const idx = wordsFor(card.dataset.ry);
+  if (net.querySelectorAll('.word-chip').length !== Math.min(netCount(), idx.length)) {
+    const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.word : '';
+    if (S.drill.startsWith('w:') && idx.findIndex((x) => x.word === S.drill.slice(2)) >= netCount()) S.wordAll = true; // 열어 둔 낱말이 연결망 밖으로 나가면 칩 목록으로 펼쳐 둔다
+    drawWordMap(card);
+    const again = focused && [...card.querySelectorAll('[data-word]')].find((b) => b.dataset.word === focused);
+    if (again) again.focus({ preventScroll:true });
+    return;
+  }
+  if (+net.dataset.width !== net.clientWidth) placeNet(card);
+}
+window.addEventListener('resize', fitNet);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { const c = $('wordMap'); if (c && S.view === 'recap') placeNet(c); });
 
 /* ---------- 내 서재 ---------- */
 const openLoan = (it) => it.loans.find((l) => !l.back);
@@ -1978,7 +2043,7 @@ function show(v, quiet) {
   $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
   if (v === 'posts') watch('.rise');
-  if (v === 'recap') { const c = document.querySelector('#wordMap[data-pending]'); if (c) drawWordMap(c); }
+  if (v === 'recap') { const c = document.querySelector('#wordMap[data-pending]'); if (c) drawWordMap(c); else fitNet(); }
   renderJump();
 }
 VIEWS.forEach((v) => { $(`tab-${v}`).onclick = () => show(v); });
