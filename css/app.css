@@ -524,3 +524,18 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
   .scroll-down .fab:focus-visible,.scroll-down .totop:focus-visible { opacity:1; pointer-events:auto; transform:none; }
 }
 #kinds:empty { display:none; }
+
+/* 양식 창: 제목·닫기와 저장 단추는 늘 보이게 붙이고, 칸이 창 폭을 벌리지 못하게 한다 (2026-11-07) */
+#form-body { grid-template-columns:minmax(0,1fr); }
+#form-body .field { grid-template-columns:minmax(0,1fr); min-width:0; }
+#form-body .field input,#form-body .field select,#form-body .field textarea { min-width:0; max-width:100%; }
+.field input[type=date] { -webkit-appearance:none; appearance:none; min-height:43px; }
+.field input[type=date]::-webkit-date-and-time-value { text-align:left; }
+#form-body > .sheet-head { position:sticky; top:0; z-index:2; margin:-18px -18px 0; padding:12px 18px 10px; background:var(--surface); border-bottom:1px solid var(--line); }
+#form-body > .sheet-head h2 { min-width:0; }
+#form-body > .form-foot { position:sticky; bottom:0; z-index:2; margin:0 -18px -18px; padding:10px 18px max(12px,env(safe-area-inset-bottom,0px)); background:var(--surface); border-top:1px solid var(--line); justify-content:flex-end; }
+@media (max-width:599px) {
+  #form { width:100vw; max-width:100vw; margin:auto 0 0; max-height:94dvh; border-width:1px 0 0; border-radius:14px 14px 0 0; }
+  .ask-dlg { max-width:calc(100vw - 32px); }
+}
+.ed-list { grid-template-columns:repeat(2,minmax(0,1fr)); }

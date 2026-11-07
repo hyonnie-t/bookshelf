@@ -1594,7 +1594,7 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
   const err = el('p', { className:'form-err', role:'alert', hidden:true });
   const save = onSave ? el('button', { className:'btn', type:'submit', textContent:saveLabel }) : null;
   const form = $('form-body');
-  form.replaceChildren(el('div', { className:'sheet-head' }, el('h2', { id:'form-title', textContent:title }), close), ...kids, err, ...(save ? [el('div', { className:'actions' }, save)] : []));
+  form.replaceChildren(el('div', { className:'sheet-head' }, el('h2', { id:'form-title', textContent:title }), close), ...kids, err, ...(save ? [el('div', { className:'actions form-foot' }, save)] : []));
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!save) return;
