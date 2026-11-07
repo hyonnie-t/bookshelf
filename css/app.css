@@ -217,6 +217,16 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .lib-group { margin-top:22px; }
 .lib-group .empty { margin:0 0 14px; }
 .lib-group .shelf-head { margin-bottom:8px; }
+.lib-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:2px 12px; }
+.lib-tools .row { min-width:0; align-items:center; }
+.sort-label { flex:none; color:var(--muted); font-size:.86rem; margin-right:2px; }
+.shelf-head h2 .sw { display:inline-block; width:.6em; height:.6em; border-radius:2px; margin-right:7px; vertical-align:.06em; }
+/* 주제 칸: 몇 권 안 되는 칸은 옆으로 나란히 놓아 빈 선반이 길게 이어지지 않게 한다 */
+#cases.by-theme { display:flex; flex-wrap:wrap; align-items:flex-start; column-gap:14px; }
+#cases.by-theme > .lib-group,#cases.by-theme > .empty { flex:1 1 100%; min-width:0; }
+#cases.by-theme > .lib-group.few { flex:0 1 auto; }
+#cases.by-theme > .lib-group.few .shelf-head { white-space:nowrap; }
+.case.fit { min-height:calc(var(--row) + 24px); }
 .case { --row:216px; --plank:10px; display:flex; flex-wrap:wrap; align-content:flex-start; min-height:calc(var(--row) * 2 + 24px); padding:0 6px; border:solid var(--wood); border-width:10px 12px 14px; border-bottom-color:var(--wood-deep); border-radius:4px 4px 2px 2px; background:repeating-linear-gradient(to bottom,var(--case-shade) 0,transparent 14px,transparent calc(var(--row) - var(--plank)),var(--wood) calc(var(--row) - var(--plank)),var(--wood) var(--row)),var(--case-back); }
 .lslot { display:flex; align-items:flex-end; height:calc(var(--row) - var(--plank)); margin-bottom:var(--plank); padding-inline:.5px; }
 .lbook { justify-content:space-between; gap:6px; padding:20px 2px 8px; }

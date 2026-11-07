@@ -18,7 +18,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0 };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0 };
 const D = { pub:null, blog:[], works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
@@ -1181,6 +1181,8 @@ const libWork = (it) => (it.w ? D.works.get(it.w) : null);
 const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
 const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !isReading(w); };
 const libThemes = (it) => (it.th.length ? it.th : (libWork(it) || {}).th || []);
+// 첫 저자만: «저자, 역자 옮김», «A / B», «홍길동(지은이)», «첫 사람 외» 꼴에서 이름만 남긴다
+const libAuthor = (it) => (it.a || (libWork(it) || {}).a || '').replace(/[(\[][^)\]]*[)\]]/g, '').split(/[\/,]/)[0].trim().replace(/\s+(외(\s*\d+\s*명)?|지음|옮김|엮음|저|역|글|그림)$/, '').trim();
 const isLate = (l) => !!l.due && !l.back && l.due < today();
 const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
 function libMatches(it) {
@@ -1197,7 +1199,7 @@ function caseBook(it) {
   const title = it.t || '제목 없음', th = libThemes(it);
   // 플랫한 색면에 얇은 줄과 저자만 더한다(효니 선택 2026-11-05). 빌려준 책은 빈자리로 보인다
   const label = title.length > 24 ? title.slice(0, 23) + '…' : title;
-  const sub = out ? `${l.who.slice(0, 6)}에게` : (it.a || '').split(/[\/,]/)[0].trim().slice(0, 6);
+  const sub = out ? `${l.who.slice(0, 6)}에게` : libAuthor(it).slice(0, 6);
   const h = 146 + Math.abs(hash(title)) % 50;
   const perCol = Math.max(5, Math.floor((h - 30 - sub.length * 12) / 15));
   const cols = Math.min(3, Math.ceil(label.length / perCol));
@@ -1264,6 +1266,8 @@ function renderLibrary() {
     b.onclick = () => { S.lf = k; renderLibrary(); };
     return b;
   }));
+  const sort = libSort();
+  drawLibSort(sort);
   const rows = act.filter(libMatches);
   $('lcount').textContent = `${rows.length}권`;
   renderLedger();
@@ -1279,17 +1283,76 @@ function renderLibrary() {
     $('cases').replaceChildren(el('div', { className:'empty' }, el('div', { textContent:'조건에 맞는 책이 없어요.' }), reset));
     return;
   }
-  const groups = new Map();
-  rows.filter((x) => x.st === 'own').forEach((x) => { const k = x.where || DEFAULT_WHERE; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
-  const order = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], 'ko'));
-  const inn = rows.filter((x) => x.st === 'in');
-  if (inn.length) order.push(['빌려 온 책', inn]);
-  // 주제 색이 모이도록 주제, 제목 순으로 꽂는다
-  const key = (x) => (libThemes(x)[0] || '힣') + (x.t || '');
-  $('cases').replaceChildren(...order.map(([name, books]) => jumpMark(el('section', { className:'lib-group shelf' },
-    el('div', { className:'shelf-head' }, el('h2', { textContent:name }), el('span', { textContent:`${books.length}권` })),
-    el('div', { className:'case' }, [...books].sort((a, b) => key(a).localeCompare(key(b), 'ko')).map(caseBook))), name)));
+  const byTheme = sort === 'theme';
+  $('cases').classList.toggle('by-theme', byTheme);
+  $('cases').replaceChildren(...libSections(rows, sort).map(({ name, books, swatch, markOf }) => {
+    const seen = new Set();
+    const slots = books.map((it) => {
+      const slot = caseBook(it), mark = markOf && markOf(it);
+      if (mark && !seen.has(mark)) { seen.add(mark); jumpMark(slot, mark); } // 긴 선반 하나에서 그 글자의 첫 책으로 바로 간다
+      return slot;
+    });
+    const h2 = el('h2');
+    if (swatch) { const sw = el('span', { className:'sw' }); sw.style.background = themeVar(swatch === NO_THEME ? '' : swatch); h2.append(sw); }
+    h2.append(name);
+    const section = el('section', { className:`lib-group shelf${byTheme && books.length <= FEW_BOOKS ? ' few' : ''}` },
+      el('div', { className:'shelf-head' }, h2, el('span', { textContent:`${books.length}권` })),
+      el('div', { className:`case${byTheme ? ' fit' : ''}` }, slots));
+    return seen.size ? section : jumpMark(section, name); // 글자로 건너뛰는 선반은 글자 칩만 둔다
+  }));
   watch('.lib-group.shelf');
+}
+/* 꽂는 순서: 소장한 책만 순서를 바꾸고, 빌려 온 책은 언제나 맨 뒤 칸에 따로 둔다(내 책장에 있는 책이 아니라서) */
+const NO_THEME = '주제 미정', LIB_FLAT = '소장한 책', LIB_IN = '빌려 온 책', NO_AUTHOR = '저자 미상', FEW_BOOKS = 8;
+const LIB_SORTS = [['theme','주제'],['title','제목'],['author','저자'],['recent','최근'],['where','위치']];
+const LIBSORT_KEY = LOCAL ? 'myshelf-libsort' : 'shelf-libsort';
+try { const v = localStorage.getItem(LIBSORT_KEY); if (LIB_SORTS.some(([k]) => k === v)) S.ls = v; } catch (e) {}
+const KO = new Intl.Collator('ko', { numeric:true, sensitivity:'base' }); // 1권 다음에 2권, 10권은 그 뒤
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', CHO_BASE = { ㄲ:'ㄱ', ㄸ:'ㄷ', ㅃ:'ㅂ', ㅆ:'ㅅ', ㅉ:'ㅈ' };
+const leadTrim = (s) => (s || '').replace(/^[^\p{L}\p{N}]+/u, ''); // «」(처럼 앞에 붙은 문장부호는 순서에 넣지 않는다
+function firstLetter(s) {
+  const c = leadTrim(s)[0] || '', code = c.charCodeAt(0);
+  if (code >= 0xAC00 && code <= 0xD7A3) { const ch = CHO[Math.floor((code - 0xAC00) / 588)]; return CHO_BASE[ch] || ch; }
+  if (/[a-z]/i.test(c)) return 'A-Z';
+  if (/\d/.test(c)) return '0-9';
+  return '기타';
+}
+const libHasPlaces = () => new Set(D.lib.filter((x) => x.st === 'own' && isActive(x)).map((x) => x.where || DEFAULT_WHERE)).size >= 2;
+const libSort = () => (S.ls === 'where' && !libHasPlaces() ? 'theme' : S.ls); // 위치를 적은 책이 없으면 위치 단추도 없다
+function drawLibSort(sort) {
+  const box = $('libSort');
+  box.hidden = !D.lib.some(isActive);
+  box.replaceChildren(el('span', { className:'sort-label', textContent:'꽂는 순서' }), ...LIB_SORTS.filter(([k]) => k !== 'where' || libHasPlaces()).map(([k, label]) => {
+    const b = el('button', { className:'chip', type:'button', textContent:label });
+    b.setAttribute('aria-pressed', sort === k);
+    b.onclick = () => {
+      S.ls = k;
+      try { localStorage.setItem(LIBSORT_KEY, k); } catch (e) {}
+      renderLibrary();
+    };
+    return b;
+  }));
+}
+function libSections(rows, sort) {
+  const own = rows.filter((x) => x.st === 'own'), inn = rows.filter((x) => x.st === 'in');
+  const byTitle = (a, b) => KO.compare(leadTrim(a.t), leadTrim(b.t));
+  const out = [];
+  if (sort === 'theme' || sort === 'where') {
+    const groups = new Map();
+    own.forEach((x) => { const k = sort === 'theme' ? libThemes(x)[0] || NO_THEME : x.where || DEFAULT_WHERE; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+    const rank = (t) => (t === NO_THEME ? 1e3 : (THEMES.findIndex((x) => x[0] === t) + 1) || 999); // 칸이 늘거나 줄어도 자리가 바뀌지 않게 주제 목록 순서를 따른다
+    const names = [...groups.keys()].sort(sort === 'theme' ? (a, b) => rank(a) - rank(b) : (a, b) => groups.get(b).length - groups.get(a).length || a.localeCompare(b, 'ko'));
+    // 위치별 칸 안에서는 예전처럼 주제 색이 모이도록 주제, 제목 순으로 꽂는다
+    const inGroup = sort === 'theme' ? byTitle : (a, b) => rank(libThemes(a)[0] || NO_THEME) - rank(libThemes(b)[0] || NO_THEME) || byTitle(a, b);
+    names.forEach((name) => out.push({ name, books:groups.get(name).sort(inGroup), swatch:sort === 'theme' ? name : '' }));
+  } else if (own.length) {
+    const byAuthor = (a, b) => (!libAuthor(a) - !libAuthor(b)) || KO.compare(leadTrim(libAuthor(a)), leadTrim(libAuthor(b))) || byTitle(a, b);
+    const byRecent = (a, b) => (b.added || '').localeCompare(a.added || '') || byTitle(a, b);
+    const markOf = sort === 'title' ? (x) => firstLetter(x.t) : sort === 'author' ? (x) => (libAuthor(x) ? firstLetter(libAuthor(x)) : NO_AUTHOR) : null;
+    out.push({ name:LIB_FLAT, books:own.sort(sort === 'title' ? byTitle : sort === 'author' ? byAuthor : byRecent), markOf });
+  }
+  if (inn.length) out.push({ name:LIB_IN, books:inn.sort(byTitle) });
+  return out;
 }
 function libBox(it, w) {
   if (!it) {
