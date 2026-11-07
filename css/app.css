@@ -355,3 +355,21 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .overlap-pick { color:var(--ink); }
 .overlap-note { color:var(--muted); }
 .dup-row .memo-foot { justify-content:space-between; }
+
+/* 밑줄: 문장은 제목 글꼴로, 내 생각은 본문 글꼴로. 저장한 줄에만 밑줄이 한 번 그어진다 */
+.mark-q { margin:0; font-family:var(--font-title); font-size:1rem; line-height:1.85; white-space:pre-line; }
+.mark-why { margin:0; font-size:.92rem; line-height:1.7; color:var(--muted); white-space:pre-line; }
+.mark.just .mark-q::after { content:""; display:block; height:2px; margin-top:4px; background:var(--accent); transform-origin:left; opacity:0; animation:mark-draw 1s ease-out .15s both; }
+@keyframes mark-draw { 0% { transform:scaleX(0); opacity:1; } 45% { transform:scaleX(1); opacity:1; } 75% { transform:scaleX(1); opacity:1; } 100% { transform:scaleX(1); opacity:0; } }
+/* 오늘의 문장: 머리말 아래 한 칸. 주인과 범용판에서만 채워진다 */
+.today { margin-top:12px; padding:12px 16px; display:grid; gap:6px; background:var(--surface); border:1px solid var(--line); border-radius:8px; }
+.today[hidden] { display:none; }
+.today > * { transition:opacity .22s ease; }
+.today.swap > * { opacity:0; transition-duration:.14s; }
+.today.enter { animation:today-in .32s ease both; }
+@keyframes today-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+.today-label { margin:0; font-family:var(--font-body); font-size:.82rem; font-weight:400; color:var(--muted); }
+.today-q { margin:0; font-family:var(--font-title); font-size:1.05rem; line-height:1.75; white-space:pre-line; max-width:65ch; }
+.today-foot { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; justify-content:space-between; }
+.today-from { font-size:.84rem; color:var(--muted); min-width:0; }
+.today-tools { display:flex; gap:6px; flex:none; }

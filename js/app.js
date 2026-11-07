@@ -40,7 +40,7 @@ function rebuild() {
     works.set(id, { recs:[], notes:[], ...pub, ...w, id, th:w.th || (DEMO ? pub.th : []) || [], y:w.y || pub.y || '', fd:w.fd || pub.fd || '' });
   });
   D.moved = new Map();
-  for (const [id, w] of works) { w.recs = w.recs || []; w.notes = w.notes || []; w.archived = w.archived || []; w.th = w.th || []; if (w.del) { if (w.into) D.moved.set(id, w.into); works.delete(id); } }
+  for (const [id, w] of works) { w.recs = w.recs || []; w.notes = w.notes || []; w.archived = w.archived || []; w.marks = w.marks || []; w.th = w.th || []; if (w.del) { if (w.into) D.moved.set(id, w.into); works.delete(id); } }
   // 공개본의 옮김 표(tools/publish.js). 주인이 되돌려 다시 살아난 책은 따르지 않는다
   Object.entries(D.pub.moved || {}).forEach(([from, to]) => { if (!works.has(from) && !D.moved.has(from)) D.moved.set(from, to); });
   const posts = new Map((D.pub.posts || []).map((p) => [p.c, { ...p, w:p.w || [] }]));
@@ -56,9 +56,9 @@ function rebuild() {
   D.posts.forEach((p) => p.w.forEach((id) => { if (!D.byWork.has(id)) D.byWork.set(id, []); D.byWork.get(id).push(p); }));
   works.forEach((w) => {
     const rv = D.byWork.get(w.id) || [];
-    if (!w.pub && !w.notes.length && w.archived.length && !w.recs.length && !rv.length) { works.delete(w.id); return; } // 메모를 다 보관해 글이 없는 칸은 책장에서 뺀다. 되돌리면 다시 꽂힌다(tools/publish.js와 같은 기준)
+    if (!w.pub && !w.notes.length && w.archived.length && !w.marks.length && !w.recs.length && !rv.length) { works.delete(w.id); return; } // 메모를 다 보관해 글이 없는 칸은 책장에서 뺀다. 되돌리면 다시 꽂힌다(tools/publish.js와 같은 기준)
     w.nameHay = squeeze([w.t, w.a, w.p].filter(Boolean).join(' '));
-    w.hay = squeeze([w.t, w.a, w.p, ...w.notes.flatMap((n) => [n.l, n.b]), ...w.recs.flatMap((r) => [r.l, r.b]), ...rv.map((p) => p.x)].filter(Boolean).join(' '));
+    w.hay = squeeze([w.t, w.a, w.p, ...w.notes.flatMap((n) => [n.l, n.b]), ...w.recs.flatMap((r) => [r.l, r.b]), ...w.marks.flatMap((m) => [m.q, m.why]), ...rv.map((p) => p.x)].filter(Boolean).join(' '));
     if (!w.y) { const d = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0]; if (d) w.y = d.slice(0, 4); }
     if (!w.fd) w.fd = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0] || '';
   });
@@ -324,7 +324,7 @@ function openLib(libId, from) {
   const w = libWork(it);
   if (w) { openBook(w.id, from, it); return; }
   S.cur = { lib:libId };
-  renderTome({ t:it.t, a:it.a, p:it.p, k:'book', th:it.th, recs:[], notes:[] }, it, from);
+  renderTome({ t:it.t, a:it.a, p:it.p, k:'book', th:it.th, recs:[], notes:[], marks:[] }, it, from);
 }
 const privateTag = () => LOCAL ? null : el('span', { className:'only-tag', textContent:'나만 보기' });
 // 공개 페이지(data/public.json)는 tools/publish.js로만 바뀐다. 그래서 지금 방문자에게 어떻게 보이는지를 그대로 적는다
@@ -374,7 +374,7 @@ function renderTome(w, item, from) {
   else if (!S.owner) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
   if (S.owner) {
     left.push(libBox(item, w));
-    if (!rv.length && !w.recs.length && !w.notes.length) {
+    if (!rv.length && !w.recs.length && !w.notes.length && !w.marks.length) {
       const kids = [el('p', { className:'warn', textContent:w.id ? '아직 남긴 글이 없어요.' : '아직 읽은 기록이 없어요.' })];
       if (!w.id) { const go = el('button', { className:'btn', type:'button', textContent:'읽고 기록 남기기' }); go.onclick = () => openBookForm(null, { pre:item }); kids.push(go); }
       body.push(el('div', { className:'blank-page' }, kids));
@@ -391,6 +391,10 @@ function renderTome(w, item, from) {
           r.b ? el('p', { className:'post-text', textContent:r.b }) : null,
           el('div', { className:'memo-foot' }, edit)));
       });
+    }
+    if (w.marks.length) {
+      body.push(el('h3', { className:'sec' }, `밑줄 ${w.marks.length}`, privateTag()));
+      marksInOrder(w).forEach((m) => body.push(markRow(w, m)));
     }
     if (w.notes.length) {
       body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, privateTag()));
@@ -412,7 +416,9 @@ function renderTome(w, item, from) {
       const merge = el('button', { className:'copy', type:'button', textContent:'같은 책과 합치기' });
       merge.onclick = () => openMergePick(w);
       if (!LOCAL) left.push(onlyMeBox(w));
-      left.push(el('div', { className:'actions' }, addRec, editBook, merge));
+      let addMark = null;
+      if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
+      left.push(el('div', { className:'actions' }, addRec, addMark, editBook, merge));
     }
   }
   const share = el('button', { className:'copy', type:'button', textContent:w.k === 'film' ? '이 작품 링크 복사' : '이 책 링크 복사' });
@@ -839,7 +845,7 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, nameHay, pub, ...rest } = w;
@@ -880,10 +886,98 @@ function ask(message, yes = '지우기') {
   });
 }
 
+/* ---------- 밑줄 ---------- */
+// 문장·쪽·내 생각을 한 묶음으로 두는 비공개 칸 marks. 아이폰 메모(notes)와 섞지 않고, tools/publish.js는 옮기지 않는다
+const markId = () => 'm' + Date.now().toString(36) + Array.from(crypto.getRandomValues(new Uint8Array(3)), (b) => b.toString(16).padStart(2, '0')).join('');
+const pageText = (s) => tidy(s).replace(/^pp?\.?\s*(?=\d)/i, '').replace(/\s*(?:쪽|페이지)$/, '').replace(/(\d)\s*[-~—―–]\s*(\d)/g, '$1–$2'); // 129-130도 129~130도 129–130으로 맞춘다
+const pageLabel = (p) => (/^\d/.test(p || '') ? `p.${p}` : p || '');
+const pageNum = (p) => { const m = /\d+/.exec(p || ''); return m ? +m[0] : Infinity; };
+const marksInOrder = (w) => [...w.marks].sort((a, b) => pageNum(a.p) - pageNum(b.p) || (a.d || '').localeCompare(b.d || '') || (a.id || '').localeCompare(b.id || ''));
+function markRow(w, m) {
+  const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
+  edit.onclick = () => openMarkForm(w, m.id);
+  const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
+  del.onclick = async () => {
+    if (!await ask('이 밑줄을 지울까요? 되돌릴 수 없어요.')) return;
+    const scrollers = ['.pages', '.leaf.r'].map((c) => { const n = document.querySelector(`#sheet-body ${c}`); return [c, n ? n.scrollTop : 0]; });
+    const cur = D.works.get(w.id) || w;
+    memoSave({ ...cur, marks:cur.marks.filter((x) => x.id !== m.id) }, '밑줄을 지웠어요')
+      .then(() => scrollers.forEach(([c, top]) => { const n = document.querySelector(`#sheet-body ${c}`); if (n) n.scrollTop = top; }))
+      .catch(() => {});
+  };
+  return el('div', { className:`memo mark${S.justMark === m.id ? ' just' : ''}` },
+    el('div', { className:'when', textContent:[pageLabel(m.p), m.d].filter(Boolean).join(' · ') || '쪽 없음' }),
+    el('blockquote', { className:'mark-q', textContent:m.q }),
+    m.why ? el('p', { className:'mark-why', textContent:m.why }) : null,
+    el('div', { className:'memo-foot' }, edit, del));
+}
+function openMarkForm(w, id) {
+  const m = id ? w.marks.find((x) => x.id === id) || {} : {};
+  const q = el('textarea', { rows:5, value:m.q || '' });
+  const p = el('input', { type:'text', value:m.p || '', autocomplete:'off' });
+  const why = el('textarea', { rows:3, value:m.why || '' });
+  const d = el('input', { type:'date', value:m.d || today() });
+  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d)], async () => {
+    const text = q.value.replace(/\r\n?/g, '\n').trim();
+    if (!text) throw fail('문장을 붙여 넣어 주세요.');
+    const next = { ...m, id:m.id || markId(), d:d.value, p:pageText(p.value), q:text, why:why.value.replace(/\r\n?/g, '\n').trim() };
+    const cur = D.works.get(w.id) || w; // 창을 연 뒤에 바뀌었을 수 있어 최신 칸에 넣는다
+    const marks = id ? cur.marks.map((x) => (x.id === id ? next : x)) : [...cur.marks, next];
+    await saveWork({ ...cur, marks }, '밑줄을 저장했어요');
+    S.justMark = next.id;
+    openBook(w.id, $('sheet').returnEl);
+    S.justMark = '';
+    const row = document.querySelector('#sheet-body .mark.just');
+    if (row) row.scrollIntoView({ block:'center' });
+  });
+}
+
+/* ---------- 오늘의 문장 ---------- */
+// 주인과 범용판에서만 나온다(S.owner). 날짜로 정해 하루 동안 같은 문장이고, 밑줄이 있으면 절반은 밑줄에서 고른다
+const memoSentences = (b) => (b || '').split(/\n+|(?<=[.!?…。])\s+/).map(tidy).filter((s) => s.length >= 12 && s.length <= 160 && !/https?:|#\S/.test(s));
+function todayPool() {
+  const marks = [], memos = [];
+  list().forEach((w) => {
+    w.marks.forEach((m) => marks.push({ w, text:m.q, where:pageLabel(m.p) }));
+    if (['book', 'film', 'show'].includes(w.k)) w.notes.forEach((n) => { if (n.s === 'want') return; const parts = memoSentences(n.b); if (parts.length) memos.push({ w, parts, where:'옛 메모' }); });
+  });
+  return { marks, memos };
+}
+function todayPick() {
+  if (!S.owner) return null;
+  const { marks, memos } = todayPool();
+  if (!marks.length && !memos.length) return null;
+  const seed = Math.abs(hash(`${today()}:${S.todayN || 0}`));
+  const pool = marks.length && (!memos.length || seed % 2 === 0) ? marks : memos;
+  const it = pool[(seed >>> 1) % pool.length];
+  const text = it.parts ? it.parts[(seed >>> 3) % it.parts.length] : it.text;
+  return { w:it.w, where:it.where, text:text.length > 240 ? text.slice(0, 239) + '…' : text };
+}
+function renderToday() {
+  const box = $('today');
+  if (!box) return;
+  const it = todayPick();
+  if (!it) { box.hidden = true; box.replaceChildren(); return; }
+  if (box.hidden) { box.hidden = false; box.classList.add('enter'); }
+  const go = el('button', { className:'copy', type:'button', textContent:'이 책 펴기' });
+  go.onclick = () => openBook(it.w.id, go);
+  const other = el('button', { className:'copy', type:'button', textContent:'다른 문장' });
+  other.onclick = () => {
+    const next = () => { const was = it.text; let n = 0; do { S.todayN = (S.todayN || 0) + 1; } while (++n < 6 && todayPick().text === was); renderToday(); box.classList.remove('swap'); };
+    if (calm()) { next(); return; }
+    box.classList.add('swap'); // 글자가 먼저 사라진 뒤 새 글자를 보여 준다
+    setTimeout(next, 150);
+  };
+  box.replaceChildren(
+    el('h2', { className:'today-label', textContent:'오늘의 문장' }),
+    el('blockquote', { className:'today-q', textContent:it.text }),
+    el('div', { className:'today-foot' }, el('span', { className:'today-from', textContent:[titleOf(it.w), it.where].filter(Boolean).join(' · ') }), el('span', { className:'today-tools' }, go, other)));
+}
+
 /* ---------- 메모 보관·지우기 ---------- */
 // 보관한 메모는 같은 칸의 archived로 옮긴다. notes에서 빠지므로 책등·찾기·돌아보기·공개 반영에 쓰이지 않는다
-const memoOwner = (id) => { const w = D.priv.works[id]; return D.works.get(id) || { ...w, id, t:w.t || '', th:w.th || [], recs:w.recs || [], notes:w.notes || [], archived:w.archived || [] }; };
-const emptyAfter = (w, notes, archived) => !w.pub && !notes.length && !archived.length && !w.recs.length && !reviewsOf(w).length;
+const memoOwner = (id) => { const w = D.priv.works[id]; return D.works.get(id) || { ...w, id, t:w.t || '', th:w.th || [], recs:w.recs || [], notes:w.notes || [], archived:w.archived || [], marks:w.marks || [] }; };
+const emptyAfter = (w, notes, archived) => !w.pub && !notes.length && !archived.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length;
 function afterMemo() {
   if (!$('sheet').open) return;
   if (S.cur && S.cur.id && !D.works.has(S.cur.id)) closeBook(); else reshow();
@@ -900,7 +994,7 @@ async function memoSave(next, msg) {
 function memoTools(w, i) {
   const keep = el('button', { className:'copy', type:'button', textContent:'보관' });
   keep.onclick = () => {
-    const notes = w.notes.filter((_, x) => x !== i), gone = !w.pub && !notes.length && !w.recs.length && !reviewsOf(w).length;
+    const notes = w.notes.filter((_, x) => x !== i), gone = !w.pub && !notes.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length;
     memoSave({ ...w, notes, archived:[...w.archived, { ...w.notes[i], arcAt:today() }] }, gone ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
   };
   const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
@@ -1138,9 +1232,9 @@ function dupPairs() {
   return out.sort((p, q) => q.same - p.same);
 }
 const kindName = (w) => (KINDS.find((k) => k[0] === w.k) || [,''])[1];
-const bookCounts = (w) => `기록 ${w.recs.length} · 메모 ${w.notes.length} · 서평 ${reviewsOf(w).length}`;
+const bookCounts = (w) => `기록 ${w.recs.length} · 메모 ${w.notes.length}${w.marks.length ? ` · 밑줄 ${w.marks.length}` : ''} · 서평 ${reviewsOf(w).length}`;
 const bookMeta = (w) => [kindName(w), w.a || '저자 없음', w.y, bookCounts(w)].filter(Boolean).join(' · ');
-const bookWeight = (w) => w.recs.length + w.notes.length + reviewsOf(w).length + (w.k === 'book' ? .5 : 0) + (w.a ? .25 : 0) - (w.guess || !w.t ? 100 : 0); // 추정 제목이나 제목 없는 칸보다 확인된 제목을 먼저 권한다
+const bookWeight = (w) => w.recs.length + w.notes.length + w.marks.length + reviewsOf(w).length + (w.k === 'book' ? .5 : 0) + (w.a ? .25 : 0) - (w.guess || !w.t ? 100 : 0); // 추정 제목이나 제목 없는 칸보다 확인된 제목을 먼저 권한다
 function openDupTool() {
   const pairs = dupPairs();
   const row = ({ a, b }) => {
@@ -1178,7 +1272,7 @@ function openMergeForm(a, b, backToList) {
   const first = bookWeight(b) > bookWeight(a) ? b : a;
   const opts = [a, b].map((w) => el('label', { className:'keep-opt' }, el('input', { type:'radio', name:'keep', value:w.id, checked:w === first }), el('span', { className:'dup-book' }, el('strong', { textContent:titleOf(w) }), el('span', { textContent:bookMeta(w) }))));
   const note = LOCAL ? '' : ' 공개 화면에는 다음 공개 반영 때 들어가요.';
-  showForm('두 칸을 한 권으로 합치기', [el('p', { className:'warn', textContent:'남길 칸을 골라 주세요. 다른 칸의 기록·메모·서평 연결을 모두 옮기고, 비어 있는 저자·출판사도 채워요.' + note }), ...opts, el('p', { className:'warn', textContent:'잘못 합쳤으면 «겹치는 책 고치기»에서 되돌릴 수 있어요.' })], async () => {
+  showForm('두 칸을 한 권으로 합치기', [el('p', { className:'warn', textContent:'남길 칸을 골라 주세요. 다른 칸의 기록·메모·밑줄·서평 연결을 모두 옮기고, 비어 있는 저자·출판사도 채워요.' + note }), ...opts, el('p', { className:'warn', textContent:'잘못 합쳤으면 «겹치는 책 고치기»에서 되돌릴 수 있어요.' })], async () => {
     const keepId = $('form-body').querySelector('input[name="keep"]:checked').value;
     const keep = keepId === a.id ? a : b, drop = keep === a ? b : a;
     await mergeWorks(keep, drop);
@@ -1194,13 +1288,13 @@ async function mergeWorks(keep, drop) {
   const tag = (x) => ({ ...x, from:[...(x.from || []), drop.id] });
   const src = isOnlyMe(drop) && !drop.only && !isOnlyMe(keep) ? { ...drop, t:'', a:'', p:'', th:[], known:false, guess:false, y:'', fd:'' } : drop;
   const recs = [...keep.recs, ...drop.recs.map(tag)].sort((x, y) => (x.d || '').localeCompare(y.d || ''));
-  const next = storedWork({ ...keep, t:keep.t || src.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], archived:[...keep.archived, ...drop.archived.map(tag)], a:keep.a || src.a || '', p:keep.p || src.p || '', th:[...new Set([...keep.th, ...src.th])], known:!!(keep.known || src.known), y:earliest(keep.y, src.y), fd:earliest(keep.fd, src.fd) });
+  const next = storedWork({ ...keep, t:keep.t || src.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], archived:[...keep.archived, ...drop.archived.map(tag)], marks:[...keep.marks, ...drop.marks.map(tag)], a:keep.a || src.a || '', p:keep.p || src.p || '', th:[...new Set([...keep.th, ...src.th])], known:!!(keep.known || src.known), y:earliest(keep.y, src.y), fd:earliest(keep.fd, src.fd) });
   if (recs.length) { if (recs.every((r) => r.st === 'unread')) next.unread = true; else delete next.unread; }
   else if (keep.unread || drop.unread) next.unread = true;
   if (keep.guess && src.known && !src.guess) delete next.guess; // 확인된 책과 합쳤으면 더는 추정이 아니다
   if (keep.only || drop.only) next.only = true; // 한쪽이라도 나만 보기로 잠갔으면 합친 뒤에도 잠근다
   const was = { ...(keep.t ? {} : { t:'' }), a:keep.a || '', p:keep.p || '', th:keep.th, known:keep.known, unread:keep.unread, guess:keep.guess, only:keep.only, y:keep.y || '', fd:keep.fd || '' };
-  const gone = storedWork({ ...drop, recs:[], notes:[], archived:[], del:true, into:keep.id, at:Date.now(), was });
+  const gone = storedWork({ ...drop, recs:[], notes:[], archived:[], marks:[], del:true, into:keep.id, at:Date.now(), was });
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
   setPriv('works', drop.id, gone);
@@ -1218,9 +1312,9 @@ async function undoMerge(id) {
   const later = Object.values(D.priv.works).find((w) => w.del && w.into === stored.into && (w.at || 0) > (stored.at || 0));
   if (later) throw fail(`나중에 합친 «${later.t || '제목 없음'}»을 먼저 되돌려 주세요`);
   const { del, into, was, at, ...rest } = stored;
-  const recs = keep.recs || [], notes = keep.notes || [], archived = keep.archived || [];
-  const back = JSON.parse(JSON.stringify({ ...rest, recs:recs.filter((x) => cameFrom(x, id)).map(stepBack), notes:notes.filter((x) => cameFrom(x, id)).map(stepBack), archived:archived.filter((x) => cameFrom(x, id)).map(stepBack) }));
-  const next = JSON.parse(JSON.stringify({ ...keep, ...(was || {}), th:(was && was.th) || [], recs:recs.filter((x) => !cameFrom(x, id)), notes:notes.filter((x) => !cameFrom(x, id)), archived:archived.filter((x) => !cameFrom(x, id)) }));
+  const recs = keep.recs || [], notes = keep.notes || [], archived = keep.archived || [], marks = keep.marks || [];
+  const back = JSON.parse(JSON.stringify({ ...rest, recs:recs.filter((x) => cameFrom(x, id)).map(stepBack), notes:notes.filter((x) => cameFrom(x, id)).map(stepBack), archived:archived.filter((x) => cameFrom(x, id)).map(stepBack), marks:marks.filter((x) => cameFrom(x, id)).map(stepBack) }));
+  const next = JSON.parse(JSON.stringify({ ...keep, ...(was || {}), th:(was && was.th) || [], recs:recs.filter((x) => !cameFrom(x, id)), notes:notes.filter((x) => !cameFrom(x, id)), archived:archived.filter((x) => !cameFrom(x, id)), marks:marks.filter((x) => !cameFrom(x, id)) }));
   ['unread', 'guess', 'known', 'only'].forEach((k) => { if (!was || was[k] === undefined) delete next[k]; }); // 합치기 전에 없던 표시는 지운다
   await write('works', { [stored.into]:next, [id]:back }, 'update');
   setPriv('works', stored.into, next);
@@ -1279,7 +1373,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     }
   };
   const del = w ? el('button', { className:'copy danger', type:'button', textContent:'책장에서 빼기' }) : null;
-  if (del) del.onclick = async () => { if (!await ask(`«${titleOf(w)}»을 책장에서 뺄까요?`, '빼기')) return; try { await saveWork({ ...w, del:true }, '책장에서 뺐어요'); $('form').close(); if ($('sheet').open) $('sheet').close(); } catch (e) { toast('빼지 못했어요'); } };
+  if (del) del.onclick = async () => { if (!await ask(`«${titleOf(w)}»을 책장에서 뺄까요?${w.marks.length ? ` 밑줄 ${w.marks.length}개도 함께 안 보이게 돼요.` : ''}`, '빼기')) return; try { await saveWork({ ...w, del:true }, '책장에서 뺐어요'); $('form').close(); if ($('sheet').open) $('sheet').close(); } catch (e) { toast('빼지 못했어요'); } };
   if (del) kids.push(el('div', { className:'memo-foot' }, del));
   showForm(isNew ? '책 추가' : '책 정보 고치기', kids, save);
 }
