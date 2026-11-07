@@ -51,9 +51,9 @@ button { cursor:pointer; }
 .spine:hover,.spine:focus-visible { transform:translateY(-6px); z-index:2; }
 .spine span { display:block; max-height:100%; overflow:hidden; word-break:break-all; }
 .spine.unknown { border-style:dashed; font-family:var(--font-body); font-weight:400; font-size:.78rem; }
-.times { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; top:7px; left:50%; transform:translateX(-50%); font-size:.72rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; color:var(--ink); }
+.times { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; top:7px; left:50%; transform:translateX(-50%); font-size:.75rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; color:var(--ink); }
 .spine.multi { padding-top:28px; }
-.est { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:.68rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; }
+.est { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:.75rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; }
 .spine.guess { padding-bottom:24px; font-family:var(--font-title); font-weight:700; font-size:.84rem; }
 .empty { margin-top:26px; padding:20px; border:1px solid var(--line); border-radius:8px; background:var(--surface); text-align:center; display:grid; gap:10px; justify-items:center; }
 .btn { border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); border-radius:6px; padding:4px 14px; }
@@ -150,7 +150,7 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copy.danger, :root:not([data-theme="light"]) .form-err { color:#f0a4aa; } }
 @media (min-width:768px) { dialog { width:min(40rem,calc(100vw - 48px)); } }
 @media (prefers-reduced-motion: reduce) { .rise,.shelf { opacity:1; transform:none; } }
-.wrap { padding-bottom:88px; }
+.wrap { padding-bottom:calc(120px + env(safe-area-inset-bottom,0px)); }
 
 /* 펼쳐지는 책: 왼쪽 면 책 정보, 오른쪽 면 글. 폰은 한 면 */
 :root,[data-edition="base"] { --paper:#fbf9f3; --paper-edge:#e4e0d4; --gutter:rgba(60,50,35,.16); --wood:#a48f76; --wood-deep:#8a7660; --case-back:#ebe5d9; --case-shade:rgba(60,45,25,.22); --late:#a3323a; }
@@ -221,7 +221,7 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .lslot { display:flex; align-items:flex-end; height:calc(var(--row) - var(--plank)); margin-bottom:var(--plank); padding-inline:.5px; }
 .lbook { justify-content:space-between; gap:6px; padding:20px 2px 8px; }
 .lbook span { flex:1 1 0; min-height:0; }
-.lbook small { flex:none; font-family:var(--font-body); font-weight:400; font-size:.7rem; white-space:nowrap; }
+.lbook small { flex:none; font-family:var(--font-body); font-weight:400; font-size:.75rem; white-space:nowrap; }
 .lbook.band1::before,.lbook.band2::before { content:""; position:absolute; left:0; right:0; top:9px; border-top:1px solid currentColor; opacity:.45; }
 .lbook.band2::before { height:4px; border-bottom:1px solid currentColor; }
 .lbook.gone { background:none; border:1px dashed var(--muted); border-bottom:0; color:var(--muted); font-weight:400; }
@@ -337,7 +337,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .only-box.on { border-color:var(--strong); }
 .only-box .check { color:var(--ink); font-weight:700; }
 .only-box small { color:var(--muted); font-size:.8rem; line-height:1.45; }
-.only-tag { margin-left:8px; padding:0 6px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:.72rem; font-weight:400; font-family:var(--font-body); vertical-align:middle; white-space:nowrap; }
+.only-tag { margin-left:8px; padding:0 6px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:.75rem; font-weight:400; font-family:var(--font-body); vertical-align:middle; white-space:nowrap; }
 
 /* 책 고르기 후보·보관한 메모 */
 .found[hidden] { display:none; }
@@ -385,7 +385,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 
 /* 돌아보기: 성향·달력·펼침 목록 (2026-11-07) */
 .recap > .row { margin-block:-4px; }
-.recap h2 .only-tag, .recap-sec .only-tag { font-size:.72rem; font-weight:400; font-family:var(--font-body); vertical-align:.12em; }
+.recap h2 .only-tag, .recap-sec .only-tag { font-size:.75rem; font-weight:400; font-family:var(--font-body); vertical-align:.12em; }
 .recap-sec { font-size:1rem; margin:16px 0 6px; }
 .profile-when { margin:0; color:var(--muted); font-size:.88rem; }
 .card h2.profile-head { font-size:clamp(1.25rem,3.4vw,1.65rem); line-height:1.35; margin:2px 0 8px; }
@@ -404,7 +404,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .hbar[aria-expanded="true"] span:first-child { font-weight:700; }
 @media (pointer:coarse) { .hbar,.dbar { min-height:40px; } }
 .heat { display:grid; grid-template-columns:1.9rem repeat(12,minmax(0,1fr)); gap:2px; }
-.heat-m,.heat-y { color:var(--muted); font-size:.74rem; font-variant-numeric:tabular-nums; text-align:center; line-height:1.6; }
+.heat-m,.heat-y { color:var(--muted); font-size:.75rem; font-variant-numeric:tabular-nums; text-align:center; line-height:1.6; }
 .heat-y { align-self:center; text-align:left; }
 .hcell { aspect-ratio:1 / 1; max-height:44px; width:100%; min-width:0; padding:0; border:0; border-radius:3px; color:var(--ink); font-size:.76rem; font-variant-numeric:tabular-nums; }
 .hcell.deep { color:var(--accent-ink); }
@@ -467,3 +467,30 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
   .ledger-title { min-height:40px; }
 }
 @media (pointer:coarse) and (max-width:599px) { .hcell,.empty-cell { height:40px; } }
+
+/* 머리글: 소개 글은 로그인 묶음 아래까지 넓게 쓴다 (2026-11-07) */
+.cover { flex-wrap:wrap; gap:0 12px; }
+.cover > div:first-child { display:contents; }
+.cover h1 { flex:1 1 0; min-width:0; }
+.who { order:1; }
+.cover p { order:2; flex:1 1 100%; }
+html[data-mode="local"] .who { order:3; margin-top:8px; }
+
+/* 책등의 짧은 영문·숫자는 세워 쓴다 */
+.tcy { font-style:normal; font-weight:inherit; -webkit-text-combine:horizontal; text-combine-upright:all; }
+
+/* 아주 좁은 폰: 탭이 잘리지 않게 */
+@media (max-width:360px) {
+  .tabs { gap:6px; }
+  .tab { font-size:.9rem; }
+  .tabs-line { gap:6px; }
+  .tabs-line > .copy { padding-inline:6px; }
+}
+
+/* 떠 있는 단추: 터치 화면과 좁은 화면에서는 내려갈 때 비키고, 올라가면 돌아온다 */
+.fab { transition:opacity .2s ease, transform .2s ease; }
+@media (max-width:767px), (pointer:coarse) {
+  .scroll-down .fab,.scroll-down .totop { opacity:0; pointer-events:none; transform:translateY(8px); }
+  .scroll-down .fab:focus-visible,.scroll-down .totop:focus-visible { opacity:1; pointer-events:auto; transform:none; }
+}
+#kinds:empty { display:none; }
