@@ -48,7 +48,7 @@ const ok = (name, fn) => { fn(); passed++; console.log('  통과', name); };
   console.log('공개 범위');
   ok('공개 데이터에 낱말 칸이 없다', () => assert(!/"(word|words|낱말|wordIndex)"/.test(fs.readFileSync(path.join(REPO, 'data/public.json'), 'utf8'))));
   ok('공개 반영 도구는 낱말을 만들지 않는다', () => assert(!/words\.js|buildWordIndex/.test(fs.readFileSync(path.join(REPO, 'tools/publish.js'), 'utf8'))));
-  ok('앱은 주인 화면에서만 낱말 지도를 그린다', () => { const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8'); const i = app.indexOf('cards.push(wordCard(ry))'); assert(i > 0); assert(app.slice(0, i).lastIndexOf('if (S.owner) {') > app.indexOf('function renderRecap')); assert((app.match(/wordCard\(/g) || []).length === 2); });
+  ok('앱은 주인 화면에서만 낱말 지도를 그린다', () => { const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8'); const i = app.indexOf("cards.push(foldCard('word'"); assert(i > 0); assert(app.slice(0, i).lastIndexOf('if (S.owner) {') > app.indexOf('function renderRecap')); assert((app.match(/wordCard\(/g) || []).length === 2); });
   ok('레포 파일이 서비스워커 목록에 있다', () => { assert(fs.readFileSync(path.join(REPO, 'sw.js'), 'utf8').includes("'js/words.js'")); assert(fs.readFileSync(path.join(REPO, 'my/sw.js'), 'utf8').includes("'../js/words.js'")); });
 
   console.log('볼트 자동낱말');
