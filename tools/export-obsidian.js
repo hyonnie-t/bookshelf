@@ -12,12 +12,14 @@
 // - 칸 안을 고치면 지문이 어긋나므로 그 칸은 덮어쓰지 않고 «손댄칸»으로 센다. 칸을 통째로 지우면 다음 내보내기 때 앱 내용으로 다시 만든다.
 // - 앱에서 지운 문장은 손대지 않은 칸만 뺀다. 손댔거나 뒤에 글을 쓴 칸은 맨 뒤로 옮겨 남긴다.
 // - 머리말의 낱말과 효니가 더한 속성은 남긴다. 앱에서 오는 속성(OWNED)만 새로 쓴다.
+// - 낱말은 사람이 넣는 칸이다. 앱이 찾은 낱말은 따로 자동낱말에 링크로 적고 내보낼 때마다 새로 쓴다. 낱말 칸을 읽지도 고치지도 않는다.
+//   링크는 [[4-독서·문화/낱말/기억|기억]]이고 낱말 노트를 만들지는 않는다. 그래프와 백링크에서 같은 낱말의 밑줄 노트가 이어진다.
 // - 내 생각 안의 %%는 칸 표시와 헷갈리지 않게 노트에서 % %로 적는다.
 // 비공개 내용을 출력하지 않는다. 건수만 찍는다.
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 
-const BOOK_DIR = '4-독서·문화', MARK_DIR = '밑줄';
-const OWNED = ['type', '책id', '제목', '저자', '책', '밑줄수', '마지막밑줄', '손댄칸'];
+const BOOK_DIR = '4-독서·문화', MARK_DIR = '밑줄', WORD_DIR = '낱말', WORD_LIMIT = 8;
+const OWNED = ['type', '책id', '제목', '저자', '책', '밑줄수', '마지막밑줄', '손댄칸', '자동낱말'];
 const START = /^%%밑줄 ([A-Za-z0-9-]+) ([0-9a-f]{8})%%$/, END = '%%/밑줄%%';
 const HEAD = '%% 책장 웹앱에서 내보낸 노트입니다. 칸 안쪽은 앱 내용이고, 고치면 그 칸은 앱 내용으로 바꾸지 않고 머리말 손댄칸에 셉니다. 칸 밖에 쓴 글은 그대로 남습니다. %%';
 
@@ -109,7 +111,17 @@ function writeAtomic(file, text) {
   fs.renameSync(tmp, file);
 }
 
-function main(argv) {
+// 낱말 뽑기는 웹앱과 같은 파일(js/words.js)을 쓴다. 브라우저 모듈이라 내용을 그대로 불러온다
+const loadWords = () => import(`data:text/javascript;base64,${fs.readFileSync(path.join(__dirname, '..', 'js', 'words.js')).toString('base64')}`);
+
+// 책마다 밑줄·내 생각에 나온 낱말. 글 전체(메모·서평 포함)에서 두 권 이상에 나온 낱말만 친다. 그 책에서 많이 나온 순서
+function markWords(index, id) {
+  return index.map((x) => { const b = x.books.find((y) => y.id === id); return b && b.lines.some((l) => l.src === '밑줄' || l.src === '내 생각') ? { word:x.word, n:b.lines.filter((l) => l.src === '밑줄' || l.src === '내 생각').length } : null; })
+    .filter(Boolean).sort((a, b) => b.n - a.n || a.word.localeCompare(b.word, 'ko')).slice(0, WORD_LIMIT).map((x) => x.word);
+}
+const wordLinks = (words) => (words.length ? `[${words.map((w) => yamlStr(`[[${BOOK_DIR}/${WORD_DIR}/${w}|${w}]]`)).join(', ')}]` : undefined);
+
+async function main(argv) {
   const dry = argv.includes('--dry-run');
   const vi = argv.indexOf('--vault');
   const src = argv.filter((a, i) => !a.startsWith('--') && !(vi >= 0 && i === vi + 1))[0];
@@ -119,8 +131,17 @@ function main(argv) {
   if (!fs.existsSync(bookDir)) throw new Error('볼트를 찾지 못했습니다. --vault로 볼트 폴더를 알려 주세요.');
 
   const priv = JSON.parse(lf(fs.readFileSync(src, 'utf8')));
-  let pub = {};
-  try { pub = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'public.json'), 'utf8')).books.map((b) => [b.id, b])); } catch (e) { /* 공개본은 제목 보충용일 뿐이다 */ }
+  let pub = {}, pubAll = {};
+  try { pubAll = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'public.json'), 'utf8')); pub = Object.fromEntries(pubAll.books.map((b) => [b.id, b])); } catch (e) { /* 공개본은 제목 보충·서평용일 뿐이다 */ }
+  const { buildWordIndex, wordDoc, WORD_KINDS } = await loadWords();
+  const reviews = new Map();
+  // 재료는 앱의 낱말 지도와 같다: 공개 책 + 비공개 칸, 공개 서평 + 비공개로 더하거나 고친 서평 연결
+  const posts = new Map((pubAll.posts || []).map((p) => [p.c, { ...p }]));
+  Object.values(priv.igAdded || {}).forEach((p) => { if (p && p.c) posts.set(p.c, { ...p }); });
+  Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && l) { p.w = l.w || []; if (l.k) p.k = l.k; } });
+  posts.forEach((p) => { if (p.k !== 'review') return; (p.w || []).forEach((id) => { if (!reviews.has(id)) reviews.set(id, []); reviews.get(id).push(p.x); }); });
+  const allWorks = { ...Object.fromEntries(Object.entries(pub).map(([id, b]) => [id, { ...b, known:true }])), ...priv.works };
+  const wordIndex = buildWordIndex(Object.entries(allWorks).filter(([id, w]) => w && !w.del && (w.known || pub[id]) && WORD_KINDS.includes(w.k || 'book')).map(([id, w]) => wordDoc(id, { ...w, t:w.t || (pub[id] || {}).t, a:w.a || (pub[id] || {}).a }, reviews.get(id))));
   const works = Object.entries(priv.works || {}).filter(([, w]) => w && !w.del).map(([id, w]) => ({ id, t:w.t || (pub[id] || {}).t || '', a:w.a || (pub[id] || {}).a || '', marks:marksOf(w).sort(inOrder) }));
 
   // 이미 있는 밑줄 파일: 제목이 바뀌어도 같은 파일을 쓰도록 책id로 찾는다
@@ -171,7 +192,7 @@ function main(argv) {
     if (w.marks.length) { if (found) n.책노트연결++; else n.책노트없음++; }
     const linkName = found || safeName(title) || file.slice(0, -3), alias = safeName(title) || linkName;
     const days = w.marks.map((m) => String(m.d || '')).filter(Boolean).sort();
-    const info = { type:'밑줄', 책id:yamlStr(w.id), 제목:yamlStr(title), 저자:yamlStr(w.a), 책:yamlStr(`[[${BOOK_DIR}/${linkName}|${alias}]]`), 마지막밑줄:days.length ? days[days.length - 1] : '""' };
+    const info = { type:'밑줄', 책id:yamlStr(w.id), 제목:yamlStr(title), 저자:yamlStr(w.a), 책:yamlStr(`[[${BOOK_DIR}/${linkName}|${alias}]]`), 마지막밑줄:days.length ? days[days.length - 1] : '""', 자동낱말:wordLinks(markWords(wordIndex, w.id)) };
     const r = merge(info, w.marks, old);
     n.손댄칸 += r.stat.touched; n.앱에없어남긴칸 += r.stat.kept;
     if (!r.count) n.빈파일++;
@@ -210,6 +231,6 @@ function main(argv) {
 }
 
 if (require.main === module) {
-  try { main(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
+  main(process.argv.slice(2)).catch((e) => { console.error(e.message); process.exit(1); });
 }
 module.exports = { parseNote, merge, renderBlock, safeName, print };

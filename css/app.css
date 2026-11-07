@@ -441,6 +441,25 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .tile:disabled { cursor:default; opacity:.7; }
 .tile:disabled:hover { border-color:var(--line); }
 
+/* 낱말 지도 */
+.word-cloud { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; }
+.word-chip { display:inline-flex; align-items:baseline; gap:5px; min-height:40px; padding-block:6px; font-family:var(--font-title); }
+.word-chip b { font-family:var(--font-body); font-size:.76rem; font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
+.word-chip.w1 { font-size:.92rem; }
+.word-chip.w2 { font-size:1.05rem; }
+.word-chip.w3 { font-size:1.22rem; }
+.word-chip[aria-expanded="true"] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.word-chip[aria-expanded="true"] b { color:inherit; }
+.rise.show .word-chip { animation:wordIn .24s ease both; animation-delay:calc(var(--i) * 12ms); }
+@keyframes wordIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+.word-card .drill-slot { scroll-margin-top:64px; }
+.word-near { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
+.word-near-l { flex:1 1 100%; font-size:.84rem; color:var(--muted); }
+.word-lines { list-style:none; margin:4px 0 8px; padding:0 0 0 12px; display:grid; gap:6px; }
+.word-lines li { display:grid; gap:1px; font-size:.92rem; line-height:1.65; overflow-wrap:anywhere; }
+.word-src { font-size:.76rem; color:var(--muted); }
+.word-lines mark { background:color-mix(in srgb, var(--bar) 55%, transparent); color:inherit; border-radius:2px; padding:0 1px; }
+
 /* 접는 칸: 첫 화면에 책이 보이도록 주제·순서와 관리 도구를 접는다 (2026-11-07) */
 .fold-bar { display:flex; flex-wrap:wrap; gap:6px; }
 .fold-btn { display:inline-flex; align-items:center; gap:6px; max-width:100%; }

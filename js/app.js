@@ -1,6 +1,7 @@
 // 효니의 책장: 공개 화면은 data/public.json(책·인스타 서평), 주인 로그인 뒤에는 비공개 기록을 겹쳐 보여 주고 고칠 수 있다.
 import * as remote from './fb.js';
 import * as local from './local.js';
+import { buildWordIndex, narrowIndex, relatedWords, wordDoc, WORD_KINDS } from './words.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -556,7 +557,8 @@ $('sheet').addEventListener('close', () => {
   popDlg('sheet');
 });
 // 창을 열 때 기록을 하나 쌓아, 폰의 뒤로 가기가 앱을 떠나지 않고 창만 닫게 한다
-function pushDlg(id) { try { history.pushState({ dlg:id }, '', location.href); } catch (e) {} }
+// 창을 닫을 때 쓰는 back이 브라우저의 옛 스크롤 위치로 되돌리지 않게 한다(부드럽게 스크롤한 직후 열면 위로 튀었다, 2026-11-07)
+function pushDlg(id) { try { history.scrollRestoration = 'manual'; history.pushState({ dlg:id }, '', location.href); } catch (e) {} }
 // 양식과 책 창이 한꺼번에 닫히면 앞의 back이 끝나기 전에 뒤의 창이 닫히므로, 진행 중인 back을 세어 함께 뺀다
 let popping = 0;
 function popDlg(id) { if (popping || (history.state && history.state.dlg === id)) { popping++; history.back(); } }
@@ -624,7 +626,7 @@ function fillDrill(slot, title, rows) {
       el('span', { className:'drill-meta', textContent:[firstAuthor(x.w), when, x.r != null ? ratingWord(x.r) : ''].filter(Boolean).join(' · ') }));
     b.style.borderLeftColor = themeVar(x.w.th[0]);
     b.onclick = () => openBook(x.w.id, b);
-    return el('li', {}, b);
+    return el('li', {}, b, x.lines ? wordLines(x.lines, x.word) : null);
   }));
   const close = el('button', { className:'copy', type:'button', textContent:'접기' });
   close.onclick = () => closeDrill(true);
@@ -637,7 +639,7 @@ function fillDrill(slot, title, rows) {
   const more = sorted.length > shown.length ? el('button', { className:'btn ghost', type:'button', textContent:`더 보기 (${sorted.length - shown.length}개 남음)` }) : null;
   if (more) more.onclick = () => { S.drillN += DRILL_PAGE; fillDrill(slot, title, rows); };
   slot.replaceChildren(el('div', { className:'drill-panel' },
-    el('div', { className:'drill-head' }, el('strong', { textContent:`${title} ${rows.length}` }), orders, close), list, more));
+    el('div', { className:'drill-head' }, el('strong', { textContent:`${title} ${rows.length}` }), orders, close), rows.top ? rows.top() : null, list, more));
 }
 function closeDrill(refocus) {
   const on = document.querySelector('#recap [aria-expanded="true"]');
@@ -657,7 +659,7 @@ function drillable(btn, key, title, getRows, slot) {
     S.drill = key; S.drillN = DRILL_PAGE;
     btn.setAttribute('aria-expanded', 'true');
     fillDrill(own, title, getRows());
-    own.scrollIntoView({ block:'nearest', behavior:smooth() });
+    own.scrollIntoView({ block:own.closest('.word-card') ? 'start' : 'nearest', behavior:smooth() }); // 낱말 칩은 많아서 목록이 화면 밖에서 시작한다
   };
   if (opened) fillDrill(own, title, getRows());
   return slot ? btn : [btn, own];
@@ -788,6 +790,8 @@ function renderRecap() {
           rowYs.flatMap((y) => [el('span', { className:'heat-y', textContent:"'" + y.slice(2) }), ...months.map((mm) => cell(y, mm))])), slot));
     }
 
+    cards.push(wordCard(ry));
+
     /* 별점 */
     if (rated.length) {
       const maxR = Math.max(1, ...Object.values(rc));
@@ -876,6 +880,84 @@ function renderRecap() {
   if (redraw) return; // 보고 있는 화면을 기간·저장으로 다시 그릴 때는 카드가 깜박이지 않게 움직임을 뺀다
   box.querySelectorAll('.card').forEach((c) => c.classList.add('rise'));
   watch('#recap .rise');
+}
+
+/* ---------- 낱말 지도 ---------- */
+// 주인 화면에만 그린다(공개 화면에서는 부르지 않고, 공개 파일에 낱말을 넣지 않는다). 글을 다 훑으므로 돌아보기를 볼 때 만들고, 저장해 책장이 다시 만들어지면 다시 만든다
+const WORD_SHOW = 30, WORD_MAX = 120, W = { src:null, idx:[] };
+function wordIndex() {
+  if (W.src !== D.works) {
+    W.src = D.works;
+    W.idx = buildWordIndex(list().filter((w) => WORD_KINDS.includes(w.k || 'book') && w.known).map((w) => wordDoc(w.id, w, reviewsOf(w).filter((p) => !p.blog).map((p) => p.x))));
+  }
+  return W.idx;
+}
+function wordsFor(ry) {
+  const all = wordIndex();
+  return ry ? narrowIndex(all, new Set(list().filter((w) => readYear(w) === ry).map((w) => w.id))) : all;
+}
+// 긴 문장은 낱말 둘레만 잘라 보여 주고 낱말에 표시한다
+function wordLine(text, word) {
+  const at = text.indexOf(word), max = 110;
+  let s = text;
+  if (text.length > max) { const start = Math.max(0, at - 40); s = (start ? '…' : '') + text.slice(start, start + max) + (start + max < text.length ? '…' : ''); }
+  const i = s.indexOf(word);
+  return i < 0 ? [s] : [s.slice(0, i), el('mark', { textContent:word }), s.slice(i + word.length)];
+}
+function wordLines(lines, word) {
+  const seen = new Set();
+  const shown = lines.filter((l) => { const k = squeeze(l.text); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 2);
+  return el('ul', { className:'word-lines' }, shown.map((l) => el('li', {}, el('small', { className:'word-src', textContent:l.src }), el('span', {}, wordLine(l.text, word)))));
+}
+function wordRows(x, idx) {
+  const rows = x.books.map((b) => { const w = D.works.get(b.id); return w ? { w, d:firstRead(w) || w.md || w.fd, r:null, lines:b.lines, word:x.word } : null; }).filter(Boolean);
+  const near = relatedWords(idx.slice(0, WORD_MAX), x.word); // 칩으로 그릴 수 있는 낱말 안에서만 고른다. 밖의 낱말을 누르면 펼칠 자리가 없다
+  if (near.length) rows.top = () => el('div', { className:'word-near' }, el('span', { className:'word-near-l', textContent:'함께 나오는 낱말' }), near.map((word) => {
+    const b = el('button', { className:'chip', type:'button', textContent:word });
+    b.onclick = () => openWord(word);
+    return b;
+  }));
+  return rows;
+}
+function openWord(word) {
+  closeDrill();
+  S.drill = `w:${word}`; S.drillN = DRILL_PAGE;
+  const card = $('wordMap');
+  if (wordsFor(card.dataset.ry).findIndex((x) => x.word === word) >= WORD_SHOW) S.wordAll = true; // 접혀 있는 낱말일 때만 펼친다
+  drawWordMap(card);
+  const chip = [...card.querySelectorAll('[data-word]')].find((b) => b.dataset.word === word);
+  if (chip) chip.focus({ preventScroll:true });
+  card.querySelector('.drill-slot').scrollIntoView({ block:'start', behavior:smooth() });
+}
+function wordCard(ry) {
+  const card = el('div', { className:'card span2 word-card', id:'wordMap' });
+  card.dataset.ry = ry;
+  if (S.view === 'recap') drawWordMap(card); else card.dataset.pending = '1';
+  return card;
+}
+function drawWordMap(card) {
+  delete card.dataset.pending;
+  const ry = card.dataset.ry, idx = wordsFor(ry);
+  const title = el('h2', {}, '낱말 지도 ', privateTag());
+  if (idx.length < 3) {
+    card.replaceChildren(title, el('p', { className:'sub', textContent:ry ? `${ry}년에 읽은 책에는 두 권 이상에 나온 낱말이 아직 적어요.` : '메모와 밑줄이 쌓이면 두 권 이상에 나온 낱말을 모아 보여 줄게요.' }));
+    return;
+  }
+  const slot = el('div', { className:'drill-slot' });
+  const shown = idx.slice(0, S.wordAll ? WORD_MAX : WORD_SHOW);
+  const chips = shown.map((x, i) => {
+    const size = i < 5 ? 3 : i < 15 ? 2 : 1; // 한 낱말이 유난히 많아도 크기가 고르게 갈리도록 순위로 나눈다
+    const b = el('button', { className:`chip word-chip w${size}`, type:'button' }, x.word, el('b', { textContent:x.books.length }));
+    b.dataset.word = x.word;
+    b.style.setProperty('--i', Math.min(i, 30));
+    b.setAttribute('aria-label', `${x.word}, ${x.books.length}권에 나옴`);
+    return drillable(b, `w:${x.word}`, `«${x.word}» 나온 책`, () => wordRows(x, idx), slot);
+  });
+  const more = !S.wordAll && idx.length > WORD_SHOW ? el('button', { className:'copy', type:'button', textContent:`낱말 더 보기 (${Math.min(idx.length, WORD_MAX) - WORD_SHOW}개)` }) : null;
+  if (more) more.onclick = () => { S.wordAll = true; drawWordMap(card); const next = card.querySelectorAll('[data-word]')[shown.length]; if (next) next.focus({ preventScroll:true }); };
+  card.replaceChildren(title,
+    el('p', { className:'sub', textContent:`${ry ? `${ry}년에 읽은 책의` : '내'} ${LOCAL ? '메모·밑줄' : '메모·밑줄·서평'}에서 두 권 이상에 나온 낱말이에요. 숫자는 이어진 책 수이고, 누르면 그 문장이 나와요` }),
+    el('div', { className:'word-cloud' }, chips), ...(more ? [more] : []), slot);
 }
 
 /* ---------- 내 서재 ---------- */
@@ -1896,6 +1978,7 @@ function show(v, quiet) {
   $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
   if (v === 'posts') watch('.rise');
+  if (v === 'recap') { const c = document.querySelector('#wordMap[data-pending]'); if (c) drawWordMap(c); }
   renderJump();
 }
 VIEWS.forEach((v) => { $(`tab-${v}`).onclick = () => show(v); });
