@@ -130,3 +130,84 @@ export function relatedWords(index, word, limit = 6) {
     return { word:x.word, both, rate:both / (mine.size + x.books.length - both) };
   }).filter((x) => x.both >= 2).sort((a, b) => b.rate - a.rate || b.both - a.both).slice(0, limit).map((x) => x.word);
 }
+
+// 연결망: 위쪽 낱말끼리 같은 책에 겹치는 비율로 잇는다. 많이 나오는 낱말은 서로 다 이어지므로 낱말마다 가장 강한 연결만 남긴다
+export function wordGraph(index, count, perNode = 2) {
+  const nodes = index.slice(0, count);
+  const sets = nodes.map((x) => new Set(x.books.map((b) => b.id)));
+  const edges = new Map();
+  nodes.forEach((_, i) => {
+    const near = [];
+    nodes.forEach((__, j) => {
+      if (i === j) return;
+      let both = 0;
+      sets[i].forEach((id) => { if (sets[j].has(id)) both++; });
+      if (both >= 2) near.push({ j, w:both / (sets[i].size + sets[j].size - both) });
+    });
+    near.sort((a, b) => b.w - a.w || a.j - b.j).slice(0, perNode).forEach(({ j, w }) => edges.set(i < j ? `${i}-${j}` : `${j}-${i}`, { a:Math.min(i, j), b:Math.max(i, j), w }));
+  });
+  return { nodes, edges:[...edges.values()] };
+}
+
+// 낱말 자리 정하기: 이어진 낱말은 당기고 모든 낱말은 밀어낸 뒤, 겹치는 칩을 떼어 놓는다. 무작위를 쓰지 않아 같은 입력이면 같은 자리다
+// sizes: [{ w, h }], 돌려주는 값: { height, points:[{ x, y }] }(칩의 왼쪽 위). 칩이 겹치지 않을 때까지 높이를 늘린다
+export function layoutGraph(sizes, edges, width, gap = 6) {
+  const n = sizes.length;
+  if (!n || !(width > 0)) return { height:0, points:sizes.map(() => ({ x:0, y:0 })) };
+  const area = sizes.reduce((a, r) => a + (r.w + gap) * (r.h + gap), 0);
+  let H = Math.max(n > 1 ? 150 : 0, Math.max(...sizes.map((r) => r.h)) + gap * 2, area * (width < 560 ? 2.2 : 3.2) / width);
+  const pos = sizes.map((_, i) => { const r = Math.sqrt((i + .5) / n) * .46, t = i * 2.39996; return { x:width / 2 + r * width * Math.cos(t), y:H / 2 + r * H * Math.sin(t) }; });
+  const clamp = (i) => {
+    const hw = Math.min(sizes[i].w / 2, width / 2), hh = sizes[i].h / 2;
+    pos[i].x = Math.min(width - hw, Math.max(hw, pos[i].x));
+    pos[i].y = Math.min(H - hh, Math.max(hh, pos[i].y));
+  };
+  const k = Math.sqrt(width * H / n);
+  for (let step = 0; step < 240; step++) {
+    const heat = Math.max(width, H) * .08 * (1 - step / 240) + 1, move = pos.map(() => ({ x:0, y:0 }));
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const dx = pos[i].x - pos[j].x, dy = pos[i].y - pos[j].y, d = Math.max(1, Math.hypot(dx, dy)), push = k * k / d / d;
+      move[i].x += dx * push; move[i].y += dy * push; move[j].x -= dx * push; move[j].y -= dy * push;
+    }
+    edges.forEach(({ a, b }) => {
+      const dx = pos[a].x - pos[b].x, dy = pos[a].y - pos[b].y, d = Math.max(1, Math.hypot(dx, dy)), pull = d / k;
+      move[a].x -= dx * pull; move[a].y -= dy * pull; move[b].x += dx * pull; move[b].y += dy * pull;
+    });
+    for (let i = 0; i < n; i++) {
+      move[i].x += (width / 2 - pos[i].x) * .04; move[i].y += (H / 2 - pos[i].y) * .04;
+      const len = Math.max(1, Math.hypot(move[i].x, move[i].y)), by = Math.min(len, heat) / len;
+      pos[i].x += move[i].x * by; pos[i].y += move[i].y * by;
+      clamp(i);
+    }
+  }
+  // 많이 나온 낱말부터 힘 계산 자리에 놓고, 겹치면 둘레를 나선으로 돌며 가장 가까운 빈자리를 찾는다. 자리가 없으면 세로로 늘려 다시 놓는다
+  const start = pos.map((p) => ({ ...p }));
+  const free = (i, x, y, done) => {
+    const hw = sizes[i].w / 2, hh = sizes[i].h / 2;
+    if (x - hw < -.5 && width >= sizes[i].w) return false;
+    if (x + hw > width + .5 && width >= sizes[i].w) return false;
+    if (y - hh < 0 || y + hh > H) return false;
+    return done.every((j) => Math.abs(x - pos[j].x) >= (sizes[i].w + sizes[j].w) / 2 + gap || Math.abs(y - pos[j].y) >= (sizes[i].h + sizes[j].h) / 2 + gap);
+  };
+  for (let round = 0; round < 60; round++) {
+    const done = [];
+    let placed = true;
+    for (let i = 0; i < n && placed; i++) {
+      placed = false;
+      const cx = start[i].x, cy = start[i].y, reach = Math.hypot(width, H);
+      for (let r = 0; r <= reach && !placed; r += 8) {
+        const tries = r ? Math.max(8, Math.round(r / 6)) : 1;
+        for (let t = 0; t < tries && !placed; t++) {
+          const x = cx + r * Math.cos(t / tries * 6.28318), y = cy + r * Math.sin(t / tries * 6.28318);
+          if (free(i, x, y, done)) { pos[i].x = width >= sizes[i].w ? x : sizes[i].w / 2; pos[i].y = y; placed = true; }
+        }
+      }
+      if (placed) done.push(i);
+    }
+    if (placed) break;
+    const grown = H * 1.08;
+    start.forEach((p) => { p.y *= grown / H; });
+    H = grown;
+  }
+  return { height:Math.ceil(H), points:pos.map((p, i) => ({ x:Math.round(p.x - sizes[i].w / 2), y:Math.round(p.y - sizes[i].h / 2) })) };
+}

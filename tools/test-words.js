@@ -7,7 +7,7 @@ let passed = 0;
 const ok = (name, fn) => { fn(); passed++; console.log('  통과', name); };
 
 (async () => {
-  const { buildWordIndex, narrowIndex, relatedWords, wordDoc } = await import(`data:text/javascript;base64,${fs.readFileSync(path.join(REPO, 'js/words.js')).toString('base64')}`);
+  const { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph } = await import(`data:text/javascript;base64,${fs.readFileSync(path.join(REPO, 'js/words.js')).toString('base64')}`);
   const doc = (id, ...ts) => ({ id, title:`가짜 책 ${id}`, author:'', texts:ts.map((text) => ({ src:'메모', text })) });
   const docs = [
     doc('a', '슬픔이 오래 남았다. 슬픔을 견디는 고양이가 있었다. 사람들의 기억이 흐려진다.', '기억은 사라지지 않는다.'),
@@ -33,6 +33,17 @@ const ok = (name, fn) => { fn(); passed++; console.log('  통과', name); };
     const d = wordDoc('x', { t:'책', a:'', marks:[{ q:'밑줄 글', why:'생각 글' }], notes:[{ b:'메모 글' }, { b:'읽고 싶음', s:'want' }], recs:[{ l:'왓챠', b:'기록 글' }, { l:'한 줄 글' }] }, ['서평 글']);
     assert.deepStrictEqual(d.texts.map((t) => t.src), ['밑줄', '내 생각', '메모', '기록', '한 줄 평', '서평']);
   });
+
+  console.log('연결망');
+  const fakeIndex = Array.from({ length:40 }, (_, i) => ({ word:`낱말${i}`, n:50 - i, books:Array.from({ length:12 }, (__, b) => ({ id:`b${(i * 3 + b) % 60}`, n:1, lines:[] })) }));
+  const graph = wordGraph(fakeIndex, 30);
+  const sizes = graph.nodes.map((x, i) => ({ w:70 + (i % 5) * 9, h:i < 5 ? 45 : 40 }));
+  const overlap = (l) => { let c = 0; l.points.forEach((p, i) => l.points.forEach((q, j) => { if (j > i && p.x < q.x + sizes[j].w && q.x < p.x + sizes[i].w && p.y < q.y + sizes[j].h && q.y < p.y + sizes[i].h) c++; })); return c; };
+  ok('낱말마다 연결은 많아야 몇 개만 남는다', () => { assert(graph.edges.length > 0 && graph.edges.length <= 60); assert(graph.edges.every((e) => e.a < e.b)); });
+  ok('겹치는 책이 없으면 잇지 않는다', () => assert.strictEqual(wordGraph([{ word:'가', books:[{ id:'a' }, { id:'b' }] }, { word:'나', books:[{ id:'c' }, { id:'d' }] }], 2).edges.length, 0));
+  for (const width of [309, 690, 1150]) ok(`폭 ${width}: 칩이 겹치지 않고 칸 안에 있다`, () => { const l = layoutGraph(sizes, graph.edges, width); assert.strictEqual(overlap(l), 0); assert(l.height < width * 3 + 900, `높이가 너무 크다 ${l.height}`); l.points.forEach((p, i) => { assert(p.x >= -1 && p.x + sizes[i].w <= width + 1 && p.y >= -1 && p.y + sizes[i].h <= l.height + 1); }); });
+  ok('같은 입력이면 같은 자리다', () => assert.deepStrictEqual(layoutGraph(sizes, graph.edges, 690), layoutGraph(sizes, graph.edges, 690)));
+  ok('낱말이 적거나 없어도 깨지지 않는다', () => { assert.deepStrictEqual(layoutGraph([], [], 300).points, []); assert.strictEqual(layoutGraph([{ w:60, h:40 }], [], 0).height, 0); assert.strictEqual(layoutGraph([{ w:60, h:40 }], [], 300).points.length, 1); const wide = layoutGraph([{ w:400, h:40 }, { w:400, h:40 }], [], 300); assert.strictEqual(wide.points.length, 2); });
 
   console.log('공개 범위');
   ok('공개 데이터에 낱말 칸이 없다', () => assert(!/"(word|words|낱말|wordIndex)"/.test(fs.readFileSync(path.join(REPO, 'data/public.json'), 'utf8'))));
