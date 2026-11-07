@@ -211,6 +211,9 @@ const jumpScope = () => (S.view === 'shelf' ? $('shelves') : S.view === 'library
 const smooth = () => (calm() ? 'auto' : 'smooth');
 const isMonthMark = (l) => /^\d{4}-\d{2}$/.test(l);
 const yearOfMark = (l) => (isMonthMark(l) ? l.slice(0, 4) : l);
+// 달은 옆으로 이어 꽂혀 한 줄에 여럿이다. 누른 칩이 그 줄의 다른 달로 바뀌어 보이지 않게, 직접 스크롤할 때까지 표시를 고정한다
+let jumpPin = '';
+['wheel', 'touchstart', 'keydown'].forEach((t) => window.addEventListener(t, () => { jumpPin = ''; }, { passive:true }));
 function goJump(label) {
   const find = () => jumpScope().querySelector(`[data-jump="${CSS.escape(label)}"], [data-jump^="${CSS.escape(label)}-"]`);
   let target = find();
@@ -222,6 +225,7 @@ function goJump(label) {
     target = find();
   }
   if (!target) return;
+  jumpPin = label;
   target.scrollIntoView({ block:'start', behavior:smooth() });
   target.focus({ preventScroll:true });
 }
@@ -248,6 +252,8 @@ function drawJump(year) {
 }
 function nowMark() {
   const line = $('topnav').getBoundingClientRect().bottom + 16, scope = jumpScope();
+  if (jumpPin && scope && scope.querySelector(`[data-jump="${CSS.escape(jumpPin)}"], [data-jump^="${CSS.escape(jumpPin)}-"]`)) return jumpPin;
+  jumpPin = '';
   let now = '';
   const marks = scope ? [...scope.querySelectorAll('[data-jump]')] : [];
   for (const n of marks) { if (n.getBoundingClientRect().top <= line) now = n.dataset.jump; else break; }
@@ -568,7 +574,7 @@ const bookRows = (books) => books.map((w) => { const r = doneRecs(w).filter((x) 
 const meanOf = (rows) => (rows.length ? rows.reduce((a, x) => a + x.r, 0) / rows.length : 0);
 const pct = (n, total) => (total ? Math.round(n / total * 100) : 0);
 const ratingWord = (r) => (r === 0 ? '최하' : `${r}점`);
-const firstAuthor = (w) => (w.a || '').split(/[\/,]/)[0].replace(/\s+(외(\s*\d+\s*(명|인)?)?|지음|저|글|옮김|엮음|편저|편|그림)$/, '').trim();
+const firstAuthor = (w) => (w.a || '').split(/[\/,]/)[0].trim().replace(/\s+(외(\s*\d+\s*(명|인)?)?|지음|지은이|저자|저|글\s*[·,]?\s*그림|글그림|글|그림|옮김|엮음|편저|편)$/, '').trim();
 const signed = (n) => (Math.abs(n) < .05 ? '0.0' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}`);
 const DRILL_PAGE = 20;
 
@@ -628,11 +634,12 @@ function setPeriod(y) {
   if (b) b.focus({ preventScroll:true });
 }
 function renderRecap() {
-  const box = $('recap'), allBooks = list().filter((w) => w.k === 'book' && w.known && !isReading(w)); // 제목 확인 안 된 칸은 책장 권수처럼 뺀다
+  const box = $('recap'), redraw = S.view === 'recap' && box.children.length > 0, allBooks = list().filter((w) => w.k === 'book' && w.known && !isReading(w)); // 제목 확인 안 된 칸은 책장 권수처럼 뺀다
   if (LOCAL && !allBooks.length) { box.replaceChildren(el('div', { className:'empty span2' }, el('div', { textContent:'책을 꽂으면 해마다 읽은 책과 내 독서 성향을 모아 보여 줄게요.' }))); return; }
   const yc = {};
   allBooks.forEach((w) => { const y = readYear(w); if (y) yc[y] = (yc[y] || 0) + 1; });
   const ys = Object.keys(yc).sort(), maxY = Math.max(1, ...Object.values(yc)), topY = ys.find((y) => yc[y] === maxY);
+  const noYear = allBooks.length - Object.values(yc).reduce((a, b) => a + b, 0);
   const ry = yc[S.ry] ? S.ry : '';
   const books = ry ? allBooks.filter((w) => readYear(w) === ry) : allBooks;
   const when = ry ? `${ry}년` : '지금까지';
@@ -668,11 +675,12 @@ function renderRecap() {
   let headline = '';
   if (books.length >= 10 && ts.length) {
     const share = ts[0][1] / books.length;
-    const rateWord = rated.length < 10 ? '' : avg < 3.2 ? '별점이 깐깐하고' : avg < 3.8 ? '별점을 고르게 주고' : '별점이 후하고';
+    const shownAvg = +avg.toFixed(1); // 화면에 보이는 평균과 같은 값으로 가른다
+    const rateWord = rated.length < 10 ? '' : shownAvg < 3.2 ? '별점이 깐깐하고' : shownAvg < 3.8 ? '별점을 고르게 주고' : '별점이 후하고';
     const body = share >= .5 ? `${ts[0][0]} 위주로 읽는 독자` : ts.length >= 8 ? `두루 읽는 ${ts[0][0]} 독자` : `몇몇 주제를 오가는 ${ts[0][0]} 독자`;
     headline = [rateWord, body].filter(Boolean).join(' ');
     const top3 = ts.slice(0, 3).map(([t]) => t);
-    lines.push(`가장 많이 읽은 주제는 ${ts[0][0]}(${pct(ts[0][1], books.length)}%)이고, 위 ${top3.length}개 주제를 합치면 책의 ${pct(books.filter((w) => w.th.some((t) => top3.includes(t))).length, books.length)}%예요.`);
+    lines.push(`가장 많이 읽은 주제는 ${ts[0][0]}(${pct(ts[0][1], books.length)}%)${top3.length > 1 ? `이고, 위 ${top3.length}개 주제를 합치면 책의 ${pct(books.filter((w) => w.th.some((t) => top3.includes(t))).length, books.length)}%` : ''}예요.`);
     if (rated.length >= 10) {
       lines.push(`평균 ${avg.toFixed(1)}점. 4.5점 이상은 ${pct(rated.filter((x) => x.r >= 4.5).length, rated.length)}%, 2점 이하는 ${pct(rated.filter((x) => x.r <= 2).length, rated.length)}%예요.`);
       if (sd >= .9) lines.push('점수 폭이 넓어서 좋고 싫음이 뚜렷한 편이에요.');
@@ -685,6 +693,7 @@ function renderRecap() {
   const tileSlot = el('div', { className:'drill-slot' });
   const tile = (label, value, key, title, getRows) => {
     const b = el('button', { className:'tile', type:'button' }, el('span', { className:'tile-n', textContent:value }), el('span', { className:'tile-l', textContent:label }));
+    if (!getRows().length) { b.disabled = true; return b; }
     return drillable(b, key, title, getRows, tileSlot);
   };
   const tiles = [tile('읽은 책', `${books.length}권`, 't:all', `${when} 읽은 책`, () => bookRows(books))];
@@ -701,7 +710,7 @@ function renderRecap() {
     el('div', { className:'tiles' }, tiles), tileSlot);
 
   /* 해마다 */
-  const yearCard = el('div', { className:'card span2' }, head('해마다 읽은 책'), el('p', { className:'sub', textContent:topY ? `${topY}년에 ${maxY}권으로 가장 많이 읽었어요. 막대를 누르면 그해만 돌아봐요` : '' }),
+  const yearCard = el('div', { className:'card span2' }, head('해마다 읽은 책'), el('p', { className:'sub', textContent:topY ? `${topY}년에 ${maxY}권으로 가장 많이 읽었어요. 막대를 누르면 그해만 돌아봐요${noYear ? `. 읽은 해를 모르는 ${noYear}권은 막대에서 빠져요` : ''}` : '' }),
     el('div', { className:'years' }, ys.map((y) => { const bar = el('div', { className:'ybar' }); bar.style.height = `${yc[y] / maxY * 100}%`; bar.style.flex = '0 0 auto';
       const col = el('button', { className:'ycol' + ((ry ? y === ry : y === topY) ? ' top' : ''), type:'button' }, el('span', { className:'yval', textContent:yc[y] }), bar);
       col.setAttribute('aria-label', `${y}년 ${yc[y]}권, 이 해만 돌아보기`);
@@ -729,8 +738,8 @@ function renderRecap() {
       const cell = (y, mm) => {
         const key = `${y}-${mm}`, n = mc[key] || 0;
         if (!n) return el('span', { className:'hcell empty-cell', ariaHidden:'true' });
-        const mix = Math.round(14 + n / maxM * 76);
-        const b = el('button', { className:'hcell' + (mix > 60 ? ' deep' : ''), type:'button', textContent:n, title:`${y}년 ${+mm}월 ${n}권` });
+        const mix = [12, 20, 30, 72, 88][Math.min(4, Math.floor(n / maxM * 5))]; // 밝은 판·어두운 판 모두 글자 대비 4.5가 안 나오는 중간 농도(31~71)는 쓰지 않는다
+        const b = el('button', { className:'hcell' + (mix > 50 ? ' deep' : ''), type:'button', textContent:n, title:`${y}년 ${+mm}월 ${n}권` });
         b.style.background = `color-mix(in srgb, var(--accent) ${mix}%, var(--surface))`;
         b.setAttribute('aria-label', `${y}년 ${+mm}월 ${n}권`);
         return drillable(b, `m:${key}`, `${y}년 ${+mm}월에 읽은 책`, () => bookRows(dated.filter(([, m]) => m === key).map(([w]) => w)), slot);
@@ -829,6 +838,7 @@ function renderRecap() {
       reviewed.length ? el('div', { className:'again' }, reviewed.map(([w, n]) => { const b = el('button', { className:'chip', type:'button', textContent:`${titleOf(w)} ×${n}` }); b.onclick = () => openBook(w.id, b); return b; })) : null));
   }
   box.replaceChildren(...cards.filter(Boolean));
+  if (redraw) return; // 보고 있는 화면을 기간·저장으로 다시 그릴 때는 카드가 깜박이지 않게 움직임을 뺀다
   box.querySelectorAll('.card').forEach((c) => c.classList.add('rise'));
   watch('#recap .rise');
 }

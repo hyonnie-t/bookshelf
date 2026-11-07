@@ -359,6 +359,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 /* 달 묶음·순서 (2026-11-07) */
 .months { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 18px; margin-top:8px; }
 .month { flex:0 1 auto; min-width:0; max-width:100%; }
+.month .slot { height:auto; }
 .month-head { display:flex; align-items:baseline; gap:6px; margin-bottom:2px; }
 .month-head h3 { font-size:.98rem; font-variant-numeric:tabular-nums; }
 .month-head span { color:var(--muted); font-size:.82rem; font-variant-numeric:tabular-nums; }
@@ -419,3 +420,6 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .drill-row:hover { border-color:var(--strong); }
 .drill-title { font-family:var(--font-title); font-weight:700; line-height:1.35; }
 .drill-meta { color:var(--muted); font-size:.82rem; font-variant-numeric:tabular-nums; }
+@media (max-width:599px) { .hcell,.empty-cell { aspect-ratio:auto; height:34px; } }
+.tile:disabled { cursor:default; opacity:.7; }
+.tile:disabled:hover { border-color:var(--line); }
