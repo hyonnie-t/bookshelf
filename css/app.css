@@ -51,9 +51,9 @@ button { cursor:pointer; }
 .spine:hover,.spine:focus-visible { transform:translateY(-6px); z-index:2; }
 .spine span { display:block; max-height:100%; overflow:hidden; word-break:break-all; }
 .spine.unknown { border-style:dashed; font-family:var(--font-body); font-weight:400; font-size:.78rem; }
-.times { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; top:7px; left:50%; transform:translateX(-50%); font-size:.72rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; color:var(--ink); }
+.times { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; top:7px; left:50%; transform:translateX(-50%); font-size:.75rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; color:var(--ink); }
 .spine.multi { padding-top:28px; }
-.est { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:.68rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; }
+.est { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:.75rem; line-height:1.3; font-family:var(--font-body); font-weight:400; font-style:normal; }
 .spine.guess { padding-bottom:24px; font-family:var(--font-title); font-weight:700; font-size:.84rem; }
 .empty { margin-top:26px; padding:20px; border:1px solid var(--line); border-radius:8px; background:var(--surface); text-align:center; display:grid; gap:10px; justify-items:center; }
 .btn { border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); border-radius:6px; padding:4px 14px; }
@@ -113,7 +113,6 @@ body { margin:0; }
 .spine.has-ig::after { content:""; position:absolute; left:0; right:0; bottom:0; height:4px; background:var(--accent); opacity:.55; }
 .check { padding:2px 0; }
 .again .chip { flex:0 1 auto; max-width:100%; white-space:normal; text-align:left; }
-@media (pointer:coarse) { .chip,.copy { min-height:40px; } .tab { padding-block:10px; } }
 .sec { font-size:1rem; margin-top:8px; }
 .post { gap:6px; }
 .post-text { margin:0; white-space:pre-line; font-size:.95rem; line-height:1.7; }
@@ -130,9 +129,10 @@ a.copy { color:var(--ink); text-decoration:none; display:inline-block; }
 .btn { min-height:38px; }
 .btn.ghost { background:var(--chip); color:var(--ink); border-color:var(--line); }
 .btn:disabled { opacity:.6; }
-#posts { display:grid; gap:12px; margin-top:14px; max-width:44rem; }
-#posts .card { border-top:1px solid var(--line); padding:14px 16px; gap:8px; }
-.more { display:flex; justify-content:center; margin-top:16px; max-width:44rem; }
+#posts { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin-top:14px; }
+#posts .card { border-top:1px solid var(--line); padding:14px 16px; gap:8px; align-content:start; }
+.more { display:flex; justify-content:center; margin-top:16px; }
+@media (min-width:900px) { #posts { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .rise { opacity:0; transform:translateY(10px); transition:opacity .3s ease, transform .3s ease; }
 .rise.show { opacity:1; transform:none; }
 .shelf { opacity:0; transition:opacity .3s ease; }
@@ -150,7 +150,7 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copy.danger, :root:not([data-theme="light"]) .form-err { color:#f0a4aa; } }
 @media (min-width:768px) { dialog { width:min(40rem,calc(100vw - 48px)); } }
 @media (prefers-reduced-motion: reduce) { .rise,.shelf { opacity:1; transform:none; } }
-.wrap { padding-bottom:88px; }
+.wrap { padding-bottom:calc(120px + env(safe-area-inset-bottom,0px)); }
 
 /* 펼쳐지는 책: 왼쪽 면 책 정보, 오른쪽 면 글. 폰은 한 면 */
 :root,[data-edition="base"] { --paper:#fbf9f3; --paper-edge:#e4e0d4; --gutter:rgba(60,50,35,.16); --wood:#a48f76; --wood-deep:#8a7660; --case-back:#ebe5d9; --case-shade:rgba(60,45,25,.22); --late:#a3323a; }
@@ -180,7 +180,7 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .loanline.late span { color:var(--late); font-weight:700; }
 .blank-page { display:grid; gap:12px; justify-items:center; text-align:center; padding-block:32px; }
 .leaf .memo-foot.share { justify-content:center; border-top:0; padding-top:0; }
-@media (min-width:720px) {
+@media (min-width:720px) and (min-height:560px) {
   #sheet { width:min(62rem,calc(100vw - 48px)); }
   .tome { --shift:-25%; }
   .pages { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:visible; background:none; box-shadow:none; }
@@ -192,7 +192,7 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 }
 /* 표지: 상자가 먼저 펼쳐지고 글자는 뒤에 나타난다. 평소에는 없는 요소라 움직임을 꺼도 그대로 읽힌다 */
 .flip { display:none; position:absolute; top:0; bottom:0; left:0; width:100%; z-index:3; transform-origin:left center; transform-style:preserve-3d; pointer-events:none; }
-@media (min-width:720px) { .flip { left:50%; width:50%; } }
+@media (min-width:720px) and (min-height:560px) { .flip { left:50%; width:50%; } }
 .flip-front,.flip-back { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; border-radius:3px 10px 10px 3px; }
 .flip-front { display:grid; align-content:center; justify-items:center; gap:10px; padding:32px; text-align:center; color:var(--ink); background-image:linear-gradient(to right,rgba(0,0,0,.2),transparent 16px); box-shadow:inset 0 0 0 1px rgba(0,0,0,.18),inset 0 0 0 9px rgba(255,255,255,.14); font-family:var(--font-title); }
 .flip-front strong { font-size:1.45rem; line-height:1.35; }
@@ -221,7 +221,7 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .lslot { display:flex; align-items:flex-end; height:calc(var(--row) - var(--plank)); margin-bottom:var(--plank); padding-inline:.5px; }
 .lbook { justify-content:space-between; gap:6px; padding:20px 2px 8px; }
 .lbook span { flex:1 1 0; min-height:0; }
-.lbook small { flex:none; font-family:var(--font-body); font-weight:400; font-size:.7rem; white-space:nowrap; }
+.lbook small { flex:none; font-family:var(--font-body); font-weight:400; font-size:.75rem; white-space:nowrap; }
 .lbook.band1::before,.lbook.band2::before { content:""; position:absolute; left:0; right:0; top:9px; border-top:1px solid currentColor; opacity:.45; }
 .lbook.band2::before { height:4px; border-bottom:1px solid currentColor; }
 .lbook.gone { background:none; border:1px dashed var(--muted); border-bottom:0; color:var(--muted); font-weight:400; }
@@ -337,7 +337,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .only-box.on { border-color:var(--strong); }
 .only-box .check { color:var(--ink); font-weight:700; }
 .only-box small { color:var(--muted); font-size:.8rem; line-height:1.45; }
-.only-tag { margin-left:8px; padding:0 6px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:.72rem; font-weight:400; font-family:var(--font-body); vertical-align:middle; white-space:nowrap; }
+.only-tag { margin-left:8px; padding:0 6px; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:.75rem; font-weight:400; font-family:var(--font-body); vertical-align:middle; white-space:nowrap; }
 
 /* 책 고르기 후보·보관한 메모 */
 .found[hidden] { display:none; }
@@ -362,7 +362,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .mark.just .mark-q::after { content:""; display:block; height:2px; margin-top:4px; background:var(--accent); transform-origin:left; opacity:0; animation:mark-draw 1s ease-out .15s both; }
 @keyframes mark-draw { 0% { transform:scaleX(0); opacity:1; } 45% { transform:scaleX(1); opacity:1; } 75% { transform:scaleX(1); opacity:1; } 100% { transform:scaleX(1); opacity:0; } }
 /* 오늘의 문장: 머리말 아래 한 칸. 주인과 범용판에서만 채워진다 */
-.today { margin-top:12px; padding:12px 16px; display:grid; gap:6px; background:var(--surface); border:1px solid var(--line); border-radius:8px; }
+.today { margin-top:12px; margin-bottom:8px; padding:12px 16px; display:grid; gap:6px; background:var(--surface); border:1px solid var(--line); border-radius:8px; }
 .today[hidden] { display:none; }
 .today > * { transition:opacity .22s ease; }
 .today.swap > * { opacity:0; transition-duration:.14s; }
@@ -385,7 +385,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 
 /* 돌아보기: 성향·달력·펼침 목록 (2026-11-07) */
 .recap > .row { margin-block:-4px; }
-.recap h2 .only-tag, .recap-sec .only-tag { font-size:.72rem; font-weight:400; font-family:var(--font-body); vertical-align:.12em; }
+.recap h2 .only-tag, .recap-sec .only-tag { font-size:.75rem; font-weight:400; font-family:var(--font-body); vertical-align:.12em; }
 .recap-sec { font-size:1rem; margin:16px 0 6px; }
 .profile-when { margin:0; color:var(--muted); font-size:.88rem; }
 .card h2.profile-head { font-size:clamp(1.25rem,3.4vw,1.65rem); line-height:1.35; margin:2px 0 8px; }
@@ -404,7 +404,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .hbar[aria-expanded="true"] span:first-child { font-weight:700; }
 @media (pointer:coarse) { .hbar,.dbar { min-height:40px; } }
 .heat { display:grid; grid-template-columns:1.9rem repeat(12,minmax(0,1fr)); gap:2px; }
-.heat-m,.heat-y { color:var(--muted); font-size:.74rem; font-variant-numeric:tabular-nums; text-align:center; line-height:1.6; }
+.heat-m,.heat-y { color:var(--muted); font-size:.75rem; font-variant-numeric:tabular-nums; text-align:center; line-height:1.6; }
 .heat-y { align-self:center; text-align:left; }
 .hcell { aspect-ratio:1 / 1; max-height:44px; width:100%; min-width:0; padding:0; border:0; border-radius:3px; color:var(--ink); font-size:.76rem; font-variant-numeric:tabular-nums; }
 .hcell.deep { color:var(--accent-ink); }
@@ -459,3 +459,57 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .word-lines li { display:grid; gap:1px; font-size:.92rem; line-height:1.65; overflow-wrap:anywhere; }
 .word-src { font-size:.76rem; color:var(--muted); }
 .word-lines mark { background:color-mix(in srgb, var(--bar) 55%, transparent); color:inherit; border-radius:2px; padding:0 1px; }
+
+/* 접는 칸: 첫 화면에 책이 보이도록 주제·순서와 관리 도구를 접는다 (2026-11-07) */
+.fold-bar { display:flex; flex-wrap:wrap; gap:6px; }
+.fold-btn { display:inline-flex; align-items:center; gap:6px; max-width:100%; }
+.fold-btn::after { content:""; flex:none; width:.42em; height:.42em; margin-top:-.2em; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); transition:transform .15s ease; }
+.fold-btn[aria-expanded="true"]::after { margin-top:.2em; transform:rotate(225deg); }
+.fold-btn.on { border-color:var(--accent); font-weight:700; }
+.fold-panel { display:grid; gap:4px; min-width:0; }
+.fold-panel[hidden] { display:none; }
+.fold-tools { display:flex; flex-wrap:wrap; gap:6px; padding-block:4px; }
+@media (prefers-reduced-motion: no-preference) { .fold-panel:not([hidden]) { animation:picks-in .16s ease-out; } }
+@media (min-width:768px) {
+  .filters.folded { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+  .filters.folded > #kinds { flex:0 1 auto; min-width:0; }
+  .filters.folded > .fold-panel { flex:1 1 100%; }
+}
+
+/* 터치 화면의 누르는 크기: 기본값보다 뒤에 둔다 (2026-11-07) */
+@media (pointer:coarse) {
+  .chip,.copy { min-height:40px; }
+  .btn,.search,.close { min-height:44px; }
+  .close { min-width:44px; }
+  .tab { padding-block:10px; }
+  a.copy { display:inline-flex; align-items:center; }
+  .ledger-title { min-height:40px; }
+}
+@media (pointer:coarse) and (max-width:599px) { .hcell,.empty-cell { height:40px; } }
+
+/* 머리글: 소개 글은 로그인 묶음 아래까지 넓게 쓴다 (2026-11-07) */
+.cover { flex-wrap:wrap; gap:0 12px; }
+.cover > div:first-child { display:contents; }
+.cover h1 { flex:1 1 0; min-width:0; }
+.who { order:1; }
+.cover p { order:2; flex:1 1 100%; }
+html[data-mode="local"] .who { order:3; margin-top:8px; }
+
+/* 책등의 짧은 영문·숫자는 세워 쓴다 */
+.tcy { font-style:normal; font-weight:inherit; -webkit-text-combine:horizontal; text-combine-upright:all; }
+
+/* 아주 좁은 폰: 탭이 잘리지 않게 */
+@media (max-width:360px) {
+  .tabs { gap:6px; }
+  .tab { font-size:.9rem; }
+  .tabs-line { gap:6px; }
+  .tabs-line > .copy { padding-inline:6px; }
+}
+
+/* 떠 있는 단추: 터치 화면과 좁은 화면에서는 내려갈 때 비키고, 올라가면 돌아온다 */
+.fab { transition:opacity .2s ease, transform .2s ease; }
+@media (max-width:767px), (pointer:coarse) {
+  .scroll-down .fab,.scroll-down .totop { opacity:0; pointer-events:none; transform:translateY(8px); }
+  .scroll-down .fab:focus-visible,.scroll-down .totop:focus-visible { opacity:1; pointer-events:auto; transform:none; }
+}
+#kinds:empty { display:none; }

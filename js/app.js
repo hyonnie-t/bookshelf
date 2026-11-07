@@ -113,7 +113,10 @@ function chips() {
     b.onclick = () => { S.theme = S.theme === t ? '' : t; renderShelf(); };
     return b;
   }));
+  foldSummary();
 }
+const SHORT_LATIN = /(?<![0-9A-Za-z])([0-9A-Za-z]{1,2})(?![0-9A-Za-z])/;
+const spineText = (label) => el('span', {}, label.split(SHORT_LATIN).map((x, i) => (i % 2 ? el('i', { className:'tcy', textContent:x }) : x)));
 function spine(w) {
   const rv = reviewsOf(w), items = w.notes.length + w.recs.length + rv.length;
   const full = titleOf(w), multi = items > 1;
@@ -127,7 +130,7 @@ function spine(w) {
   const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
   b.style.background = themeVar(w.th[0]);
-  b.append(el('span', { textContent:label }));
+  b.append(spineText(label));
   if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
@@ -142,6 +145,26 @@ function watch(sel) {
 }
 const NAMED_GROUP = '제목·저자 일치';
 const ORDERS = [['new','최신순'],['old','오래된순']];
+/* 접는 칸: 첫 화면에 책이 보이도록 주제·순서와 관리 도구를 접어 둔다. 펼친 상태는 기기별로 기억한다 */
+const FOLD_KEY = LOCAL ? 'myshelf-fold' : 'shelf-fold';
+const fold = { filters:false, tools:false };
+try { (localStorage.getItem(FOLD_KEY) || '').split(',').forEach((k) => { if (k in fold) fold[k] = true; }); } catch (e) {}
+function syncFold() {
+  $('filterPanel').hidden = !fold.filters;
+  $('toolsPanel').hidden = !(fold.tools && S.owner);
+  $('foldFilters').setAttribute('aria-expanded', fold.filters);
+  $('foldTools').setAttribute('aria-expanded', fold.tools);
+}
+function toggleFold(k) {
+  fold[k] = !fold[k];
+  try { localStorage.setItem(FOLD_KEY, Object.keys(fold).filter((x) => fold[x]).join(',')); } catch (e) {}
+  syncFold();
+}
+function foldSummary() {
+  const on = [S.theme, S.order === 'old' ? '오래된순' : '', S.onlyIg ? '서평 있는 책' : '', S.owner && !LOCAL && !S.hideUnknown ? '제목 미확인 포함' : '', S.onlyMe ? '나만 보기' : ''].filter(Boolean);
+  $('foldLabel').textContent = on.length ? `주제·순서: ${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}` : ''}` : '주제·순서';
+  $('foldFilters').classList.toggle('on', on.length > 0);
+}
 const ORDER_KEY = LOCAL ? 'myshelf-order' : 'shelf-order';
 try { if (localStorage.getItem(ORDER_KEY) === 'old') S.order = 'old'; } catch (e) {}
 function syncOrder() {
@@ -196,7 +219,7 @@ function renderShelf() {
   }
   if (!ys.length) {
     const reset = el('button', { className:'btn', type:'button', textContent:'조건 풀기' });
-    reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:false, onlyIg:false, onlyMe:false }); $('q').value = ''; renderShelf(); };
+    reset.onclick = () => { Object.assign(S, { kind:'all', theme:'', q:'', hideUnknown:!S.owner, onlyIg:false, onlyMe:false }); $('q').value = ''; renderShelf(); };
     $('shelves').replaceChildren(el('div', { className:'empty' }, el('div', { textContent:'조건에 맞는 책이 없어요. 종류나 주제를 바꿔 보세요.' }), reset));
     return;
   }
@@ -271,9 +294,15 @@ function renderJump() {
 }
 let jumpQueued = false;
 function queueJump() { if (jumpQueued) return; jumpQueued = true; queueMicrotask(() => { jumpQueued = false; renderJump(); }); }
+let lastScrollY = 0;
 // 지금 보는 묶음을 메뉴에 표시하고, 내려왔으면 맨 위로 단추를 보인다
 function spy() {
   $('toTop').classList.toggle('show', scrollY > 500);
+  if (Math.abs(scrollY - lastScrollY) > 8) {
+    const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+    document.body.classList.toggle('scroll-down', scrollY > lastScrollY && scrollY > 200 && !atEnd);
+    lastScrollY = scrollY;
+  }
   const box = $('jump');
   if (box.hidden) return;
   const now = nowMark(), year = yearOfMark(now);
@@ -793,7 +822,7 @@ function renderRecap() {
   const themeCard = ts.length ? el('div', { className:'card' }, head('주제별 책'), el('p', { className:'sub', textContent:ry ? `${ry}년에 읽은 책의 주제예요. 누르면 그 책이 나와요` : '누르면 책장에서 그 주제만 보여요' }),
     ts.map(([t, n]) => {
       if (ry) return drillable(hbar(t, n, ts[0][1], themeVar(t)), `th:${t}`, `${ry}년 ${t}`, () => bookRows(books.filter((w) => w.th.includes(t))));
-      return hbar(t, n, ts[0][1], themeVar(t), () => { Object.assign(S, { kind:'all', theme:t, q:'', hideUnknown:false, onlyIg:false }); $('q').value = ''; show('shelf'); renderShelf(); scrollTo(0, 0); });
+      return hbar(t, n, ts[0][1], themeVar(t), () => { Object.assign(S, { kind:'book', theme:t, q:'', hideUnknown:true, onlyIg:false }); $('q').value = ''; show('shelf'); renderShelf(); scrollTo(0, 0); });
     })) : null;
   cards.push(themeCard);
 
@@ -963,7 +992,7 @@ function caseBook(it) {
   b.style.height = h + 'px';
   b.style.width = 14 + cols * 18 + Math.abs(hash(title + 'w')) % 14 + 'px';
   if (!out) b.style.background = themeVar(th[0]);
-  b.append(el('span', { textContent:label }));
+  b.append(spineText(label));
   if (sub) b.append(el('small', { textContent:sub }));
   const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
   b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
@@ -1228,7 +1257,7 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, nameHay, pub, ...rest } = w;
@@ -1903,6 +1932,7 @@ function renderLocalTools(box) {
 function renderWho() {
   const box = $('who');
   document.querySelectorAll('.owner-only').forEach((n) => { n.hidden = !S.owner; });
+  syncFold();
   if (LOCAL) { renderLocalTools(box); return; }
   if (S.owner) {
     const out = el('button', { className:'copy', type:'button', textContent:'로그아웃' });
@@ -1931,6 +1961,7 @@ async function enterOwner(user) {
   renderWho(); refreshAll();
 }
 function leaveOwner() {
+  S.hideUnknown = true;
   if ($('form').open) $('form').close();
   if ($('sheet').open) $('sheet').close();
   $('sheet-body').replaceChildren(); $('form-body').replaceChildren();
@@ -1962,6 +1993,9 @@ $('pq').addEventListener('input', (e) => { S.pq = e.target.value.trim(); renderP
 $('showUnknown').onclick = () => { S.hideUnknown = !S.hideUnknown; renderShelf(); setLede(); };
 if ($('onlyMe')) $('onlyMe').onclick = () => { S.onlyMe = !S.onlyMe; S.kind = S.onlyMe ? 'all' : 'book'; renderShelf(); };
 $('onlyIg').onclick = () => { S.onlyIg = !S.onlyIg; renderShelf(); };
+$('foldFilters').onclick = () => toggleFold('filters');
+$('foldTools').onclick = () => toggleFold('tools');
+syncFold();
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
 $('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : openBookForm(null));
