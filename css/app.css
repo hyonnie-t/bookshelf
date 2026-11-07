@@ -539,3 +539,34 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
   .ask-dlg { max-width:calc(100vw - 32px); }
 }
 .ed-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+
+/* 돌아보기 접기: 폰·눕힌 폰에서 카드를 한 줄 결론으로 (2026-11-07). 터치 규칙보다 뒤에 둔다 */
+.act-list { display:grid; }
+.act-list .drill-slot { grid-column:1 / -1; }
+@media (min-width:900px) { .act-list { grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:24px; } .act-list .act:nth-of-type(2) { border-top:0; } }
+.voice-btn { margin:-6px 0 14px; }
+.profile.voiced .profile-head, .profile.voiced .profile-lines { animation:drillIn .22s ease both; }
+.rfold { padding:0; scroll-margin-top:56px; }
+.card h2.rfold-h { margin:0; font-size:inherit; }
+.rfold-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; width:100%; min-height:60px; padding:10px 14px; background:none; border:0; border-radius:8px; color:inherit; text-align:left; }
+.rfold-t { display:grid; gap:1px; min-width:0; }
+.rfold-name { font-family:var(--font-title); font-size:1.02rem; font-weight:700; line-height:1.35; }
+.rfold-line { color:var(--muted); font-family:var(--font-body); font-size:.86rem; font-weight:400; line-height:1.4; }
+.rfold-mark { width:9px; height:9px; margin-right:4px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted); transform:rotate(45deg) translate(-2px,-2px); transition:transform .18s ease; }
+.rfold.open .rfold-mark { transform:rotate(-135deg) translate(-2px,-2px); }
+.rfold-body { padding:2px 14px 14px; }
+.rfold-body:not([hidden]) { animation:drillIn .2s ease both; }
+.rfold-more { display:block; margin:6px 0; }
+.again .rfold-more { margin:0; }
+@media (max-width:767px), (max-height:500px) {
+  .recap { gap:8px; grid-template-columns:minmax(0,1fr); }
+  .recap > .row { margin-block:0 2px; }
+  .recap .span2 { grid-column:auto; }
+  .profile, .acts-card { padding:14px; }
+  .profile-lines { margin-bottom:10px; gap:4px; }
+  .acts-card .sub { margin-bottom:4px; }
+  .tiles { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+  .tile { padding:6px 8px; min-height:58px; align-content:start; }
+  .tile-n { font-size:1.05rem; }
+  .tile-l { font-size:.76rem; line-height:1.3; }
+}
