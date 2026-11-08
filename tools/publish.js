@@ -29,7 +29,7 @@ const blogged = new Set((JSON.parse(fs.readFileSync(path.join(__dirname, '..', '
 Object.entries(works).forEach(([id, w]) => {
   w.id = id;
   const recs = w.recs || [];
-  const done = ((w.k || 'book') === 'book' && w.known && !w.guess && recs.some((r) => r.st !== 'unread')) || (w.k === 'film' && !!w.wc) /* 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05) */ || (w.only === false && !!w.t && !w.guess); // 나만 보기를 직접 푼 칸
+  const done = ((w.k || 'book') === 'book' && w.known && !w.guess && (recs.some((r) => r.st !== 'unread') || w.st === 'done' /* 책 정보 고치기에서 «읽는 중»을 끈 책(js/app.js setReading) */)) || (w.k === 'film' && !!w.wc) /* 왓챠에서 온 본 작품은 제목·연도만 공개(효니 결정 2026-11-05) */ || (w.only === false && !!w.t && !w.guess); // 나만 보기를 직접 푼 칸
   const shelved = !books.has(id) && !(w.notes || []).length && (w.archived || []).length && !(w.marks || []).length && !recs.length && !reviewed.has(id) && !blogged.has(id); // 메모를 다 보관한 칸. js/app.js rebuild와 같은 기준
   if (w.del || isOnlyMe(w) || shelved || (!done && !(reviewed.has(id) && !!w.t && !w.guess) && !staysPublic(id, w))) { if (books.delete(id)) removed++; return; }
   const next = pick(w), prev = books.get(id);
