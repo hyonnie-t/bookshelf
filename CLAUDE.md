@@ -26,6 +26,7 @@
 - `tools/serve.js` 내 PC 확인용 서버(launch 이름 `bookshelf`, 포트 8780)
 
 ## 규칙
+- 고치기 전에 `git fetch` 후 `origin/main`에서 임시 worktree(`git worktree add <임시폴더> -b <브랜치> origin/main`)를 만들어 작업한다. 여러 세션이 이 폴더를 같이 쓰므로 공용 폴더는 `main`으로 둔다(2026-11-08).
 - 비공개 내용(메모·기록·별점·한 줄 평)을 레포·공개 JSON·답변·로그에 넣지 않는다. 글 내용 대신 건수와 코드만 출력한다.
 - 앱 파일을 바꾸면 `sw.js`의 `VERSION`을 올린다(네트워크 우선이라 옛 캐시 정리용).
 - 공개 반영 순서: `npx.cmd firebase-tools database:get /users/<uid>/bookshelf --project timetable-af612 -o private.local.json` → `node tools/publish.js private.local.json` → private.local.json 지우기 → 커밋·푸시. (`private*.json`, `*.local.json`은 gitignore)
