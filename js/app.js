@@ -428,7 +428,7 @@ function onlyMeText(w) {
   if (on) return rv ? '방문자에게 이 책이 안 보여요. 이어진 인스타 글은 공개로 남고 책 연결만 빠져요.' : '방문자에게 안 보여요.';
   if (w.pub) return '방문자에게 책 정보(제목·저자·주제·날짜)와 인스타 글이 보여요. 기록과 메모는 나만 봐요.';
   if (!w.t || w.guess) return '제목을 확인하기 전까지는 공개되지 않아요.';
-  const done = w.k === 'book' && w.known && w.recs.some((r) => r.st !== 'unread');
+  const done = w.k === 'book' && w.known && (w.recs.some((r) => r.st !== 'unread') || w.st === 'done'); // tools/publish.js와 같은 기준
   if (w.only === false || done || rv) return '다음 공개 반영 때 책 정보(제목·저자·주제·날짜)가 올라가요. 기록과 메모는 나만 봐요.';
   return '아직 공개 페이지에 없어요. 다 읽은 기록을 남기면 다음 공개 반영 때 책 정보가 올라가요.';
 }
@@ -2027,6 +2027,19 @@ function ratingSelect(v) {
   s.value = v == null ? '' : String(v);
   return s;
 }
+// 다 읽은 기록이 없는 책만 읽는 중 표시를 켜고 끌 수 있다. 다 읽은 기록이 있으면 그 기록이 먼저다(isReading)
+const canMarkReading = (w) => w && (w.k || 'book') === 'book' && !w.recs.some((r) => r.st !== 'unread');
+// 미완독 기록이 있는 책은 여기서 끄지 않는다(그 기록의 별점이 다 읽은 별점으로 바뀌므로). 기록을 고쳐 «아직 다 못 읽음»을 끈다
+const readingCheck = (w, label = ' 아직 읽는 중이에요') => {
+  const locked = !!(w && w.recs.some((r) => r.st === 'unread'));
+  return el('label', { className:'check' }, el('input', { type:'checkbox', checked:!!(w && isReading(w)), disabled:locked }), label, locked ? ' (다 읽었으면 독서 기록을 고쳐 «아직 다 못 읽음»을 꺼 주세요)' : '');
+};
+function setReading(w, on) {
+  if (on) { w.unread = true; if (w.st === 'done') delete w.st; return; }
+  delete w.unread;
+  w.st = 'done'; // 다 읽음 표시. 공개본의 st:'reading'은 지워도 rebuild에서 다시 섞이므로 값으로 덮고, tools/publish.js는 이 값을 다 읽은 책으로 친다
+  w.notes = w.notes.map((n) => (n.s === 'reading' ? (({ s, ...rest }) => rest)(n) : n));
+}
 function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽은 책으로 옮길 때
   const isNew = !w, seed = w || pre || {};
   let newId = ''; // 저장을 다시 눌러도 같은 칸에 쓰여 책이 겹치지 않는다
@@ -2042,6 +2055,9 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     unfinished = el('label', { className:'check' }, el('input', { type:'checkbox' }), ' 아직 읽는 중이에요');
     d = el('input', { type:'date', value:today() }); r = ratingSelect(null); l = el('input', { type:'text' }); b = el('textarea', { rows:6 });
     kids.push(field('읽은 날', d), unfinished, field('별점', r), field('한 줄 평', l), field('기록', b));
+  } else if (canMarkReading(w)) { // 서평·메모만 있고 다 읽은 기록이 없는 책은 여기서 읽는 중으로 돌린다
+    unfinished = readingCheck(w);
+    kids.push(unfinished);
   }
   const save = async () => {
     const title = t.value.trim();
@@ -2051,6 +2067,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), k:k.value, th:th.values(), known:true });
     delete base.guess;
     if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
+    else if (unfinished && k.value === 'book' && unfinished.querySelector('input').checked !== isReading(w)) setReading(base, unfinished.querySelector('input').checked);
     await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
     if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
@@ -2069,7 +2086,7 @@ function openRecForm(w, i) {
   const r = i >= 0 ? w.recs[i] : {};
   const d = el('input', { type:'date', value:r.d || today() });
   const rt = ratingSelect(r.r);
-  const st = el('label', { className:'check' }, el('input', { type:'checkbox', checked:r.st === 'unread' }), ' 아직 다 못 읽음');
+  const st = el('label', { className:'check' }, el('input', { type:'checkbox', checked:i >= 0 ? r.st === 'unread' : isReading(w) }), ' 아직 다 못 읽음'); // 읽는 중인 책에 새 기록을 더하면 읽는 중 그대로 둔다
   const l = el('input', { type:'text', value:r.l || '' });
   const b = el('textarea', { rows:8, value:r.b || '' });
   const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), field('기록', b)];
@@ -2124,7 +2141,11 @@ function openPostForm() {
   const d = el('input', { type:'date', value:today() });
   const x = el('textarea', { rows:8, required:true });
   const b = bookPicker(false);
-  showForm('인스타 서평 추가', [field('글 주소', url), field('올린 날', d), field('글', x, '인스타 글을 복사해 붙여 넣어 주세요'), field('책', b.input, '비워 두면 결산·일상 글로 들어가요'), b.dl], async () => {
+  // 읽는 도중에 쓴 서평이면 책을 읽는 중으로 둔다. 서평을 이어도 다 읽은 책으로 바뀌지 않게
+  const still = readingCheck(null, ' 이 책은 아직 읽는 중이에요');
+  const syncStill = () => { const w = b.input.value.trim() ? b.pick() : null; still.hidden = !canMarkReading(w) || w.recs.some((r) => r.st === 'unread'); /* 미완독 기록이 있으면 이미 읽는 중이고 여기서 끄지 않는다 */ if (w) still.querySelector('input').checked = isReading(w); };
+  b.input.addEventListener('change', syncStill); b.input.addEventListener('input', syncStill); syncStill();
+  showForm('인스타 서평 추가', [field('글 주소', url), field('올린 날', d), field('글', x, '인스타 글을 복사해 붙여 넣어 주세요'), field('책', b.input, '비워 두면 결산·일상 글로 들어가요'), b.dl, still], async () => {
     const m = url.value.match(/instagram\.com\/(?:[^/]+\/)?(?:p|reel)\/([A-Za-z0-9_-]+)/);
     if (!m) throw fail('인스타 글 주소를 넣어 주세요');
     const c = m[1];
@@ -2133,8 +2154,10 @@ function openPostForm() {
     const hit = b.input.value.trim() ? b.pick() : null;
     if (b.input.value.trim() && !hit) throw fail('아래 목록에서 책을 눌러 주세요. 없는 책이면 «+ 책 추가»로 먼저 꽂아 주세요.');
     const val = { c, d:d.value || today(), x:x.value.trim(), k:hit ? 'review' : 'etc', w:hit ? [hit.id] : [] };
+    const mark = hit && !still.hidden && canMarkReading(hit) && still.querySelector('input').checked !== isReading(hit);
     await write(`igAdded/${c}`, val);
     setPriv('igAdded', c, val);
+    if (mark) { const next = { ...hit, recs:[...hit.recs], notes:[...hit.notes] }; setReading(next, still.querySelector('input').checked); await saveWork(next, '서평을 넣었어요'); return; }
     refreshAll();
     toast('서평을 넣었어요');
   });
