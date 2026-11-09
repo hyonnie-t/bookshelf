@@ -372,10 +372,12 @@ function postLead(x) {
   const rest = m[2].trim();
   return rest.length >= 20 ? { head:m[1].trim(), rest } : null;
 }
-// 표지 문장: 주인이 필사한 밑줄(12~160자) 하나. 날마다 바뀐다. 밑줄이 없으면 null. 공개 화면에는 밑줄이 없다(S.owner에서만)
+// 표지 문장: 필사한 밑줄(12~160자) 하나. 날마다 바뀐다. 없으면 null
 function coverQuote(w) {
-  if (!S.owner || !w.id || !w.marks || !w.marks.length) return null;
-  const ok = w.marks.map((m) => ({ q:tidy(m.q), p:m.p })).filter((m) => m.q.length >= 12 && m.q.length <= 160);
+  if (!w.id) return null;
+  // 주인은 자기 밑줄 전부, 방문자는 공개본(public.json의 qs=[[문장,쪽]])에 올라간 문장만(효니 결정 2026-11-09: 문장은 기본 공개, 밑줄마다 끌 수 있음)
+  const src = S.owner ? (w.marks || []).map((m) => ({ q:tidy(m.q), p:m.p })) : (w.qs || []).map((x) => ({ q:tidy(x[0]), p:x[1] }));
+  const ok = src.filter((m) => m.q.length >= 12 && m.q.length <= 160);
   if (!ok.length) return null;
   const m = ok[Math.abs(hash(`${today()}:${w.id}`)) % ok.length];
   return { q:m.q, where:pageLabel(m.p) };
@@ -505,7 +507,7 @@ function renderTome(w, item, from) {
       });
     }
     if (w.marks.length) {
-      body.push(el('h3', { className:'sec' }, `밑줄 ${w.marks.length}`, privateTag()));
+      body.push(el('h3', { className:'sec' }, `밑줄 ${w.marks.length}`, LOCAL ? null : el('span', { className:'only-tag', textContent:'문장은 기본 공개' })));
       marksInOrder(w).forEach((m) => body.push(markRow(w, m)));
     }
     if (w.notes.length) {
@@ -1555,7 +1557,7 @@ const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (
 const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
-  const { hay, nameHay, pub, ...rest } = w;
+  const { hay, nameHay, pub, qs, ...rest } = w; // qs는 공개본에서 온 표지 문장이라 비공개 칸에 되돌려 쓰지 않는다
   return JSON.parse(JSON.stringify(rest));
 }
 async function saveWork(w, msg) {
@@ -1613,7 +1615,7 @@ function markRow(w, m) {
       .catch(() => {});
   };
   return el('div', { className:`memo mark${S.justMark === m.id ? ' just' : ''}` },
-    el('div', { className:'when', textContent:[pageLabel(m.p), m.d].filter(Boolean).join(' · ') || '쪽 없음' }),
+    el('div', { className:'when', textContent:[pageLabel(m.p), m.d, !LOCAL && m.pub === false ? '나만 보기' : ''].filter(Boolean).join(' · ') || '쪽 없음' }),
     el('blockquote', { className:'mark-q', textContent:m.q }),
     m.why ? el('p', { className:'mark-why', textContent:m.why }) : null,
     el('div', { className:'memo-foot' }, edit, del));
@@ -1624,10 +1626,13 @@ function openMarkForm(w, id) {
   const p = el('input', { type:'text', value:m.p || '', autocomplete:'off' });
   const why = el('textarea', { rows:3, value:m.why || '' });
   const d = el('input', { type:'date', value:m.d || today() });
-  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d)], async () => {
+  const open = el('input', { type:'checkbox', checked:m.pub !== false });
+  const openBox = LOCAL ? null : el('label', { className:'check' }, open, ' 문장·쪽을 방문자에게 공개 (12~160자 문장만 책 표지에, 내 생각·날짜는 나만)');
+  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d), openBox].filter(Boolean), async () => {
     const text = q.value.replace(/\r\n?/g, '\n').trim();
     if (!text) throw fail('문장을 붙여 넣어 주세요.');
     const next = { ...m, id:m.id || markId(), d:d.value, p:pageText(p.value), q:text, why:why.value.replace(/\r\n?/g, '\n').trim() };
+    if (!LOCAL) { if (open.checked) delete next.pub; else next.pub = false; } // 켜짐이 기본이라 꺼 둔 밑줄만 표시를 남긴다
     const cur = D.works.get(w.id) || w; // 창을 연 뒤에 바뀌었을 수 있어 최신 칸에 넣는다
     const marks = id ? cur.marks.map((x) => (x.id === id ? next : x)) : [...cur.marks, next];
     await saveWork({ ...cur, marks }, '밑줄을 저장했어요');

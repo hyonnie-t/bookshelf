@@ -103,6 +103,7 @@ function cleanMarks(list) {
     if (!/^[A-Za-z0-9-]{1,40}$/.test(id) || seen.has(id)) id = `m${Date.now().toString(36)}${i}${Math.random().toString(36).slice(2, 6)}`;
     seen.add(id);
     const o = { id, d:day(m.d), p:str(m.p), q:str(m.q), why:str(m.why) };
+    if (m.pub === false) o.pub = false;
     const from = Array.isArray(m.from) ? m.from.filter((x) => typeof x === 'string' && safeKey(x)) : [];
     if (from.length) o.from = from;
     return o;
