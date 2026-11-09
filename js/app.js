@@ -1885,7 +1885,7 @@ function bookLookup(apply) {
     const { rows, failed, loose } = await searchBooks(word);
     if (mine !== run) return;
     go.disabled = false;
-    msg.textContent = loose ? '찾는 말이 다 들어 있는 책은 없어요. 제목의 낱말을 끝까지 적어 보거나 서점에서 찾아 주세요. 아래는 비슷한 결과예요.' : rows.length ? '맞는 책을 누르면 아래 칸이 채워져요.' : failed ? '책 목록에 제대로 연결되지 않았어요. 인터넷을 확인하고 다시 찾거나, 서점에서 찾아 아래 칸에 적어 주세요.' : '여기서는 찾지 못했어요. 서점에서 찾아 아래 칸에 적어 주세요.';
+    msg.textContent = loose ? '찾는 말이 다 들어 있는 책은 없어요. 제목의 낱말을 끝까지 적어 보거나 서점에서 찾아 주세요. 아래는 비슷한 결과예요.' : rows.length ? '맞는 책을 누르면 아래 칸이 채워져요.' : failed ? '지금은 책 목록에서 정보를 받아 오지 못했어요(찾는 곳이 바쁘거나 인터넷이 끊겼을 수 있어요). 아래 칸에 제목과 저자를 직접 적거나, 서점에서 찾아 옮겨 주세요.' : '여기서는 찾지 못했어요. 서점에서 찾아 아래 칸에 적어 주세요.';
     found.replaceChildren(...rows.map((b) => {
       const pick = el('button', { type:'button' }, el('strong', { textContent:b.t }), el('span', { textContent:[b.a, b.p, b.y].filter(Boolean).join(' · ') }));
       pick.onclick = () => { apply(b); found.replaceChildren(); msg.textContent = `«${b.t}» 정보를 채웠어요. 틀린 곳이 있으면 고쳐 주세요.`; };

@@ -283,9 +283,10 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .totop.show { opacity:1; visibility:visible; transform:none; }
 
 /* 책 찾아 채우기 */
-.lookup { display:grid; gap:8px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
-.lookup-row { display:flex; gap:8px; }
-.lookup-row input { flex:1 1 auto; min-width:0; border:1px solid var(--line); background:var(--surface); border-radius:6px; padding:8px 10px; }
+.lookup { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+.lookup-row { display:flex; gap:8px; min-width:0; }
+/* 아이폰(사파리·카톡 안 브라우저)은 찾기 칸이 제 너비(size)를 고집해 «찾기» 단추가 상자 밖으로 밀렸다(2026-11-09 친구 화면). 너비를 0에서 늘려 채운다 */
+.lookup-row input { flex:1 1 0; width:0; min-width:0; border:1px solid var(--line); background:var(--surface); border-radius:6px; padding:8px 10px; }
 .lookup-row .btn { flex:none; }
 .found { list-style:none; margin:0; padding:0; display:grid; gap:4px; }
 .found button { width:100%; text-align:left; border:1px solid var(--line); border-radius:6px; background:var(--chip); padding:6px 10px; min-height:44px; }
