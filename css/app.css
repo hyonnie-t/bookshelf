@@ -595,6 +595,10 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
   .tile-l { font-size:.76rem; line-height:1.3; }
 }
 
+/* 혹시 이 책? 후보 */
+.guess-box { display:grid; gap:6px; margin-top:8px; }
+.guess-box small { color:var(--muted); font-size:.8rem; }
+.found .why { display:block; font-size:.76rem; opacity:.85; }
 /* 표지 문장(필사한 밑줄 한 줄, 주인 화면만)과 서평 앞머리. 글자만 쓴다 */
 .post-lead { margin:0; font-family:var(--font-title); font-weight:700; line-height:1.5; }
 .cover-q { margin:10px auto 0; max-width:30em; display:grid; gap:2px; padding-top:10px; border-top:1px solid var(--line); }
