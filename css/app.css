@@ -625,7 +625,8 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
 @media (prefers-reduced-motion: reduce) { .tome.opening .cover-q { animation:none; } }
 
 /* 새로고침 단추: 머리 오른쪽, 손가락으로 누르기 쉬운 44px. 눌리면 아이콘이 한 바퀴 돈다(움직임 줄이기에서는 꺼짐) */
-.refresh-btn { order:1; flex:none; width:44px; height:44px; margin:-6px 0 0 auto; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--strong); cursor:pointer; }
+.refresh-btn { order:1; margin:6px 0 0 auto; padding:0; aspect-ratio:1; min-width:30px; display:inline-flex; align-items:center; justify-content:center; color:var(--strong); cursor:pointer; position:relative; }
+.refresh-btn::after { content:""; position:absolute; inset:-7px; }
 .refresh-btn:hover { color:var(--ink); border-color:var(--plank); }
 .refresh-btn:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
 .refresh-btn:disabled { cursor:default; }
