@@ -118,25 +118,71 @@ function chips() {
 }
 const SHORT_LATIN = /(?<![0-9A-Za-z])([0-9A-Za-z]{1,2})(?![0-9A-Za-z])/;
 const spineText = (label) => el('span', {}, label.split(SHORT_LATIN).map((x, i) => (i % 2 ? el('i', { className:'tcy', textContent:x }) : x)));
-function spine(w) {
+// 책등 줄 4가지와 자세는 책 id로 정해 새로고침해도 같다
+const LINES = ['ln-t1', 'ln-t2', 'ln-b1', 'ln-n'];
+const lineOf = (id) => LINES[Math.abs(hash('line' + id)) % 4];
+const spineMark = (w) => (w.guess ? '추정' : isReading(w) ? '미완' : showsOnlyMe(w) ? '나만' : '');
+// 눕혀 쌓은 책: 가로 제목 22px, 폭은 제목 길이로만 정한다. 서평 막대는 오른쪽 끝, ×n은 제목 오른쪽
+function lyingSpine(w) {
+  const rv = reviewsOf(w), items = w.notes.length + w.recs.length + rv.length;
+  const full = titleOf(w), mark = spineMark(w);
+  const raw = w.t || (w.notes[0] || {}).l || (w.recs[0] || {}).l || full;
+  const label = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
+  const wd = Math.max(70, Math.min(130, 32 + label.length * 10));
+  const b = el('button', { type:'button', className:'spine lie' + (w.known ? '' : ' unknown') + (rv.length ? ' has-ig' : '') });
+  b.style.width = wd + 'px'; b.style.background = themeVar(w.th[0]);
+  b.append(el('span', { textContent:label }));
+  if (mark) b.append(el('i', { textContent:mark }));
+  if (items > 1) b.append(el('i', { textContent:'×' + items }));
+  b.setAttribute('aria-label', full + (w.a ? ', ' + w.a : '') + ', 글 ' + rv.length + '개' + (showsOnlyMe(w) ? ', 나만 보기' : ''));
+  b.onclick = () => openBook(w.id, b);
+  return b;
+}
+function spine(w, pose) {
   const rv = reviewsOf(w), items = w.notes.length + w.recs.length + rv.length;
   const full = titleOf(w), multi = items > 1;
   const raw = w.t || (w.notes[0] || {}).l || (w.recs[0] || {}).l || full;
   const label = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
   const cols = label.length <= 8 ? 1 : label.length <= 16 ? 2 : 3;
   const len = rv.reduce((a, p) => a + p.x.length, 0) + w.notes.reduce((a, n) => a + (n.len || 0), 0);
-  const mark = w.guess ? '추정' : isReading(w) ? '미완' : showsOnlyMe(w) ? '나만' : '';
+  const mark = spineMark(w);
   const h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (mark ? 18 : 0));
   const wd = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9);
-  const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') });
+  const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose === 'lean' ? ' lean' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
+  let gap = 0;
+  if (pose === 'lean') { // 기대어 선다: 7~11°, 오른쪽 아래 모서리가 축이라 판에 박히지 않고, 기울어 나가는 만큼 오른쪽에 여백
+    const tilt = 7 + Math.abs(hash('tilt' + w.id)) % 5;
+    b.style.setProperty('--tilt', tilt + 'deg');
+    gap = Math.ceil(h * Math.sin(tilt * Math.PI / 180)) + 2;
+  }
   b.style.background = themeVar(w.th[0]);
   b.append(spineText(label));
   if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
   b.onclick = () => openBook(w.id, b);
-  return el('div', { className:'slot' }, b);
+  const slot = el('div', { className:'slot' + (pose === 'lean' ? ' lean' : '') }, b);
+  if (gap) slot.style.setProperty('--gap', gap + 'px');
+  return slot;
+}
+// 선반 끝: 책이 8권 이상이면 2~3권을 눕혀 쌓고(선반당 한 번), 그 앞에 기대어 선 책을 둔다. 기댄 책과 눕힌 책은 합쳐 3권을 넘기지 않는다
+function shelfBooks(items) {
+  const n = items.length;
+  if (n < 4) return items.map((w) => spine(w));
+  const seed = Math.abs(hash('end' + items[n - 1].id));
+  const lie = n >= 8 && seed % 3 ? (n >= 14 && seed % 2 ? 3 : 2) : 0;
+  const lean = Math.max(0, Math.min(n - lie - 2, lie === 3 ? 0 : lie ? (seed >> 2) % 2 : 1 + (seed >> 2) % 2));
+  const out = items.slice(0, n - lie - lean).map((w) => spine(w));
+  items.slice(n - lie - lean, n - lie).forEach((w) => out.push(spine(w, 'lean')));
+  if (lie) {
+    out.push(el('div', { className:'slot pile' }, items.slice(n - lie).map((w) => {
+      const b = lyingSpine(w);
+      b.style.marginLeft = (Math.abs(hash('off' + w.id)) % 8 - 1) + 'px'; // -1~6px 어긋나게
+      return b;
+    })));
+  }
+  return out;
 }
 let io;
 function watch(sel) {
@@ -191,7 +237,7 @@ syncOrder();
 // 그해 책을 달마다 나눈다. 달을 아는 책이 하나도 없는 해(공개 화면의 옛 책들)는 예전처럼 한 선반에 꽂는다
 function yearBody(y, rows, unit) {
   const dir = S.order === 'old' ? 1 : -1;
-  const rack = (items) => el('div', { className:'rack' }, items.sort((a, b) => dir * (a.md || a.fd).localeCompare(b.md || b.fd)).map(spine));
+  const rack = (items) => el('div', { className:'rack' }, shelfBooks(items.sort((a, b) => dir * (a.md || a.fd).localeCompare(b.md || b.fd))));
   const months = {}, unknown = [];
   rows.forEach((w) => { const m = /^\d{4}$/.test(y) ? w.md.slice(0, 7) : ''; if (m) (months[m] = months[m] || []).push(w); else unknown.push(w); });
   const keys = Object.keys(months).sort((a, b) => dir * a.localeCompare(b));
@@ -1273,7 +1319,7 @@ function caseBook(it) {
   const h = 146 + Math.abs(hash(title)) % 50;
   const perCol = Math.max(5, Math.floor((h - 30 - sub.length * 12) / 15));
   const cols = Math.min(3, Math.ceil(label.length / perCol));
-  const b = el('button', { type:'button', className:`spine lbook band${Math.abs(hash(title + it.id)) % 3}${out ? ' gone' : ''}` });
+  const b = el('button', { type:'button', className:`spine lbook ${lineOf(it.id)}${out ? ' gone' : ''}` });
   b.style.height = h + 'px';
   b.style.width = 14 + cols * 18 + Math.abs(hash(title + 'w')) % 14 + 'px';
   if (!out) b.style.background = themeVar(th[0]);
