@@ -8,8 +8,10 @@
 <meta name="theme-color" content="#f3f4f2">
 <script>try { var ed = localStorage.getItem('myshelf-edition'); if (ed) document.documentElement.dataset.edition = ed; } catch (e) {}</script>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="../icons/icon-192.png">
-<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="../icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../icons/apple-touch-icon.png">
+<script src="../js/install.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Gowun+Dodum&display=swap">
 <link rel="stylesheet" href="../css/app.css">
@@ -60,6 +62,7 @@
     </div>
     <div id="shelves"></div>
     <p class="note" id="foot"></p>
+    <p class="note install-row" data-install-wrap hidden><button class="copy" type="button" data-install hidden>📲 홈 화면에 추가</button></p>
     <p class="note"><a href="../">이 책장을 만든 사람의 책장 구경하기</a></p>
   </section>
   <section id="view-library" role="tabpanel" aria-labelledby="tab-library" hidden>
