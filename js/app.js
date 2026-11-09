@@ -1820,7 +1820,7 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
 /* ---------- 인터넷에서 책 찾아 채우기 ---------- */
 // 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 카카오 책 검색을 앱스크립트 중계로 먼저 찾고, 키 없는 공개 목록을 그다음에 쓴다. 안 나오면 서점 검색으로 넘겨 준다
 const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec'; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
-const relayOn = () => !!BOOK_RELAY && !LOCAL; // 범용판은 효니 키를 쓰는 중계를 쓰지 않는다(효니 결정 2026-11-05)
+const relayOn = () => !!BOOK_RELAY; // 범용판도 쓴다(효니 결정 2026-11-09: 친구 시험 동안 카카오 중계, 국립중앙도서관 키가 나오면 범용판은 그쪽으로. 11-05엔 범용판 제외였다)
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 // 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
 const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
