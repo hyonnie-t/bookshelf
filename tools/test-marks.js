@@ -17,7 +17,7 @@ fs.writeFileSync(path.join(tmp, 'pub/data/blog.json'), '{"posts":[]}');
 fs.writeFileSync(path.join(tmp, 'pub/data/public.json'), JSON.stringify({ at:'2026-01-01', books:[{ id:'b1', t:'공개 책', a:'저자', k:'book', th:[], y:'2026', fd:'2026-01-01' }, { id:'b7', t:'공개본에만 있던 책', a:'저자', k:'book', th:[], y:'2026', fd:'2026-01-01' }], posts:[] }));
 const mark = { id:'m1', d:'2026-11-07', p:'129–130', q:SECRET, why:THINK };
 const priv = { works:{
-  b1:{ t:'공개 책', a:'저자', k:'book', known:true, th:[], y:'2026', fd:'2026-01-01', recs:[{ d:'2026-01-01', r:4, l:'평', b:'기록' }], marks:[mark] },
+  b1:{ t:'공개 책', a:'저자', k:'book', known:true, th:[], y:'2026', fd:'2026-01-01', recs:[{ d:'2026-01-01', r:4, l:'평', b:'기록' }], marks:[mark, { id:'q1', p:'30', q:'공개되는 충분히 긴 필사 문장 하나', why:THINK }, { id:'q2', p:'5', q:'쪽이 앞서는 공개 필사 문장 둘이다', pub:true }, { id:'q3', p:'9', q:'끈 밑줄이라 공개본에 없는 문장이다', pub:false }, { id:'q4', p:'40', q:'네 번째 공개 후보 문장도 충분히 길다' }, { id:'q5', p:'50', q:'다섯 번째 후보는 세 개를 넘어서 잘린다' }, { id:'q6', p:'1', q:'짧은 문장' }, { id:'q7', p:'2 이 쪽 칸에는 내 생각처럼 긴 글이 들어 있다', q:'쪽 칸이 길어도 문장만 공개되는 글이다' }] },
   b2:{ t:'밑줄만 있는 책', a:'저자', k:'book', known:true, th:[], marks:[{ ...mark, id:'m2' }] },
   b7:{ t:'공개본에만 있던 책', a:'저자', k:'book', known:true, th:[], y:'2026', fd:'2026-01-01', marks:[{ ...mark, id:'m7' }] },
   b3:{ t:'보관 메모와 밑줄', a:'저자', k:'book', known:true, th:[], archived:[{ d:'2026-01-01', b:'보관글' }], marks:[{ ...mark, id:'m3' }] },
@@ -26,7 +26,9 @@ fs.writeFileSync(path.join(tmp, 'priv.json'), JSON.stringify(priv));
 run([path.join(tmp, 'pub/tools/publish.js'), path.join(tmp, 'priv.json')]);
 const out = fs.readFileSync(path.join(tmp, 'pub/data/public.json'), 'utf8');
 ok('공개본에 marks 칸이 없다', () => assert(!/"marks"|"q"|"why"/.test(out)));
-ok('공개본에 문장·생각이 없다', () => assert(!out.includes(SECRET) && !out.includes(THINK)));
+ok('공개본에 생각이 없고 끈 문장도 없다', () => assert(!out.includes(THINK) && !out.includes('끈 밑줄이라') && !out.includes('내 생각처럼')));
+ok('공개 밑줄은 쪽 순서로 최대 3개, 짧은 문장은 빠진다', () => { const b = JSON.parse(out).books.find((x) => x.id === 'b1'); assert.deepStrictEqual(b.qs.map((x) => x[1]), ['', '5', '30']); assert(b.qs.every((x) => x.length === 2)); });
+ok('밑줄만 있는 책에는 공개 문장 칸이 없다', () => assert(!JSON.parse(out).books.some((b) => b.id === 'b2' && b.qs)));
 ok('기록 있는 책은 공개본에 남는다', () => assert(JSON.parse(out).books.some((b) => b.id === 'b1')));
 ok('공개된 책에 밑줄만 저장해도 공개본에서 빠지지 않는다', () => assert(JSON.parse(out).books.some((b) => b.id === 'b7')));
 ok('밑줄만 있는 책은 공개되지 않는다', () => assert(!JSON.parse(out).books.some((b) => b.id === 'b2' || b.id === 'b3')));
