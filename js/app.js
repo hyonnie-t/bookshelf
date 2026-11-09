@@ -365,12 +365,29 @@ syncBarColor();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncBarColor);
 
 /* ---------- 책 자세히 ---------- */
+// 앞머리: 첫 문장(12~70자)이 글의 일부일 때만. 문장이 전부이거나 너무 길면 나누지 않는다
+function postLead(x) {
+  const m = /^\s*([^\n]{12,70}?[.!?…。])(?=\s|$)\s*([\s\S]*)$/.exec(x || '');
+  if (!m) return null;
+  const rest = m[2].trim();
+  return rest.length >= 20 ? { head:m[1].trim(), rest } : null;
+}
+// 표지 문장: 주인이 필사한 밑줄(12~160자) 하나. 날마다 바뀐다. 밑줄이 없으면 null. 공개 화면에는 밑줄이 없다(S.owner에서만)
+function coverQuote(w) {
+  if (!S.owner || !w.id || !w.marks || !w.marks.length) return null;
+  const ok = w.marks.map((m) => ({ q:tidy(m.q), p:m.p })).filter((m) => m.q.length >= 12 && m.q.length <= 160);
+  if (!ok.length) return null;
+  const m = ok[Math.abs(hash(`${today()}:${w.id}`)) % ok.length];
+  return { q:m.q, where:pageLabel(m.p) };
+}
 function postBlock(p, { showBooks = false, ownerTools = false, inWork = null } = {}) {
-  const text = el('p', { className:'post-text', textContent:p.x });
-  const long = p.x.length > 420;
+  const lead = showBooks && !p.t ? postLead(p.x) : null; // 서평 목록 카드: 앞머리 한 줄을 위에 따로 보이고 본문은 그 뒤부터 (공개 글이라 누구나)
+  const text = el('p', { className:'post-text', textContent:lead ? lead.rest : p.x });
+  const long = text.textContent.length > 420;
   if (long) text.classList.add('clamp');
   const kids = [el('div', { className:'when', textContent:p.blog ? `${p.d} · 블로그` : p.d })];
   if (p.t) kids.push(el('p', { className:'post-title', textContent:p.t }));
+  else if (lead) kids.push(el('p', { className:'post-lead', textContent:lead.head }));
   if (showBooks && p.w.length) {
     kids.push(el('div', { className:'post-books' }, p.w.map((id) => {
       const w = D.works.get(id); if (!w) return null;
@@ -456,7 +473,9 @@ function renderTome(w, item, from) {
   const kindName = (KINDS.find((k) => k[0] === w.k) || [,''])[1];
   const rv = reviewsOf(w);
   const byline = [w.a, w.p, kindName === '책' ? '' : kindName].filter(Boolean).join(' · ');
-  const left = [el('div', { className:'title-page' }, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }))];
+  const cq = coverQuote(w);
+  const left = [el('div', { className:'title-page' }, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }),
+    cq ? el('figure', { className:'cover-q' }, el('blockquote', { textContent:cq.q }), cq.where ? el('figcaption', { textContent:cq.where }) : null) : null)];
   if (isReading(w)) left.push(el('p', { className:'by', textContent:'읽는 중' }));
   if (w.th.length) left.push(el('div', { className:'title-tags' }, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
   if (w.guess && S.owner) left.push(el('p', { className:'warn', textContent:'제목과 저자는 메모 내용으로 추정한 것이에요. 틀렸으면 고쳐 주세요.' }));
@@ -519,7 +538,7 @@ function renderTome(w, item, from) {
   if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
   const flip = el('div', { className:'flip' },
-    el('div', { className:'flip-front' }, el('strong', { textContent:titleOf(w) }), w.a ? el('span', { textContent:w.a }) : null),
+    el('div', { className:'flip-front' }, el('strong', { textContent:titleOf(w) }), w.a ? el('span', { textContent:w.a }) : null, cq ? el('em', { className:'flip-q', textContent:cq.q }) : null),
     el('div', { className:'flip-back' }));
   flip.setAttribute('aria-hidden', 'true');
   flip.firstChild.style.backgroundColor = themeVar(w.th[0]);

@@ -591,3 +591,12 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
   .tile-n { font-size:1.05rem; }
   .tile-l { font-size:.76rem; line-height:1.3; }
 }
+
+/* 표지 문장(필사한 밑줄 한 줄, 주인 화면만)과 서평 앞머리. 글자만 쓴다 */
+.post-lead { margin:0; font-family:var(--font-title); font-weight:700; line-height:1.5; }
+.cover-q { margin:10px auto 0; max-width:30em; display:grid; gap:2px; padding-top:10px; border-top:1px solid var(--line); }
+.cover-q blockquote { margin:0; font-family:var(--font-title); font-size:.92rem; line-height:1.7; color:var(--muted); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden; }
+.cover-q figcaption { font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+.flip-front .flip-q { font-style:normal; font-size:.8rem; line-height:1.6; opacity:.75; max-width:20em; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden; }
+.tome.opening .cover-q { animation:ink-in .3s .45s ease both; }
+@media (prefers-reduced-motion: reduce) { .tome.opening .cover-q { animation:none; } }
