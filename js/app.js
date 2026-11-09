@@ -531,7 +531,7 @@ function renderTome(w, item, from) {
     }
     if (w.notes.length) {
       body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, privateTag()));
-      w.notes.forEach((n, i) => body.push(el('div', { className:'memo' },
+      w.notes.forEach((n, i) => body.push(el('div', { className:'memo' + (S.justMemo === `${w.id}:${i}` ? ' just' : '') },
         el('div', { className:'when', textContent:[n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음' }),
         n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }),
         memoTools(w, i))));
@@ -1725,13 +1725,35 @@ function memoTools(w, i) {
     const notes = w.notes.filter((_, x) => x !== i), gone = !w.pub && !notes.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length;
     memoSave({ ...w, notes, archived:[...w.archived, { ...w.notes[i], arcAt:today() }] }, gone ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
   };
+  const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
+  edit.onclick = () => openMemoForm(w, i);
   const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
   del.onclick = async () => {
     const notes = w.notes.filter((_, x) => x !== i), empty = emptyAfter(w, notes, w.archived);
     if (!await ask(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸에 남는 글이 없어서 책장에서도 빠져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
     memoSave({ ...w, notes, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
   };
-  return el('div', { className:'memo-foot' }, keep, del);
+  return el('div', { className:'memo-foot' }, edit, keep, del);
+}
+// 메모 고치기: 본문(b)과 날짜(d)만 고친다. 첫 줄(l)과 글자 수(len)는 본문에서 다시 만들어 책등 높이·찾기·돌아보기·낱말·겹침 판정이 새 글을 따른다. 보관한 메모는 «되돌리기» 뒤에 고친다
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+function openMemoForm(w, i) {
+  const n0 = w.notes[i] || {};
+  const b = el('textarea', { rows:10, value:n0.b || n0.l || '' });
+  const d = el('input', { type:'date', value:ISO_DAY.test(n0.d || '') ? n0.d : '' });
+  showForm('메모 고치기', [field('본문', b, '없애려면 메모의 «지우기»를 눌러요'), field('날짜', d, n0.d && !ISO_DAY.test(n0.d) ? `지금은 «${n0.d}»로 적혀 있어요. 비워 두면 그대로 둬요` : '')], async () => {
+    const text = b.value.replace(/\r\n?/g, '\n').trim();
+    if (!text) throw fail('본문을 적어 주세요. 메모를 없애려면 «지우기»를 눌러요.');
+    if (memoBusy) throw fail('저장하는 중이에요. 잠시 뒤 다시 눌러 주세요.');
+    const cur = D.works.get(w.id); // 창을 연 뒤에 바뀌었을 수 있어 최신 칸에서 같은 메모를 찾는다
+    const at = cur ? cur.notes.findIndex((x) => x === n0 || (n0.id != null && x.id === n0.id)) : -1;
+    if (at < 0) throw fail('그 사이 메모가 바뀌었어요. 창을 닫고 다시 열어 주세요.');
+    const same = text === (n0.b || n0.l || '').replace(/\r\n?/g, '\n').trim(); // 본문을 안 고쳤으면 b·l·len은 그대로 둔다(날짜만 고칠 때 본문이 새로 생기지 않게)
+    const next = { ...cur.notes[at], ...(same ? {} : { b:text, l:text.split('\n')[0].trim().slice(0, 60), len:text.length }), d:d.value || cur.notes[at].d || '' };
+    S.justMemo = `${w.id}:${at}`;
+    try { await memoSave({ ...cur, notes:cur.notes.map((x, k) => (k === at ? next : x)) }, '메모를 고쳤어요'); }
+    finally { setTimeout(() => { S.justMemo = ''; }, 0); }
+  });
 }
 function archivedMemos(onlyId) {
   return Object.entries(D.priv.works || {}).filter(([id, w]) => !w.del && (w.archived || []).length && (!onlyId || id === onlyId))
