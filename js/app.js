@@ -2005,7 +2005,10 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
 /* ---------- 인터넷에서 책 찾아 채우기 ---------- */
 // 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 카카오 책 검색을 앱스크립트 중계로 먼저 찾고, 키 없는 공개 목록을 그다음에 쓴다. 안 나오면 서점 검색으로 넘겨 준다
 const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec'; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
-const relayOn = () => !!BOOK_RELAY; // 범용판도 쓴다(효니 결정 2026-11-09: 친구 시험 동안 카카오 중계, 국립중앙도서관 키가 나오면 범용판은 그쪽으로. 11-05엔 범용판 제외였다)
+const relayOn = () => !!BOOK_RELAY;
+// 범용판은 국립중앙도서관 소장자료 검색(효니 결정 2026-11-09). 카카오는 효니 책장에서만 쓴다(약관 «타인에게 제공» 해석 여지, 11-05 결정)
+const RELAY_SRC = LOCAL ? 'nl' : '';
+const RELAY_NAME = LOCAL ? '국립중앙도서관 소장자료 검색' : '카카오 책 검색';
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 // 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
 const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
@@ -2020,7 +2023,7 @@ async function getJson(url, ms = 5000) {
 }
 const uniqueBooks = (rows) => { const seen = new Set(); return rows.filter((b) => { const k = dupNorm(b.t + b.a + b.p); if (seen.has(k)) return false; seen.add(k); return true; }); };
 async function fromRelay(q) {
-  const r = await getJson(`${BOOK_RELAY}?q=${encodeURIComponent(q)}`, 12000); // 앱스크립트는 오래 쉬면 깨어나는 데 몇 초 걸린다
+  const r = await getJson(`${BOOK_RELAY}?q=${encodeURIComponent(q)}${RELAY_SRC ? `&src=${RELAY_SRC}` : ''}`, 12000); // 앱스크립트는 오래 쉬면 깨어나는 데 몇 초 걸린다
   if (!r.ok) throw new Error(r.error || 'relay');
   return uniqueBooks((r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '' })));
 }
@@ -2031,7 +2034,7 @@ async function searchBooks(q) {
     relayOn() && (async () => {
       const rows = await fromRelay(q);
       if (rows.some(fits)) return rows;
-      // 카카오는 낱말 단위로 찾아 잘린 제목(«레슨 인 케미»)이나 띄엄띄엄 적은 말(«코끼리 장례식»)을 놓친다. 낱말을 줄여 다시 찾고 찾는 말이 다 들어 있는 책만 남긴다
+      // 카카오·국립중앙도서관은 낱말 단위로 찾아 잘린 제목(«레슨 인 케미»)이나 띄엄띄엄 적은 말(«코끼리 장례식»)을 놓친다. 낱말을 줄여 다시 찾고 찾는 말이 다 들어 있는 책만 남긴다
       const words = q.split(/\s+/);
       const tries = words.length < 2 ? [] : [...new Set([words.slice(0, -1).join(' '), ...words.filter((x) => x.length >= 2)])].filter((x) => x !== q).slice(0, 3);
       const more = (await Promise.allSettled(tries.map(fromRelay))).flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).filter(fits);
@@ -2080,7 +2083,7 @@ function bookLookup(apply) {
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small', { textContent:relayOn() ? '찾는 말만 구글 앱스크립트를 거쳐 카카오 책 검색으로 보내요. 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.' : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
+  const note = el('small', { textContent:relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요. 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go), msg, found,
     el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
