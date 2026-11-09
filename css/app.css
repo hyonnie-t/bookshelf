@@ -633,3 +633,18 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
 .refresh-btn svg { display:block; transform-origin:50% 50%; }
 .refresh-btn.spinning svg { animation:refreshTurn .7s ease-in-out; }
 @keyframes refreshTurn { to { transform:rotate(360deg); } }
+
+/* 글 하나씩 공개 표시·단추 줄 (2026-11-09): 지우기는 항상 오른쪽 끝, 공개는 눈에 띄게 */
+.memo .when { display:flex; flex-wrap:wrap; align-items:center; column-gap:6px; }
+.memo .when .only-tag { margin-left:2px; }
+.only-tag.vis.open { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.memo .memo-foot { justify-content:flex-start; padding-top:2px; }
+.memo .memo-foot .copy.danger { margin-left:auto; }
+
+/* 이북리더기 에디션 (2026-11-09): 흑백·큰 글자·움직임 없음. 어두운 화면 설정이어도 흰 종이로 둔다(전자잉크는 밝은 판이 읽기 좋다) */
+[data-edition="eink"], [data-edition="eink"]:not([data-theme="light"]) { color-scheme:light; --h0:0; --k:0; --s:0%; --l:86%; --j:3%; --bg:#ffffff; --surface:#ffffff; --ink:#000000; --muted:#333333; --line:#777777; --strong:#000000; --plank:#555555; --accent:#000000; --accent-ink:#ffffff; --chip:#ffffff; --focus:#000000; --bar:#999999; --paper:#ffffff; --paper-edge:#999999; --gutter:rgba(0,0,0,.25); --wood:#555555; --wood-deep:#333333; --case-back:#f2f2f2; --case-shade:rgba(0,0,0,.25); }
+[data-edition="eink"] { font-size:112.5%; }
+[data-edition="eink"] *, [data-edition="eink"] *::before, [data-edition="eink"] *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; box-shadow:none !important; text-shadow:none !important; }
+[data-edition="eink"] .copy, [data-edition="eink"] .chip, [data-edition="eink"] .btn { border-color:#000; }
+[data-edition="eink"] .copy, [data-edition="eink"] .chip { min-height:40px; }
+.leaf.l .actions.sub { padding-top:0; }

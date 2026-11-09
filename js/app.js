@@ -31,7 +31,7 @@ const movedTo = (id) => { let n = 0; while (D.moved.has(id) && n++ < 9) id = D.m
 const VIEWS = ['shelf', 'library', 'posts', 'recap'];
 const LIB_KINDS = [['all','전체'],['own','소장'],['out','빌려준 책'],['in','빌려 온 책'],['unread','아직 안 읽음']];
 const DEFAULT_WHERE = '내 책장';
-const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.edition === 'eink'; // 이북리더기 에디션은 움직임을 끈다
 
 /* ---------- 데이터 ---------- */
 function rebuild() {
@@ -372,7 +372,7 @@ syncNavH();
 if ('ResizeObserver' in window) new ResizeObserver(syncNavH).observe($('topnav'));
 
 /* ---------- 색 에디션: 기기마다 저장한다 ---------- */
-const EDITIONS = [['base','조용한 서가','지금까지 쓰던 차분한 색'],['paper','오래된 종이','크림색 종이와 나무 선반'],['forest','숲속 서재','이끼색과 풀색'],['sea','새벽 바다','맑고 서늘한 푸른색'],['blossom','봄 벚꽃','연한 분홍빛'],['ink','먹과 한지','거의 무채색인 묵직한 서가']];
+const EDITIONS = [['base','조용한 서가','지금까지 쓰던 차분한 색'],['paper','오래된 종이','크림색 종이와 나무 선반'],['forest','숲속 서재','이끼색과 풀색'],['sea','새벽 바다','맑고 서늘한 푸른색'],['blossom','봄 벚꽃','연한 분홍빛'],['ink','먹과 한지','거의 무채색인 묵직한 서가'],['eink','이북리더기','흑백·큰 글자·움직임 없음. 전자잉크 화면용']];
 const ED_KEY = LOCAL ? 'myshelf-edition' : 'shelf-edition';
 const curEdition = () => document.documentElement.dataset.edition || 'base';
 function syncBarColor() {
@@ -507,6 +507,58 @@ function openLib(libId, from) {
   renderTome({ t:it.t, a:it.a, p:it.p, k:'book', th:it.th, recs:[], notes:[], marks:[] }, it, from);
 }
 const privateTag = () => LOCAL ? null : el('span', { className:'only-tag', textContent:'나만 보기' });
+/* 글 하나씩의 공개 여부(2026-11-09): 메모·기록은 기본이 나만 보기고 글마다 pub:true로 공개한다. 밑줄은 기본 공개고 pub:false로 끈다.
+   공개는 tools/publish.js가 책 공개본의 ms=[[본문, 날짜]]로 옮긴다(책이 공개 상태일 때만, 별점·내 생각은 안 감(본문이 비면 한 줄 평)). 범용판에는 없다 */
+const MS_MAX = 1000, MS_COUNT = 5;
+const baseOnlyTag = () => LOCAL ? null : el('span', { className:'only-tag', textContent:'기본은 나만 보기' });
+const visTag = (open) => LOCAL ? null : el('span', { className:'only-tag vis' + (open ? ' open' : ''), textContent:open ? '공개' : '나만 보기' });
+const itemBody = (x) => String(x.b || x.l || '').trim();
+// 책 창을 다시 그려도 보던 자리가 그대로 있도록 스크롤을 붙잡았다 되돌린다
+function keepScroll(job) {
+  const at = ['.pages', '.leaf.r'].map((c) => { const n = document.querySelector(`#sheet-body ${c}`); return [c, n ? n.scrollTop : 0]; });
+  return job().then(() => at.forEach(([c, top]) => { const n = document.querySelector(`#sheet-body ${c}`); if (n) n.scrollTop = top; })).catch(() => {});
+}
+// group: 'notes'|'recs'|'marks', key: notes·recs는 순번, marks는 id. 단추는 «눌렀을 때 일어날 일»을 적고, 지금 상태는 옆의 표(visTag)가 보인다
+function visToggle(w, group, key) {
+  if (LOCAL) return null;
+  const find = (c) => group === 'marks' ? c.marks.find((m) => m.id === key) : c[group][key];
+  const x = find(w);
+  if (!x) return null;
+  const open = group === 'marks' ? x.pub !== false : x.pub === true;
+  const b = el('button', { className:'copy', type:'button', textContent:open ? '나만 보기로' : '공개하기' });
+  b.title = open ? '방문자에게 보이지 않게 해요(이미 올라간 글은 다음 공개 반영 때 내려가요)' : '방문자가 이 책 페이지에서 볼 수 있게 해요(다음 공개 반영 때 올라가요)';
+  b.onclick = async () => {
+    const cur = D.works.get(w.id) || w, now = find(cur);
+    if (!now || (group !== 'marks' && itemBody(now) !== itemBody(x))) { toast('그 사이 글이 바뀌었어요. 창을 닫고 다시 열어 주세요'); return; }
+    if (!open) {
+      if (group !== 'marks') {
+        if (!itemBody(now)) { toast('본문이 없는 글은 공개할 수 없어요'); return; }
+        if (itemBody(now).length > MS_MAX) { toast(`${MS_MAX}자가 넘어서 공개할 수 없어요. 줄이거나 나눠 주세요`); return; }
+        if (!await ask(`이 글을 방문자에게 공개할까요? 다음 공개 반영 때 «${titleOf(cur) || '이 책'}» 페이지에 올라가요. ${group === 'recs' ? '별점은 안 올라가요(본문이 비어 있으면 한 줄 평이 올라가요). ' : ''}(책이 공개 상태일 때만 보여요)`, '공개하기', false)) return;
+      }
+    }
+    const flip = (y) => { const z = { ...y }; if (group === 'marks') { if (open) z.pub = false; else delete z.pub; } else if (open) delete z.pub; else z.pub = true; return z; };
+    const list = group === 'marks' ? cur.marks.map((m) => (m === now ? flip(m) : m)) : cur[group].map((m, k) => (k === key ? flip(m) : m));
+    await keepScroll(() => memoSave({ ...cur, [group]:list }, open ? '나만 보기로 바꿨어요. 이미 올라간 글은 다음 공개 반영 때 내려가요' : '공개로 바꿨어요. 다음 공개 반영 때 방문자에게 보여요'));
+  };
+  return b;
+}
+// 모든 글(기록·밑줄·메모)의 단추 줄: 고치기 · (공개하기/나만 보기로) · (보관) ··· 지우기. 지우기는 항상 오른쪽 끝
+function itemTools(w, { edit, vis, keep, del }) {
+  const e = el('button', { className:'copy', type:'button', textContent:'고치기' });
+  e.onclick = edit;
+  const d = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
+  d.onclick = del;
+  return el('div', { className:'memo-foot' }, e, vis, keep, d);
+}
+async function delRec(w, i) {
+  const cur = D.works.get(w.id) || w;
+  if (!await ask('이 기록을 지울까요? 되돌릴 수 없어요.')) return;
+  const recs = cur.recs.filter((_, x) => x !== i);
+  const next = { ...cur, recs };
+  if (recs.length) next.unread = recs.every((x) => x.st === 'unread'); // 남은 기록으로 읽는 중인지 다시 정한다(기록을 더할 때와 같은 기준)
+  await keepScroll(() => memoSave(next, '기록을 지웠어요'));
+}
 // 공개 페이지(data/public.json)는 tools/publish.js로만 바뀐다. 그래서 지금 방문자에게 어떻게 보이는지를 그대로 적는다
 function onlyMeText(w) {
   const on = isOnlyMe(w), rv = reviewsOf(w).some((p) => !p.blog);
@@ -555,7 +607,7 @@ function onlyMeBox(w) {
     catch (e) { console.error(e); input.checked = !input.checked; input.disabled = false; toast('바꾸지 못했어요'); }
   };
   return el('div', { className:'only-box' + (isOnlyMe(w) ? ' on' : '') },
-    el('label', { className:'check' }, input, ' 나만 보기'),
+    el('label', { className:'check' }, input, ' 이 책 전체 나만 보기'),
     el('small', { textContent:onlyMeText(w) }));
 }
 function reshow() {
@@ -580,7 +632,9 @@ function renderTome(w, item, from) {
   const rvBlog = rv.filter((p) => p.blog), rvIg = rv.filter((p) => !p.blog);
   if (rvBlog.length) body.push(el('h3', { className:'sec', textContent:`블로그 글 ${rvBlog.length}` }), rvBlog.map((p) => postBlock(p)));
   if (rvIg.length) body.push(el('h3', { className:'sec', textContent:`인스타 서평 ${rvIg.length}` }), rvIg.map((p) => postBlock(p, { ownerTools:true, inWork:w.id })));
-  else if (!S.owner) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
+  // 방문자에게는 공개본(public.json의 ms=[[본문, 날짜]])에 올라간 글만 보인다. 주인은 아래에서 자기 기록·메모를 그대로 본다
+  if (!S.owner && (w.ms || []).length) body.push(el('h3', { className:'sec', textContent:`남긴 글 ${w.ms.length}` }), w.ms.map((x) => el('div', { className:'memo' }, x[1] ? el('div', { className:'when', textContent:x[1] }) : null, el('p', { className:'post-text', textContent:x[0] }))));
+  if (!S.owner && !rvIg.length && !(w.ms || []).length) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
   if (S.owner) {
     left.push(libBox(item, w));
     if (!rv.length && !w.recs.length && !w.notes.length && !w.marks.length) {
@@ -589,16 +643,14 @@ function renderTome(w, item, from) {
       body.push(el('div', { className:'blank-page' }, kids));
     }
     if (w.recs.length) {
-      body.push(el('h3', { className:'sec' }, w.k === 'film' ? '내 감상 기록' : '내 독서 기록', privateTag()));
+      body.push(el('h3', { className:'sec' }, w.k === 'film' ? '내 감상 기록' : '내 독서 기록', baseOnlyTag()));
       w.recs.forEach((r, i) => {
         const score = r.r == null ? '' : starText(r.r);
-        const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
-        edit.onclick = () => openRecForm(w, i);
         body.push(el('div', { className:'memo' },
-          el('div', { className:'when', textContent:[r.d || '날짜 없음', r.st === 'unread' ? '읽는 중·미완독' : '', score].filter(Boolean).join(' · ') }),
+          el('div', { className:'when' }, [r.d || '날짜 없음', r.st === 'unread' ? '읽는 중·미완독' : '', score].filter(Boolean).join(' · '), visTag(r.pub === true)),
           r.l ? el('p', { className:'line', textContent:r.l }) : null,
           r.b ? el('p', { className:'post-text', textContent:r.b }) : null,
-          el('div', { className:'memo-foot' }, edit)));
+          itemTools(w, { edit:() => openRecForm(w, i), vis:visToggle(w, 'recs', i), del:() => delRec(w, i) })));
       });
     }
     if (w.marks.length) {
@@ -606,9 +658,9 @@ function renderTome(w, item, from) {
       marksInOrder(w).forEach((m) => body.push(markRow(w, m)));
     }
     if (w.notes.length) {
-      body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, privateTag()));
+      body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, baseOnlyTag()));
       w.notes.forEach((n, i) => body.push(el('div', { className:'memo' + (S.justMemo === `${w.id}:${i}` ? ' just' : '') },
-        el('div', { className:'when', textContent:[n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음' }),
+        el('div', { className:'when' }, [n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음', visTag(n.pub === true)),
         n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }),
         memoTools(w, i))));
     }
@@ -627,7 +679,7 @@ function renderTome(w, item, from) {
       if (!LOCAL) left.push(onlyMeBox(w));
       let addMark = null;
       if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
-      left.push(el('div', { className:'actions' }, addRec, addMark, editBook, merge));
+      left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, merge)); // 위: 글 더하기(진한 단추), 아래: 책 자체를 다루는 일
     }
   }
   const share = el('button', { className:'copy', type:'button', textContent:w.k === 'film' ? '이 작품 링크 복사' : '이 책 링크 복사' });
@@ -1652,7 +1704,7 @@ const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (
 const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
-  const { hay, nameHay, pub, qs, ...rest } = w; // qs는 공개본에서 온 표지 문장이라 비공개 칸에 되돌려 쓰지 않는다
+  const { hay, nameHay, pub, qs, ms, ...rest } = w; // qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다
   return JSON.parse(JSON.stringify(rest));
 }
 async function saveWork(w, msg) {
@@ -1674,19 +1726,19 @@ async function saveLinks(p, ids, msg, stayOn) {
 
 /* ---------- 확인 창 ---------- */
 // 브라우저 기본 confirm은 앱 안 브라우저 등에서 창 없이 바로 취소로 끝나 지우기가 안 된다(2026-11-05 재현). 그래서 화면 안에 직접 그린다
-function ask(message, yes = '지우기') {
+function ask(message, yes = '지우기', danger = true) {
   return new Promise((done) => {
     const d = el('dialog', { className:'ask-dlg' });
     d.setAttribute('role', 'alertdialog');
     const no = el('button', { className:'btn ghost', type:'button', textContent:'취소' });
     no.onclick = () => d.close();
-    const ok = el('button', { className:'btn danger', type:'button', textContent:yes });
+    const ok = el('button', { className:'btn' + (danger ? ' danger' : ''), type:'button', textContent:yes });
     ok.onclick = () => d.close('yes');
     d.append(el('p', { className:'ask-text', textContent:message }), el('div', { className:'actions' }, no, ok));
     d.addEventListener('close', () => { const r = d.returnValue === 'yes'; d.remove(); done(r); });
     document.body.append(d);
     d.showModal();
-    no.focus(); // 되돌릴 수 없는 일이라 처음에는 취소에 둔다
+    no.focus(); // 되돌릴 수 없는 일이라 처음에는 취소에 둔다(공개도 밖으로 나가는 일이라 같다)
   });
 }
 
@@ -1698,22 +1750,16 @@ const pageLabel = (p) => (/^\d/.test(p || '') ? `p.${p}` : p || '');
 const pageNum = (p) => { const m = /\d+/.exec(p || ''); return m ? +m[0] : Infinity; };
 const marksInOrder = (w) => [...w.marks].sort((a, b) => pageNum(a.p) - pageNum(b.p) || (a.d || '').localeCompare(b.d || '') || (a.id || '').localeCompare(b.id || ''));
 function markRow(w, m) {
-  const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
-  edit.onclick = () => openMarkForm(w, m.id);
-  const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
-  del.onclick = async () => {
+  const del = async () => {
     if (!await ask('이 밑줄을 지울까요? 되돌릴 수 없어요.')) return;
-    const scrollers = ['.pages', '.leaf.r'].map((c) => { const n = document.querySelector(`#sheet-body ${c}`); return [c, n ? n.scrollTop : 0]; });
     const cur = D.works.get(w.id) || w;
-    memoSave({ ...cur, marks:cur.marks.filter((x) => x.id !== m.id) }, '밑줄을 지웠어요')
-      .then(() => scrollers.forEach(([c, top]) => { const n = document.querySelector(`#sheet-body ${c}`); if (n) n.scrollTop = top; }))
-      .catch(() => {});
+    await keepScroll(() => memoSave({ ...cur, marks:cur.marks.filter((x) => x.id !== m.id) }, '밑줄을 지웠어요'));
   };
   return el('div', { className:`memo mark${S.justMark === m.id ? ' just' : ''}` },
-    el('div', { className:'when', textContent:[pageLabel(m.p), m.d, !LOCAL && m.pub === false ? '나만 보기' : ''].filter(Boolean).join(' · ') || '쪽 없음' }),
+    el('div', { className:'when' }, [pageLabel(m.p), m.d].filter(Boolean).join(' · ') || '쪽 없음', visTag(m.pub !== false)),
     el('blockquote', { className:'mark-q', textContent:m.q }),
     m.why ? el('p', { className:'mark-why', textContent:m.why }) : null,
-    el('div', { className:'memo-foot' }, edit, del));
+    itemTools(w, { edit:() => openMarkForm(w, m.id), vis:visToggle(w, 'marks', m.id), del }));
 }
 function openMarkForm(w, id) {
   const m = id ? w.marks.find((x) => x.id === id) || {} : {};
@@ -1804,15 +1850,13 @@ function memoTools(w, i) {
     const notes = w.notes.filter((_, x) => x !== i), gone = !w.pub && !notes.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length;
     memoSave({ ...w, notes, archived:[...w.archived, { ...w.notes[i], arcAt:today() }] }, gone ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
   };
-  const edit = el('button', { className:'copy', type:'button', textContent:'고치기' });
-  edit.onclick = () => openMemoForm(w, i);
-  const del = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
-  del.onclick = async () => {
+  keep.title = '지우지 않고 «보관한 메모»로 옮겨 둬요. 언제든 되돌릴 수 있어요';
+  const del = async () => {
     const notes = w.notes.filter((_, x) => x !== i), empty = emptyAfter(w, notes, w.archived);
     if (!await ask(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸에 남는 글이 없어서 책장에서도 빠져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
     memoSave({ ...w, notes, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
   };
-  return el('div', { className:'memo-foot' }, edit, keep, del);
+  return itemTools(w, { edit:() => openMemoForm(w, i), vis:visToggle(w, 'notes', i), keep, del });
 }
 // 메모 고치기: 본문(b)과 날짜(d)만 고친다. 첫 줄(l)과 글자 수(len)는 본문에서 다시 만들어 책등 높이·찾기·돌아보기·낱말·겹침 판정이 새 글을 따른다. 보관한 메모는 «되돌리기» 뒤에 고친다
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -2239,11 +2283,7 @@ function openRecForm(w, i) {
     await saveWork({ ...w, recs, unread:recs.every((x) => x.st === 'unread') }, '기록을 저장했어요');
     openBook(w.id, $('sheet').returnEl);
   };
-  if (i >= 0) {
-    const del = el('button', { className:'copy danger', type:'button', textContent:'이 기록 지우기' });
-    del.onclick = async () => { if (!await ask('이 기록을 지울까요?')) return; try { const recs = w.recs.filter((_, x) => x !== i); await saveWork({ ...w, recs }, '기록을 지웠어요'); $('form').close(); openBook(w.id, $('sheet').returnEl); } catch (e) { toast('지우지 못했어요'); } };
-    kids.push(el('div', { className:'memo-foot' }, del));
-  }
+  // 지우기는 책 창의 기록 카드(고치기 옆)에 있다
   showForm(i >= 0 ? '기록 고치기' : '기록 더하기', kids, save);
 }
 function bookPicker(required, exceptId) {
