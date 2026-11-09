@@ -2,6 +2,7 @@
 // 준비: npx.cmd firebase-tools database:get /users/<주인uid>/bookshelf --project timetable-af612 -o private.local.json
 // 사용: node tools/publish.js private.local.json   → 바뀐 개수만 출력. 그 뒤 git commit·push
 // 밑줄(marks): 문장 q와 쪽 p만, 공개를 끄지 않은(pub:false가 아닌) 12~160자 문장 최대 3개를 books[].qs=[[문장,쪽],...]로 옮긴다(효니 결정 2026-11-09, 기본 공개). 내 생각(why)·날짜는 옮기지 않는다. 밑줄을 그어도 책이 공개되지는 않는다
+// 글 하나씩 공개(효니 요청 2026-11-09): 메모(notes)·기록(recs)은 기본이 나만 보기이고, 앱에서 «공개하기»를 누른(pub:true) 글만 본문(b, 없으면 한 줄 평 l)과 날짜를 books[].ms=[[본문, 날짜],...]로 옮긴다(1000자 이하, 최대 5개). 별점·읽는 중 표시·메모 종류는 안 간다. 책이 공개 상태일 때만 올라가고, 글이 공개라고 책이 공개되지는 않는다
 // 나만 보기(only): 켠 칸은 공개본에서 뺀다. 정한 적 없으면 책·영화가 아닌 칸은 나만 본다. js/app.js의 isOnlyMe와 같은 기준
 const fs = require('fs'), path = require('path');
 const OUT = path.join(__dirname, '..', 'data', 'public.json');
@@ -12,10 +13,12 @@ const works = priv.works || {};
 const isOnlyMe = (w) => w.only === undefined ? !['book','film'].includes(w.k || 'book') : !!w.only;
 let changed = 0, removed = 0, added = 0;
 const QS_MAX = 3;
-const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+const MS_MAX = 1000, MS_COUNT = 5;
+const sharedTexts = (w) => [...(w.notes || []), ...(w.recs || [])].filter((x) => x && x.pub === true).map((x) => [String(x.b || x.l || '').replace(/\r\n?/g, '\n').trim(), /^\d{4}-\d{2}-\d{2}$/.test(x.d || '') ? x.d : '']).filter(([t]) => t && t.length <= MS_MAX).sort((a, b) => (a[1] || '9').localeCompare(b[1] || '9')).slice(0, MS_COUNT);
+const tidy =(s) => String(s || '').replace(/\s+/g, ' ').trim();
 const pageNum = (p) => { const m = /\d+/.exec(p || ''); return m ? +m[0] : Infinity; };
 const quotes = (w) => (w.marks || []).filter((m) => m && m.pub !== false).map((m) => [tidy(m.q), tidy(m.p)]).filter(([q]) => q.length >= 12 && q.length <= 160).sort((a, b) => pageNum(a[1]) - pageNum(b[1])).slice(0, QS_MAX).map(([q, p]) => [q, p.length <= 20 ? p : '']); // 쪽 칸에 긴 글이 있으면 쪽을 비운다(내 생각이 새지 않게)
-const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || (w.wc ? '' : w.fd) || ''; /* 왓챠에서 온 작품은 공개본에 평가한 날을 넣지 않는다 */ const recs = w.recs || []; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; const qs = quotes(w); if (qs.length) o.qs = qs; return o; };
+const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || (w.wc ? '' : w.fd) || ''; /* 왓챠에서 온 작품은 공개본에 평가한 날을 넣지 않는다 */ const recs = w.recs || []; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; const qs = quotes(w); if (qs.length) o.qs = qs; const ms = sharedTexts(w); if (ms.length) o.ms = ms; return o; };
 const posts = new Map(pub.posts.map((p) => [p.c, p]));
 Object.values(priv.igAdded || {}).forEach((p) => { if (!posts.has(p.c)) { added++; } posts.set(p.c, { c:p.c, d:p.d, x:p.x, k:p.k || 'review', w:p.w || [] }); });
 Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && JSON.stringify(p.w) !== JSON.stringify(l.w || [])) { p.w = l.w || []; p.k = l.k || p.k; changed++; } });
@@ -27,7 +30,7 @@ const absorbed = new Set([...mergedIds.map(movedTo), ...Object.values(pub.moved 
 // 공개 책을 물려받은 칸은 기록이 없어도 공개본에 남긴다. 제목이 없거나 추정인 칸은 메모에서 나온 말이라 올리지 않는다
 const heirs = new Set(mergedIds.filter((id) => books.has(id)).map(movedTo));
 const merged = new Set(mergedIds.map(movedTo));
-const staysPublic = (id, w) => !!w.t && !w.guess && (heirs.has(id) || (merged.has(id) && books.has(id)) || (books.has(id) && (w.marks || []).length > 0)); // 이미 공개된 책은 밑줄만 저장해 비공개 칸이 생겨도 빠지지 않는다
+const staysPublic = (id, w) => !!w.t && !w.guess && (heirs.has(id) || (merged.has(id) && books.has(id)) || (books.has(id) && ((w.marks || []).length > 0 || sharedTexts(w).length > 0))); // 공개한 글(ms)이 있어도 같다. 이미 공개된 책은 밑줄만 저장해 비공개 칸이 생겨도 빠지지 않는다
 const reviewed = new Set([...posts.values()].flatMap((p) => p.w.map(movedTo)));
 const blogged = new Set((JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'blog.json'), 'utf8')).posts || []).flatMap((p) => (p.w || []).map(movedTo)));
 Object.entries(works).forEach(([id, w]) => {
@@ -49,4 +52,5 @@ fs.writeFileSync(OUT, JSON.stringify(out));
 const text = fs.readFileSync(OUT, 'utf8');
 if (/"(recs|notes|archived|marks|q|why|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
 if ([...books.values()].some((b) => (b.qs || []).length > QS_MAX || (b.qs || []).some((x) => !Array.isArray(x) || x.length !== 2 || x[0].length > 160))) throw new Error('공개 밑줄 형식이 맞지 않습니다');
+if ([...books.values()].some((b) => (b.ms || []).length > MS_COUNT || (b.ms || []).some((x) => !Array.isArray(x) || x.length !== 2 || typeof x[0] !== 'string' || x[0].length > MS_MAX))) throw new Error('공개 글 형식이 맞지 않습니다');
 console.log({ 책:books.size, 글:posts.size, 추가:added, 변경:changed, 제외:removed, 크기KB:text.length / 1024 | 0 });
