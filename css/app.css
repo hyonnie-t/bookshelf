@@ -591,3 +591,8 @@ html[data-mode="local"] .who { order:3; margin-top:8px; }
   .tile-n { font-size:1.05rem; }
   .tile-l { font-size:.76rem; line-height:1.3; }
 }
+
+/* 혹시 이 책? 후보 */
+.guess-box { display:grid; gap:6px; margin-top:8px; }
+.guess-box small { color:var(--muted); font-size:.8rem; }
+.found .why { display:block; font-size:.76rem; opacity:.85; }

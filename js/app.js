@@ -1,6 +1,7 @@
 // 효니의 책장: 공개 화면은 data/public.json(책·인스타 서평), 주인 로그인 뒤에는 비공개 기록을 겹쳐 보여 주고 고칠 수 있다.
 import * as remote from './fb.js';
 import * as local from './local.js';
+import { hasText, suggest, wordStats } from './guess.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
@@ -432,6 +433,32 @@ function onlyMeText(w) {
   if (w.only === false || done || rv) return '다음 공개 반영 때 책 정보(제목·저자·주제·날짜)가 올라가요. 기록과 메모는 나만 봐요.';
   return '아직 공개 페이지에 없어요. 다 읽은 기록을 남기면 다음 공개 반영 때 책 정보가 올라가요.';
 }
+// 제목 미확인 책: 메모의 드문 낱말·저자·같은 무렵 인스타 글로 «혹시 이 책?» 후보 3개(js/guess.js). 누를 때만 찾는 말이 중계로 나가고, 후보를 누르기 전에는 아무것도 저장하지 않는다
+function guessBox(w) {
+  const out = el('ul', { className:'found' });
+  const msg = el('p', { className:'warn', role:'status', hidden:true });
+  const go = el('button', { className:'btn ghost', type:'button', textContent:'혹시 이 책?' });
+  go.onclick = async () => {
+    go.disabled = true; msg.hidden = false; msg.textContent = '후보를 찾는 중이에요'; out.replaceChildren();
+    try {
+      const books = list().filter((x) => x.k === 'book');
+      const shelf = books.filter((x) => x.known && x.t).map((x) => ({ id:x.id, t:x.t, a:x.a, p:x.p }));
+      const { top } = await suggest(w, { stats:wordStats(books), posts:D.posts.filter((p) => !p.blog), shelf, search:fromRelay });
+      msg.textContent = top.length ? '맞는 책을 누르면 제목과 저자가 채워져요. 단서가 약해 틀릴 수 있어요.' : '단서로는 후보를 찾지 못했어요. «책 정보 고치기»에서 직접 찾아 주세요.';
+      out.replaceChildren(...top.map((c) => {
+        const pick = el('button', { type:'button' }, el('strong', { textContent:c.t }), el('span', { textContent:[c.a, c.p, c.y].filter(Boolean).join(' · ') }), el('span', { className:'why', textContent:c.why }));
+        pick.onclick = async () => {
+          out.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+          try { const next = { ...w, t:c.t, a:c.a || w.a || '', p:c.p || w.p || '', known:true }; delete next.guess; await saveWork(next, `«${c.t}»로 채웠어요`); reshow(); }
+          catch (e) { console.error(e); out.querySelectorAll('button').forEach((b) => { b.disabled = false; }); toast('채우지 못했어요'); }
+        };
+        return el('li', {}, pick);
+      }));
+    } catch (e) { console.error(e); msg.textContent = '지금은 찾지 못했어요. 잠시 뒤 다시 눌러 주세요.'; }
+    go.disabled = false;
+  };
+  return el('div', { className:'guess-box' }, go, hasText(w) ? null : el('small', { textContent:'메모 글이 없어 날짜와 저자 단서만 써요.' }), msg, out, el('small', { textContent:'누르면 메모의 낱말 몇 개와 저자만 앱스크립트를 거쳐 카카오 책 검색으로 가요.' }));
+}
 function onlyMeBox(w) {
   const input = el('input', { type:'checkbox', checked:isOnlyMe(w) });
   input.onchange = async () => {
@@ -460,6 +487,7 @@ function renderTome(w, item, from) {
   if (isReading(w)) left.push(el('p', { className:'by', textContent:'읽는 중' }));
   if (w.th.length) left.push(el('div', { className:'title-tags' }, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
   if (w.guess && S.owner) left.push(el('p', { className:'warn', textContent:'제목과 저자는 메모 내용으로 추정한 것이에요. 틀렸으면 고쳐 주세요.' }));
+  if (S.owner && !LOCAL && w.id && w.k === 'book' && !w.known && relayOn()) left.push(guessBox(w));
   const body = [];
   const rvBlog = rv.filter((p) => p.blog), rvIg = rv.filter((p) => !p.blog);
   if (rvBlog.length) body.push(el('h3', { className:'sec', textContent:`블로그 글 ${rvBlog.length}` }), rvBlog.map((p) => postBlock(p)));
