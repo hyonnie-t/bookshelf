@@ -2168,7 +2168,7 @@ function setLede() {
   if (LOCAL) {
     const read = list().filter((w) => w.k === 'book' && !isReading(w)).length, now = list().filter(isReading).length;
     $('lede').textContent = `읽은 책 ${read}권` + (now ? `, 읽는 중 ${now}권` : '');
-    $('foot').textContent = '기록은 이 기기에만 저장되고 어디로도 보내지 않아요. 브라우저 기록을 지우거나 기기를 바꾸면 사라지고, 아이폰 사파리는 오래 안 쓰면 지워질 수 있어요. 가끔 «파일로 저장»을 눌러 두세요. 홈 화면에 추가하면 더 안전한데, 아이폰은 저장 공간이 따로라 추가하기 전에 파일로 저장한 뒤 홈 화면 앱에서 불러와 주세요.';
+    $('foot').textContent = fb.syncStatus().on ? '기록은 이 기기와 내 구글 드라이브에 저장돼요. 이 책장을 만든 사람에게는 가지 않아요. 드라이브와 맞출 수 없을 때도 이 기기에는 그대로 저장되고, 연결되면 알아서 맞춰요.' : '기록은 이 기기에만 저장되고 어디로도 보내지 않아요. 여러 기기에서 쓰려면 «내 구글 드라이브 연결»을 켜 보세요. 브라우저 기록을 지우거나 기기를 바꾸면 사라지고, 아이폰 사파리는 오래 안 쓰면 지워질 수 있어요. 가끔 «파일로 저장»을 눌러 두세요. 홈 화면에 추가하면 더 안전한데, 아이폰은 저장 공간이 따로라 추가하기 전에 파일로 저장한 뒤 홈 화면 앱에서 불러와 주세요.';
     return;
   }
   const books = list().filter((w) => w.k === 'book' && !isHidden(w) && !isReading(w)).length, now = list().filter((w) => isReading(w) && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review' && !p.blog).length, blogs = D.posts.filter((p) => p.blog).length;
@@ -2210,7 +2210,8 @@ async function saveBackup() {
 async function loadBackup(file) {
   const data = fb.parseBackup(await file.text());
   const count = (m) => Object.values(m || {}).filter((w) => !w.del).length;
-  if (!await ask(`지금 이 기기의 기록(${count(D.priv.works)}권)을 지우고 파일의 기록(${count(data.works)}권)으로 바꿀까요?`, '바꾸기')) return;
+  const linked = fb.syncStatus().on ? ' 내 구글 드라이브에 연결돼 있어서, 드라이브와 연결된 다른 기기의 기록도 이 파일대로 바뀌어요. 파일에 없는 책은 모든 기기에서 빠져요.' : '';
+  if (!await ask(`지금 이 기기의 기록(${count(D.priv.works)}권)을 지우고 파일의 기록(${count(data.works)}권)으로 바꿀까요?${linked}`, '바꾸기')) return;
   await fb.replaceAll(data);
   D.priv = await fb.readPrivate();
   applyName(); renderWho(); refreshAll();
@@ -2225,8 +2226,75 @@ function renderLocalTools(box) {
   pick.onchange = () => { const f = pick.files[0]; pick.value = ''; if (f) loadBackup(f).catch((e) => { console.error(e); toast(e.userMsg || '불러오지 못했어요'); }); };
   const inn = el('button', { className:'copy', type:'button', textContent:'파일 불러오기' });
   inn.onclick = () => pick.click();
-  const last = (D.priv.meta || {}).lastBackup;
-  box.replaceChildren(el('span', { className:'me', textContent:last ? `마지막 저장 ${last}` : '아직 파일로 저장 안 함' }), name, out, inn, pick);
+  const last = (D.priv.meta || {}).lastBackup, ss = fb.syncStatus();
+  const drive = el('button', { className:`copy drive-btn${ss.err ? ' warn' : ''}`, type:'button', textContent:ss.on ? (ss.busy ? '드라이브 맞추는 중' : ss.err ? '드라이브 확인 필요' : '드라이브 연결됨') : '내 구글 드라이브 연결' });
+  drive.onclick = openDriveForm;
+  const state = ss.on ? (ss.err ? '드라이브와 못 맞춤 · 기록은 이 기기에 있어요' : ss.at ? `드라이브와 맞춤 ${whenText(ss.at)}` : '드라이브와 맞추는 중') : last ? `마지막 저장 ${last}` : '아직 파일로 저장 안 함';
+  box.replaceChildren(el('span', { className:'me', textContent:state }), name, out, inn, drive, pick);
+}
+// 맞춘 때: 오늘이면 시각만
+function whenText(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+/* ---------- 내 구글 드라이브 연결(범용판, 원하는 사람만) ---------- */
+// 기록은 쓰는 사람이 만든 앱스크립트를 거쳐 그 사람 드라이브에만 간다. 이 책장을 만든 사람의 서버는 거치지 않는다
+async function copyText(text, done) {
+  try { await navigator.clipboard.writeText(text); toast(done); return true; }
+  catch (e) { toast('복사하지 못했어요. 길게 눌러 직접 복사해 주세요'); return false; }
+}
+async function openDriveForm() {
+  const ss = fb.syncStatus();
+  if (ss.on) {
+    const now = el('button', { className:'btn', type:'button', textContent:'지금 맞추기' });
+    now.onclick = async () => { now.disabled = true; try { await fb.syncNow(); toast('드라이브와 맞췄어요'); } catch (e) { toast(e.userMsg || '맞추지 못했어요'); } now.disabled = false; openDriveForm(); };
+    const share = el('button', { className:'btn ghost', type:'button', textContent:'다른 기기용 주소 복사' });
+    share.onclick = async () => copyText(await fb.driveUrl(), '주소를 복사했어요. 다른 기기의 책장에 붙여 넣어 주세요');
+    const off = el('button', { className:'copy danger', type:'button', textContent:'이 기기 연결 끊기' });
+    off.onclick = async () => {
+      if (!await ask('이 기기만 드라이브 연결을 끊을까요? 이 기기의 기록과 드라이브 파일은 둘 다 그대로 남아요.', '끊기')) return;
+      await fb.disconnectDrive(); $('form').close(); renderWho(); toast('연결을 끊었어요');
+    };
+    showForm('내 구글 드라이브 연결', [
+      el('p', { className:'drive-state' + (ss.err ? ' bad' : ''), textContent:ss.err || (ss.busy ? '지금 맞추는 중이에요.' : ss.at ? `${whenText(ss.at)}에 드라이브와 맞췄어요. 고치면 몇 초 뒤 알아서 올라가요.` : '아직 맞추지 못했어요.') }),
+      el('p', { className:'sub', textContent:'다른 기기(폰·태블릿·PC)에서도 같은 책장을 쓰려면, 그 기기에서 이 책장을 열고 «내 구글 드라이브 연결» > «웹 앱 주소 붙여 넣기»에 아래 단추로 복사한 주소를 넣으세요. 주소가 열쇠라서, 아는 사람은 기록을 보고 바꿀 수도 있어요. 나에게만 보내 주세요.' }),
+      el('div', { className:'actions drive-acts' }, share, now),
+      el('p', { className:'note' }, off),
+    ]);
+    return;
+  }
+  const url = el('input', { type:'url', placeholder:'https://script.google.com/macros/s/…/exec', autocomplete:'off', spellcheck:false });
+  url.setAttribute('inputmode', 'url');
+  const code = el('button', { className:'copy', type:'button', textContent:'코드 복사' });
+  code.onclick = async () => {
+    code.disabled = true;
+    try { const r = await fetch('drive-sync.gs', { cache:'no-cache' }); if (!r.ok) throw new Error(String(r.status)); await copyText(await r.text(), '코드를 복사했어요'); }
+    catch (e) { console.error(e); toast('코드를 불러오지 못했어요. 인터넷을 확인해 주세요'); }
+    code.disabled = false;
+  };
+  const step = (n, ...kids) => el('li', {}, ...kids);
+  const guide = el('details', { className:'drive-guide', open:!matchMedia('(max-width: 599px)').matches }, // 폰은 두 번째 기기로 주소만 붙여 넣는 일이 많아 접어 둔다
+    el('summary', { textContent:'처음 연결하기 (PC에서 5분쯤)' }),
+    el('ol', { className:'drive-steps' },
+      step(1, code, ' 단추로 연결 코드를 복사해요.'),
+      step(2, el('a', { href:'https://script.new', target:'_blank', rel:'noopener', textContent:'새 앱스크립트 열기' }), ' (구글 로그인) → 있던 글을 모두 지우고 붙여 넣은 뒤 저장(Ctrl+S)해요.'),
+      step(3, '오른쪽 위 ', el('b', { textContent:'배포 → 새 배포' }), ' → 톱니바퀴에서 ', el('b', { textContent:'웹 앱' }), '을 고르고, 실행 사용자 ', el('b', { textContent:'나' }), ', 액세스 권한 ', el('b', { textContent:'모든 사용자' }), ' → 배포.'),
+      step(4, '권한을 물으면 ', el('b', { textContent:'액세스 승인 → 내 계정 → 고급 → 안전하지 않음으로 이동 → 허용' }), '. 내가 방금 만든 코드라 구글이 검사하지 않았다는 뜻이고, 드라이브 권한은 기록 파일을 내 드라이브에 저장하려고 묻는 거예요.'),
+      step(5, '나온 ', el('b', { textContent:'웹 앱 주소' }), '(…/exec로 끝나요)를 복사해 아래에 붙여 넣어요.')),
+    el('p', { className:'sub', textContent:'학교·회사 계정은 «모든 사용자»가 막혀 있을 수 있어요. 개인 gmail 계정으로 해 주세요.' }));
+  showForm('내 구글 드라이브 연결', [
+    el('p', { className:'sub', textContent:'여러 기기에서 같은 책장을 쓰고 싶을 때만 켜요. 기록은 내 구글 드라이브의 파일 «나의 책장 기록.json» 하나에 저장되고, 이 책장을 만든 사람에게는 가지 않아요. 연결해도 이 기기의 기록은 그대로 남아요.' }),
+    guide,
+    field('웹 앱 주소 붙여 넣기', url, '다른 기기에서 이미 연결했다면, 그 기기의 «다른 기기용 주소 복사»로 받은 주소만 넣으면 돼요. 두 기기의 기록은 합쳐져요.'),
+  ], async () => {
+    const before = list().length;
+    const r = await fb.connectDrive(url.value);
+    D.priv = await fb.readPrivate();
+    applyName(); renderWho(); refreshAll();
+    toast(r.had ? `연결했어요. 드라이브의 책 ${r.had}권과 이 기기 책 ${before}권을 합쳤어요` : '연결했어요. 이제 고치면 드라이브에도 저장돼요');
+  }, '연결하기');
 }
 function renderWho() {
   const box = $('who');
@@ -2325,6 +2393,23 @@ document.addEventListener('visibilitychange', async () => {
   try { D.priv = await fb.readPrivate(); const open = $('sheet').open; refreshAll(); if (open) $('sheet').close(); } catch (e) { console.error(e); }
 });
 
+// 드라이브에서 다른 기기의 기록을 받았을 때. 양식을 쓰는 중이면 닫을 때 반영한다(쓰던 글이 사라지지 않게)
+let drivePending = false;
+async function applyDrive() {
+  drivePending = false;
+  D.priv = await fb.readPrivate();
+  const open = $('sheet').open;
+  applyName(); refreshAll();
+  if (open) $('sheet').close();
+}
+function onDriveSync(ev) {
+  if (!$('form').open) renderWho();
+  if (ev !== 'pulled') return;
+  if ($('form').open) { drivePending = true; return; }
+  applyDrive().catch((e) => console.error(e));
+}
+$('form').addEventListener('close', () => { if (LOCAL) { renderWho(); if (drivePending) applyDrive().catch((e) => console.error(e)); } });
+
 /* ---------- 시작 ---------- */
 async function start() {
   if (LOCAL) {
@@ -2333,6 +2418,8 @@ async function start() {
     S.owner = true; S.user = { uid:'local' };
     applyName(); renderWho(); refreshAll(); route();
     if (fb.isVolatile()) toast('이 창에서는 저장이 안 돼요. 창을 닫으면 기록이 사라져요');
+    fb.onSync(onDriveSync);
+    fb.initSync().catch((e) => console.error(e));
     return;
   }
   try {

@@ -251,6 +251,16 @@ details.ledger-part summary { cursor:pointer; font-family:var(--font-title); fon
 html[data-mode="local"] .cover { flex-wrap:wrap; }
 html[data-mode="local"] .who { flex:1 1 100%; flex-wrap:wrap; padding-top:0; }
 html[data-mode="local"] .who .me { flex:1 1 100%; }
+/* 범용판: 내 구글 드라이브 연결 */
+.drive-btn.warn { border-color:var(--late); color:var(--late); }
+.drive-guide { border:1px solid var(--line); border-radius:8px; padding:8px 12px; background:var(--surface); }
+.drive-guide summary { cursor:pointer; font-weight:700; padding-block:4px; }
+.drive-steps { margin:6px 0 4px; padding-left:1.3em; display:grid; gap:8px; line-height:1.6; }
+.drive-steps a { font-weight:700; color:var(--accent); }
+.drive-state { margin:0; padding:10px 12px; border-radius:8px; background:var(--surface); border:1px solid var(--line); }
+.drive-state.bad { border-color:var(--late); color:var(--late); }
+.drive-acts { flex-wrap:wrap; }
+@media (prefers-reduced-motion: no-preference) { .drive-state { animation:drillIn .25s ease-out; } }
 
 /* 위에 붙는 메뉴: 탭과 바로 가기. 화면 높이의 15%를 넘지 않게 찾기 칸은 붙이지 않는다 */
 .topnav { position:sticky; top:env(safe-area-inset-top,0px); z-index:5; background:var(--bg); margin-bottom:14px; border-bottom:1px solid var(--line); }
