@@ -12,7 +12,7 @@
 
   function can() { return !standalone && !installed && (!!deferred || ios); }
   function sync() {
-    var els = document.querySelectorAll('[data-install]');
+    var els = document.querySelectorAll('[data-install],[data-install-wrap]');
     for (var i = 0; i < els.length; i++) els[i].hidden = !can();
   }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; sync(); });
@@ -22,7 +22,7 @@
   function css() {
     if (document.getElementById('install-css')) return;
     var s = document.createElement('style'); s.id = 'install-css';
-    s.textContent = '[data-install][hidden]{display:none!important}#install-help{border:1px solid color-mix(in srgb,CanvasText 18%,transparent);border-radius:16px;padding:20px 22px;max-width:min(92vw,360px);background:Canvas;color:CanvasText;font:inherit;line-height:1.6}' +
+    s.textContent = '[data-install][hidden],[data-install-wrap][hidden]{display:none!important}#install-help{border:1px solid color-mix(in srgb,CanvasText 18%,transparent);border-radius:16px;padding:20px 22px;max-width:min(92vw,360px);background:Canvas;color:CanvasText;font:inherit;line-height:1.6}' +
       '#install-help::backdrop{background:rgba(0,0,0,.35)}#install-help h2{margin:0 0 10px;font-size:1.05rem}#install-help ol{margin:0 0 14px;padding-left:1.3em}' +
       '#install-help li{margin:.35em 0}#install-help button{font:inherit;padding:8px 18px;border-radius:10px;border:1px solid color-mix(in srgb,CanvasText 25%,transparent);background:transparent;color:inherit;cursor:pointer;min-height:44px}' +
       '#install-help .ib{display:inline-block;padding:0 .4em;border:1px solid color-mix(in srgb,CanvasText 30%,transparent);border-radius:6px;font-size:.9em}';
