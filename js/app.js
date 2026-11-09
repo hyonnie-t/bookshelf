@@ -2281,7 +2281,7 @@ async function openDriveForm() {
       step(1, code, ' 단추로 연결 코드를 복사해요.'),
       step(2, el('a', { href:'https://script.new', target:'_blank', rel:'noopener', textContent:'새 앱스크립트 열기' }), ' (구글 로그인) → 있던 글을 모두 지우고 붙여 넣은 뒤 저장(Ctrl+S)해요.'),
       step(3, '오른쪽 위 ', el('b', { textContent:'배포 → 새 배포' }), ' → 톱니바퀴에서 ', el('b', { textContent:'웹 앱' }), '을 고르고, 실행 사용자 ', el('b', { textContent:'나' }), ', 액세스 권한 ', el('b', { textContent:'모든 사용자' }), ' → 배포.'),
-      step(4, '권한을 물으면 ', el('b', { textContent:'액세스 승인 → 내 계정 → 고급 → 안전하지 않음으로 이동 → 허용' }), '. 내가 방금 만든 코드라 구글이 검사하지 않았다는 뜻이에요.'),
+      step(4, '권한을 물으면 ', el('b', { textContent:'액세스 승인 → 내 계정 → 고급 → 안전하지 않음으로 이동 → 허용' }), '. 내가 방금 만든 코드라 구글이 검사하지 않았다는 뜻이고, 드라이브 권한은 기록 파일을 내 드라이브에 저장하려고 묻는 거예요.'),
       step(5, '나온 ', el('b', { textContent:'웹 앱 주소' }), '(…/exec로 끝나요)를 복사해 아래에 붙여 넣어요.')),
     el('p', { className:'sub', textContent:'학교·회사 계정은 «모든 사용자»가 막혀 있을 수 있어요. 개인 gmail 계정으로 해 주세요.' }));
   showForm('내 구글 드라이브 연결', [
