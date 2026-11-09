@@ -361,6 +361,27 @@ function openEditionForm() {
   }, '이 색으로 쓰기');
 }
 $('editionBtn').onclick = openEditionForm;
+
+/* ---------- 새로고침 단추 ---------- */
+// 홈 화면에 추가한 앱은 주소창·당겨서 새로고침이 없어 새 버전을 보려면 앱을 껐다 켜야 한다. 앱 파일 캐시만 지우고 다시 불러온다.
+// 비공개 기록(IndexedDB)·localStorage·로그인은 건드리지 않는다. 캐시 이름은 루트 bookshelf-, 범용판 myshelf-(같은 주소에 있는 다른 앱 캐시는 지우지 않는다)
+async function refreshApp() {
+  const btn = $('refreshBtn');
+  if (btn.disabled) return;
+  // 양식 창이 열려 있으면 쓰던 내용이 날아갈 수 있어 한 번 묻는다(모달이 열려 있으면 보통 이 단추는 눌리지 않는다)
+  if ($('form').open && !await ask('쓰던 내용이 있으면 사라져요. 그래도 새로고침할까요?', '새로고침')) return;
+  btn.disabled = true; btn.classList.add('spinning');
+  const limit = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const turn = new Promise((r) => setTimeout(r, calm ? 0 : 700));
+  try {
+    if ('serviceWorker' in navigator) { const reg = await limit(navigator.serviceWorker.getRegistration(), 2000); if (reg) await limit(reg.update().catch(() => {}), 3000); }
+    if ('caches' in window) { const pre = LOCAL ? 'myshelf-' : 'bookshelf-'; const ks = await limit(caches.keys(), 2000); await Promise.all((ks || []).filter((k) => k.startsWith(pre)).map((k) => caches.delete(k))); }
+  } catch (e) { console.error(e); }
+  await turn;
+  location.reload();
+}
+$('refreshBtn').onclick = refreshApp;
 syncBarColor();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncBarColor);
 
