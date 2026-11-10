@@ -74,7 +74,9 @@ export async function finishRedirect(idToken) {
 export async function signIn() {
   if (isStandalone()) { startRedirect(); return 'redirect'; }
   const s = sdk || await load();
-  const r = await s.authM.signInWithPopup(s.auth, new s.authM.GoogleAuthProvider());
+  const prov = new s.authM.GoogleAuthProvider();
+  prov.setCustomParameters({ prompt: 'select_account' }); // 크롬에 로그인된 계정으로 자동 선택되지 않게(2026-11-10 코멧)
+  const r = await s.authM.signInWithPopup(s.auth, prov);
   if (!isOwner(r.user)) { await s.authM.signOut(s.auth); return null; }
   flag.set(true);
   return r.user;
