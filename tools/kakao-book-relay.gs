@@ -70,15 +70,17 @@ var tagless_ = function (s) { return String(s == null ? '' : s).replace(/<[^>]*>
 // 국립중앙도서관 칸을 카카오와 같은 모양으로 바꾼다.
 // 제목: «작별하지 않는다 : 한강 장편소설»처럼 부제·대등 제목이 붙으므로 « : »·« = »·« / » 앞까지만 쓴다(카카오처럼 부제 없는 제목).
 // 저자: «한강 지음», «지은이: 매트 헤이그 ; 옮긴이: 노진선»처럼 역할 말이 붙으므로 사람마다 나눠 역할 말을 떼고, 옮긴 사람은 따로 둔다.
+// 칸 이름이 titleInfo(camelCase)인지 title_info인지 몰라도 읽도록 이름 모양으로 찾는다(2026-11-10 실측: title_info로 쓰면 ISBN만 채워졌다)
+function f_(d, re) { for (var k in d) { if (re.test(k)) return d[k]; } return ''; }
 function pickNl_(d) {
-  var title = tagless_(d.title_info).split(/\s+[:=\/]\s+/)[0].replace(/\s*[:=\/]$/, '');
-  var people = splitPeople_(tagless_(d.author_info));
+  var title = tagless_(f_(d, /^title/i)).split(/\s+[:=\/]\s+/)[0].replace(/\s*[:=\/]$/, '');
+  var people = splitPeople_(tagless_(f_(d, /^author/i)));
   return {
     title: title,
     authors: people.authors,
     translators: people.translators,
-    publisher: tagless_(d.pub_info),
-    year: (String(d.pub_year_info || '').match(/\d{4}/) || [''])[0],
+    publisher: tagless_(f_(d, /^pub_?(info|lisher)/i)),
+    year: (String(f_(d, /^pub_?year/i)).match(/\d{4}/) || [''])[0],
     isbn: tagless_(d.isbn),
   };
 }
