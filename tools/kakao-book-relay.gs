@@ -71,6 +71,9 @@ var tagless_ = function (s) { return String(s == null ? '' : s).replace(/<[^>]*>
 // 제목: «작별하지 않는다 : 한강 장편소설»처럼 부제·대등 제목이 붙으므로 « : »·« = »·« / » 앞까지만 쓴다(카카오처럼 부제 없는 제목).
 // 저자: «한강 지음», «지은이: 매트 헤이그 ; 옮긴이: 노진선»처럼 역할 말이 붙으므로 사람마다 나눠 역할 말을 떼고, 옮긴 사람은 따로 둔다.
 // 칸 이름이 titleInfo(camelCase)인지 title_info인지 몰라도 읽도록 이름 모양으로 찾는다(2026-11-10 실측: title_info로 쓰면 ISBN만 채워졌다)
+// 출판사 칸은 «파주 : 문학동네, 20210927»처럼 발행지와 날짜가 붙는다(2026-11-10 실측). 발행지 이름이 앞에 있을 때만 떼고, «다산책방 : 다산북스» 같은 임프린트 표기는 둔다
+var PLACE_ = /^(서울특별시|서울|파주|부산|대구|인천|광주|대전|울산|세종|수원|성남|고양|용인|안양|부천|창원|청주|전주|제주|춘천|의정부|김포|남양주|화성|천안|안산|경기도|경기|강원|충북|충남|전북|전남|경북|경남)\s*:\s*/;
+function publisher_(s) { return s.replace(PLACE_, '').replace(/\s*,\s*\d{4}(\d{4})?\.?$/, '').trim(); }
 function f_(d, re) { for (var k in d) { if (re.test(k)) return d[k]; } return ''; }
 function pickNl_(d) {
   var title = tagless_(f_(d, /^title/i)).split(/\s+[:=\/]\s+/)[0].replace(/\s*[:=\/]$/, '');
@@ -79,7 +82,7 @@ function pickNl_(d) {
     title: title,
     authors: people.authors,
     translators: people.translators,
-    publisher: tagless_(f_(d, /^pub_?(info|lisher)/i)),
+    publisher: publisher_(tagless_(f_(d, /^pub_?(info|lisher)/i))),
     year: (String(f_(d, /^pub_?year/i)).match(/\d{4}/) || [''])[0],
     isbn: tagless_(d.isbn),
   };
@@ -89,6 +92,7 @@ var TRANS_ = /(옮김|옮긴이|번역|역자|\s역$|譯|translated)/i; // «역
 var ROLE_ = /(^|\s)(지은이|지음|저자|저|글쓴이|글|엮은이|엮음|편저|편|著|written by|by)(\s|$|:)/gi;
 function splitPeople_(s) {
   var authors = [], translators = [];
+  s = s.replace(/(\s)(지음|지은이|옮김|옮긴이|그림|엮음|감수)(\s+)(?=[^\s;,:])/g, '$1$2 ; '); // «A 지음 B 옮김»처럼 구분 없이 이어진 것도 나눈다
   s.split(/\s*;\s*/).forEach(function (part) {
     if (/(감수|해설|기획|추천)\s*$/.test(part)) return; // 감수·해설한 사람은 저자 칸에 넣지 않는다
     var trans = TRANS_.test(part);
@@ -96,7 +100,7 @@ function splitPeople_(s) {
       .replace(ROLE_, ' ').replace(/\s+/g, ' ').trim();
     if (!clean) return;
     clean.split(/\s*,\s*/).forEach(function (n) {
-      n = n.replace(/\s+(글·그림|글\/그림|옮김|번역|역|譯|그림|사진|감수|지음|저|글|엮음|편)$/g, '').trim(); // 띄어 쓴 역할 말만 뗀다(이름 끝 글자는 둔다)
+      n = n.replace(/\s+(글·그림|글\/그림|옮긴이|옮김|번역|역|譯|그림|사진|감수|지은이|지음|저|글|엮음|편)$/g, '').trim(); // 띄어 쓴 역할 말만 뗀다(이름 끝 글자는 둔다)
       if (n) (trans ? translators : authors).push(n);
     });
   });
