@@ -6,3 +6,7 @@ token.json
 api_key.txt
 credentials.json
 .claude/
+
+# 공통 틀(2026-11-12): 도구 설정·캐시·내려받은 패키지·맥 파일
+.impeccable/
+.DS_Store

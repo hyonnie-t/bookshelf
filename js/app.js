@@ -415,6 +415,8 @@ $('editionBtn').onclick = openEditionForm;
 async function refreshApp() {
   const btn = $('refreshBtn');
   if (btn.disabled) return;
+  // 인터넷이 끊겨 있으면 새 버전을 받을 수 없고, 캐시를 지운 뒤 다시 읽으면 빈 화면이 된다
+  if (navigator.onLine === false) { toast('인터넷이 끊겨 있어요. 연결되면 다시 눌러 주세요.'); return; }
   // 양식 창이 열려 있으면 쓰던 내용이 날아갈 수 있어 한 번 묻는다(모달이 열려 있으면 보통 이 단추는 눌리지 않는다)
   if ($('form').open && !await ask('쓰던 내용이 있으면 사라져요. 그래도 새로고침할까요?', '새로고침')) return;
   btn.disabled = true; btn.classList.add('spinning');
