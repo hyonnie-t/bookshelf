@@ -38,6 +38,9 @@
 - `tools/export-obsidian.js` 밑줄을 볼트로 내보내기, `tools/test-marks.js` 공개 제외·내보내기·복원 시험(가짜 데이터)
 - `js/words.js` 낱말 뽑기(앱과 볼트 내보내기가 같이 씀, 다른 파일을 불러오지 않음), `tools/test-words.js` 낱말·공개 제외·자동낱말 시험(가짜 데이터)
 - `tools/serve.js` 내 PC 확인용 서버(launch 이름 `bookshelf`, 포트 8780)
+- `js/install.js` «홈 화면에 추가» 버튼·iOS 안내 창(`[data-install]`, 다른 파일에 기대지 않음, 시간표 `install.js`와 같은 파일). 루트·범용판 `index.html`이 `<script>`로 읽는다
+- `js/guess.js` 제목 미확인 책의 «혹시 이 책?» 후보(메모의 드문 낱말·같은 무렵 인스타 글). 앱과 `tools/guess-table.js`(일회성 후보표, 메모 내용은 출력하지 않음)가 같이 쓴다
+- `js/local.js` 범용판 저장(IndexedDB)·드라이브 맞추기, `my/` 범용판(아래 «범용판» 절), `tools/test-*.js` 시험(각 절에 적음)
 
 ## 규칙
 - 고치기 전에 `git fetch` 후 `origin/main`에서 임시 worktree(`git worktree add <임시폴더> -b <브랜치> origin/main`)를 만들어 작업한다. 여러 세션이 이 폴더를 같이 쓰므로 공용 폴더는 `main`으로 둔다(2026-11-08).
