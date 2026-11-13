@@ -118,3 +118,9 @@
 - 창 닫기: `pushDlg`가 `history.scrollRestoration='manual'`로 둔다. 창을 닫는 back이 브라우저의 옛 스크롤 위치로 되돌려 목록이 위로 튀었다(부드러운 스크롤 직후 재현).
 - 움직임: 칩이 카드가 나타날 때 차례로 떠오름(`wordIn`), 그 뒤 선이 스며듦(`netIn`), 고른 낱말의 선만 진해짐, 펼침은 기존 `drillIn`. 다시 그릴 때는 움직이지 않는다.
 - 안 넣은 것: 낱말 숨기기(앱 안에서 빼기). 잡말이 눈에 띄면 `STOP`에 더한다.
+
+## 실물 책장 질감 (2026-11-14)
+- 책등은 인라인 `backgroundColor`(색)만 주고, 질감(둥근 등 빛·머리 그림자)은 css 끝 «실물 책장 질감» 블록의 background-image가 덧입힌다. 인라인을 `background` 단축 속성으로 바꾸면 질감이 사라진다. 그라데이션은 글자 자리(24~76%)를 비워 어두운 판 대비를 지킨다.
+- 선반 판은 `.slot`의 투명한 7px 아래 테두리 자리에 깐 배경(border-image 아님), `.rack::after`도 같은 그라데이션.
+- 책을 누르면 `pullOut()`이 Web Animations(translate·scale)로 책을 살짝 뺀 뒤 170ms 뒤에 책 창을 연다. css animation으로 하면 기대어 선 책의 `lean` 애니메이션과 덮어쓴다. `calm()`(움직임 끔·이북리더기)이면 바로 연다.
+- 이북리더기 에디션은 질감·그림자 없이 평평하다(`:root:not([data-edition="eink"])`).
