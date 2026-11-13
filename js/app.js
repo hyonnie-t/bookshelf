@@ -121,6 +121,19 @@ const spineText = (label) => el('span', {}, label.split(SHORT_LATIN).map((x, i) 
 // 책등 줄 4가지와 자세는 책 id로 정해 새로고침해도 같다
 const LINES = ['ln-t1', 'ln-t2', 'ln-b1', 'ln-n'];
 const lineOf = (id) => LINES[Math.abs(hash('line' + id)) % 4];
+// 책 꺼내기: 누른 책이 선반에서 살짝 빠져나온 뒤 책 창이 펼쳐진다(움직임 끔·이북리더기면 바로 연다)
+function pullOut(b, go) {
+  if (calm()) { go(); return; }
+  if (b._pull) return; // 빠르게 두 번 눌러도 한 번만 연다
+  b.classList.add('pull');
+  if (b.animate) b.animate([
+    { translate:'0 0', scale:'1' },
+    { translate:'0 -22px', scale:'1.04', boxShadow:'4px 10px 14px -4px rgba(0,0,0,.35)', offset:.28 },
+    { translate:'0 0', scale:'1' },
+  ], { duration:600, easing:'cubic-bezier(.3,.7,.3,1)' });
+  b._pull = setTimeout(() => { b._pull = 0; go(); }, 170);
+  setTimeout(() => b.classList.remove('pull'), 620);
+}
 const spineMark = (w) => (w.guess ? '추정' : isReading(w) ? '미완' : showsOnlyMe(w) ? '나만' : '');
 // 눕혀 쌓은 책: 가로 제목 22px, 폭은 제목 길이로만 정한다. 서평 막대는 오른쪽 끝, ×n은 제목 오른쪽
 function lyingSpine(w) {
@@ -130,12 +143,12 @@ function lyingSpine(w) {
   const label = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
   const wd = Math.max(70, Math.min(130, 32 + label.length * 10));
   const b = el('button', { type:'button', className:'spine lie' + (w.known ? '' : ' unknown') + (rv.length ? ' has-ig' : '') });
-  b.style.width = wd + 'px'; b.style.background = themeVar(w.th[0]);
+  b.style.width = wd + 'px'; b.style.backgroundColor = themeVar(w.th[0]);
   b.append(el('span', { textContent:label }));
   if (mark) b.append(el('i', { textContent:mark }));
   if (items > 1) b.append(el('i', { textContent:'×' + items }));
   b.setAttribute('aria-label', full + (w.a ? ', ' + w.a : '') + ', 글 ' + rv.length + '개' + (showsOnlyMe(w) ? ', 나만 보기' : ''));
-  b.onclick = () => openBook(w.id, b);
+  b.onclick = () => pullOut(b, () => openBook(w.id, b));
   return b;
 }
 function spine(w, pose) {
@@ -156,12 +169,12 @@ function spine(w, pose) {
     b.style.setProperty('--tilt', tilt + 'deg');
     gap = Math.ceil(h * Math.sin(tilt * Math.PI / 180)) + 2;
   }
-  b.style.background = themeVar(w.th[0]);
+  b.style.backgroundColor = themeVar(w.th[0]); // background 대신 색만: 책등 질감(background-image)이 css에서 덧입혀진다
   b.append(spineText(label));
   if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
-  b.onclick = () => openBook(w.id, b);
+  b.onclick = () => pullOut(b, () => openBook(w.id, b));
   const slot = el('div', { className:'slot' + (pose === 'lean' ? ' lean' : '') }, b);
   if (gap) slot.style.setProperty('--gap', gap + 'px');
   return slot;
@@ -1376,14 +1389,14 @@ function caseBook(it) {
   const b = el('button', { type:'button', className:`spine lbook ${lineOf(it.id)}${out ? ' gone' : ''}` });
   b.style.height = h + 'px';
   b.style.width = 14 + cols * 18 + Math.abs(hash(title + 'w')) % 14 + 'px';
-  if (!out) b.style.background = themeVar(th[0]);
+  if (!out) b.style.backgroundColor = themeVar(th[0]);
   b.append(spineText(label));
   if (sub) b.append(el('small', { textContent:sub }));
   const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
   b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
   b.title = [title, status].join(' · ');
   b.dataset.lib = it.id;
-  b.onclick = () => openLib(it.id, b);
+  b.onclick = () => pullOut(b, () => openLib(it.id, b));
   return el('div', { className:'lslot' }, b);
 }
 function ledgerRow(it, l) {
