@@ -4,7 +4,7 @@ const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, 'kakao-book-relay.gs'), 'utf8'), ctx);
 
-const want = { title: '작별하지 않는다', authors: ['한강'], translators: [], publisher: '문학동네', year: '2021', isbn: '9788954682152' };
+const want = { title: '작별하지 않는다', authors: ['한강'], translators: [], publisher: '문학동네', year: '2021', isbn: '9788954682152', cover: '' };
 // camelCase
 assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.pickNl_({ titleInfo: '<span class="searching_txt">작별하지 않는다</span> : 한강 장편소설', authorInfo: '한강 지음', pubInfo: '문학동네', pubYearInfo: '2021', isbn: '9788954682152', typeName: '도서' }))), want);
 // snake_case
@@ -13,7 +13,7 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.pickNl_({ title_info: '작�
 const t = JSON.parse(JSON.stringify(ctx.pickNl_({ titleInfo: '레슨 인 케미스트리', authorInfo: '보니 가머스 지음 ; 이영아 옮김', pubInfo: '문학수첩', pubYearInfo: '2022', isbn: '9791130646985' })));
 assert.deepStrictEqual([t.authors, t.translators], [['보니 가머스'], ['이영아']]);
 // 칸이 없어도 죽지 않는다
-assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.pickNl_({ isbn: '1' }))), { title: '', authors: [], translators: [], publisher: '', year: '', isbn: '1' });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.pickNl_({ isbn: '1' }))), { title: '', authors: [], translators: [], publisher: '', year: '', isbn: '1', cover: '' });
 // 출판사: 발행지·날짜 떼기(실측 «파주 : 문학동네, 20210927»), 임프린트 표기는 둔다
 const pub = (s) => ctx.pickNl_({ titleInfo: 'x', pubInfo: s }).publisher;
 assert.strictEqual(pub('파주 : 문학동네, 20210927'), '문학동네');
@@ -25,4 +25,9 @@ const j = JSON.parse(JSON.stringify(ctx.pickNl_({ titleInfo: 'x', authorInfo: '�
 assert.deepStrictEqual([j.authors, j.translators], [['유발 하라리'], ['조현욱']]);
 const k = JSON.parse(JSON.stringify(ctx.pickNl_({ titleInfo: 'x', authorInfo: '심연희 옮긴이' })));
 assert.deepStrictEqual(k.translators, ['심연희']);
+// 표지 주소: 앞이 빠진 주소·http를 https로
+assert.strictEqual(ctx.pickNl_({ imageUrl: '/kolis/2022/KMO1_thumbnail.jpg' }).cover, 'https://cover.nl.go.kr/kolis/2022/KMO1_thumbnail.jpg');
+assert.strictEqual(ctx.pickNl_({ imageUrl: 'http://cover.nl.go.kr/kolis/a.jpg' }).cover, 'https://cover.nl.go.kr/kolis/a.jpg');
+assert.strictEqual(ctx.pick_({ thumbnail: 'http://t1.kakaocdn.net/x.jpg' }).cover, 'https://t1.kakaocdn.net/x.jpg');
+assert.strictEqual(ctx.pick_({}).cover, '');
 console.log('pickNl_ 시험 통과');
