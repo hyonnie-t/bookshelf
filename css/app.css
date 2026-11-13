@@ -660,30 +660,38 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 [data-edition="eink"] .copy, [data-edition="eink"] .chip { min-height:40px; }
 .leaf.l .actions.sub { padding-top:0; }
 
-/* 실물 책장 질감 (2026-11-14, 3D 다이어리 트윗에서 배운 «만지는 물건» 느낌)
-   - 책등: 둥근 등의 빛(가운데 밝고 양끝 어둡게)·위쪽 머리띠 그림자·옆 책에 지는 그림자. 글자가 놓이는 가운데는 거의 그대로라 대비가 바뀌지 않는다
-   - 선반: 3px 선 → 두께 있는 판(윗면 밝게, 앞면, 아래 그림자)
-   - 꺼내기: 누르면 책이 위로 빠져나오며 그림자가 커진 뒤 책 창이 펼쳐진다(pullOut, Web Animations). translate·scale 속성을 써서 기대어 선 책의 rotate와 겹치지 않는다
-   - 이북리더기 에디션은 평평한 그대로(질감·그림자 없음), 움직임 끔이면 꺼내기도 없다 */
-:root:not([data-edition="eink"]) .spine:not(.lie):not(.gone) {
-  background-image:
-    linear-gradient(to bottom, rgba(0,0,0,.14), transparent 5px),
-    linear-gradient(90deg, rgba(0,0,0,.20) 0, rgba(255,255,255,.08) 9%, transparent 24%, transparent 76%, rgba(0,0,0,.24) 100%); /* 글자가 놓이는 24~76%는 비워 어두운 판 대비를 지킨다 */
-  box-shadow: 2px 0 3px -1px rgba(0,0,0,.22);
-}
-:root:not([data-edition="eink"]) .spine.lie {
-  background-image: linear-gradient(to bottom, rgba(255,255,255,.16), transparent 45%, rgba(0,0,0,.16));
-  box-shadow: 0 1px 2px rgba(0,0,0,.18);
-}
-:root:not([data-edition="eink"]) .slot {
-  border-bottom:7px solid transparent; /* 판은 테두리 자리에 깐 배경으로 그린다(border-image는 1px만 늘어나 납작해짐) */
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--plank), #fff 22%) 0 2px, var(--plank) 2px, color-mix(in srgb, var(--plank), #000 22%)) left bottom / 100% 7px no-repeat border-box;
-}
-:root:not([data-edition="eink"]) .rack::after {
-  height:7px;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--plank), #fff 22%) 0 2px, var(--plank) 2px, color-mix(in srgb, var(--plank), #000 22%));
-}
+/* 실물 책장 (2026-11-14 다시 만듦. PR 52의 둥근 등 그라데이션은 «단색에 3D가 어색»해 걷어냄)
+   - 책등: 바탕은 표지에서 뽑은 색(인라인 backgroundColor·color, js paintSpine), 주제 색은 아래 5px 띠(.band), 출판사는 아래쪽 작은 글자(.pub).
+     질감은 종이 결 한 겹(아주 옅은 가로 줄무늬)과 양옆 1px 빛·그늘뿐이라 글자 대비(4.5 이상)가 그대로다. 표지 색이 없는 책은 예전처럼 주제 색 바탕
+   - 선반: «내 서재» .case와 같은 나무(--wood·--wood-deep 앞면)·뒷판(--case-back)·뒷판 위 그늘(--case-shade). 판 두께 10px
+   - 꺼내기: 누르면 책이 위로 빠져나온 뒤 책 창이 펼쳐진다(pullOut, Web Animations)
+   - 이북리더기 에디션은 흑백·평평: 표지 색을 쓰지 않고 흰 책등에 검은 글자, 결·그늘 없음 */
+.rack { position:relative; padding:var(--space-2) var(--space-1) 0; border:solid var(--wood); border-width:8px 10px 0; border-radius:4px 4px 0 0; background:linear-gradient(to bottom,var(--case-shade),transparent 14px),var(--case-back); row-gap:var(--space-2); }
+.rack::after { height:10px; background:linear-gradient(to bottom,var(--wood) 0 7px,var(--wood-deep) 7px); }
+.slot { height:211px; border-bottom:10px solid transparent; background:linear-gradient(to bottom,var(--wood) 0 7px,var(--wood-deep) 7px) left bottom / 100% 10px no-repeat border-box; } /* 판은 테두리 자리에 깐 배경(border-image는 1px만 늘어나 납작해짐) */
+.month .slot { height:auto; }
+.spine.cov { justify-content:flex-start; border-color:rgba(0,0,0,.28); }
+.spine.cov::before { background-image:none; }
+.spine.cov.ln-t1::before { background-image:linear-gradient(var(--ln),var(--ln)); }
+.spine.cov.ln-t2::before { background-image:linear-gradient(var(--ln),var(--ln)),linear-gradient(var(--ln),var(--ln)); }
+.spine.cov.ln-b1::before { background-image:linear-gradient(var(--ln),var(--ln)); }
+.spine.cov.ln-n::before { background-image:none; }
+.spine.cov.ln-b1 { --lb:9px; }
+.spine.cov .times,.spine.cov .est { color:inherit; }
+.spine .band { position:absolute; left:0; right:0; bottom:0; height:5px; pointer-events:none; }
+.spine.cov.has-ig::after { bottom:5px; height:3px; opacity:.7; }
+.spine .pub { position:absolute; bottom:11px; left:50%; transform:translateX(-50%); writing-mode:vertical-rl; font-size:.66rem; line-height:1; letter-spacing:.02em; white-space:nowrap; font-weight:500; }
+:root:not([data-edition="eink"]) .spine.cov:not(.lie) { box-shadow:inset 1px 0 0 rgba(255,255,255,.22),inset -1px 0 0 rgba(0,0,0,.16); background-image:repeating-linear-gradient(to bottom,rgba(0,0,0,.025) 0 1px,transparent 1px 3px); }
 .spine { transition:transform .15s ease, box-shadow .15s ease; }
 :root:not([data-edition="eink"]) .spine:not(.lie):hover,
-:root:not([data-edition="eink"]) .spine:not(.lie):focus-visible { box-shadow: 3px 4px 8px -2px rgba(0,0,0,.30); }
+:root:not([data-edition="eink"]) .spine:not(.lie):focus-visible { box-shadow:inset 1px 0 0 rgba(255,255,255,.22),inset -1px 0 0 rgba(0,0,0,.16),3px 4px 8px -2px rgba(0,0,0,.30); }
+.book-cover-box { width:120px; aspect-ratio:120 / 174; margin:0 auto var(--space-2); border-radius:2px 6px 6px 2px; overflow:hidden; box-shadow:inset 0 0 0 1px rgba(0,0,0,.12),0 4px 12px rgba(0,0,0,.22); }
+.book-cover-box img { display:block; width:100%; height:100%; object-fit:cover; transition:opacity .3s ease; }
+.book-cover-box.wait img { opacity:0; }
+.flip-front.pic { background-image:linear-gradient(to right,rgba(0,0,0,.2),transparent 16px),var(--pic); background-size:auto,cover; background-position:center; }
+.flip-front.pic > * { visibility:hidden; } /* 표지 그림에 제목이 이미 있다 */
+[data-edition="eink"] .spine.cov { background-color:#fff !important; color:#000 !important; --ln:#000; }
+[data-edition="eink"] .spine .band,[data-edition="eink"] .book-cover-box { display:none; }
+[data-edition="eink"] .rack { background:var(--case-back); }
+[data-edition="eink"] .slot,[data-edition="eink"] .rack::after { background:var(--wood) left bottom / 100% 10px no-repeat border-box; }
 .spine.pull { z-index:3; } /* 움직임은 pullOut()이 Web Animations로 준다: 기대어 선 책의 css 애니메이션(lean)과 서로 덮어쓰지 않게 */
