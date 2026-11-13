@@ -8,7 +8,7 @@
 //   이미 색이 있는 책은 건너뛴다(--all이면 다시). 중계 하루 상한(3,000건)에 걸리면(error: limit) 거기까지 저장하고 멈춘다.
 const fs = require('fs'), path = require('path');
 const jpeg = require('jpeg-js'), { PNG } = require('pngjs');
-const { pickColors } = require('./spine-color.js');
+const { pickColors, fixText } = require('./spine-color.js');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'data', 'spines.json');
@@ -64,6 +64,7 @@ async function image(url) {
     out.v = 1; out.at = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // 한국 날짜
     out.note = '카카오 책 검색 표지에서 계산한 책등 색 [바탕, 글자, 강조]. 표지 주소는 저장하지 않는다(tools/cover-colors.js)';
     out.miss = [...new Set(out.miss)].filter((id) => !(id in out.c));
+    for (const id in out.c) out.c[id][1] = fixText(out.c[id][0], out.c[id][1]); // 저장할 때마다 모든 책의 글자 대비 4.5 이상을 다시 확인한다
     const ordered = { v: out.v, at: out.at, note: out.note, c: out.c, miss: out.miss };
     fs.writeFileSync(OUT, JSON.stringify(ordered).replace(/,"(w\d+|[A-Za-z0-9_-]+)":\[/g, ',\n"$1":[') + '\n');
   };

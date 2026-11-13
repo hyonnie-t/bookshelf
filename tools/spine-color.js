@@ -9,7 +9,13 @@ const hex = (c) => '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).
 const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const dist = (x, y) => Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 const sat = ([r, g, b]) => { const M = Math.max(r, g, b), m = Math.min(r, g, b); return M ? (M - m) / M : 0; };
-const INK = [17, 17, 17], PAPER = [255, 255, 255];
+const INK = [0, 0, 0], PAPER = [255, 255, 255]; // 순수 검정이어야 어떤 바탕에서도 검정·흰색 중 하나가 4.58 이상(#111이면 중간 밝기 빨강·초록에서 4.35~4.48, 검토자 재현)
+// 저장된 색이 대비 4.5 미만이면 검정·흰색 중 큰 쪽으로 바꾼다(옛 계산으로 저장된 색 바로잡기)
+function fixText(base, text) {
+  const b = rgb(base);
+  if (contrast(rgb(text), b) >= 4.5) return text;
+  return contrast(INK, b) >= contrast(PAPER, b) ? '#000000' : '#ffffff';
+}
 
 function pickColors(data, w, h) {
   const mx = Math.round(w * 0.06), my = Math.round(h * 0.04);
@@ -37,4 +43,4 @@ function pickColors(data, w, h) {
   return { base: hex(base), text: hex(text), accent: accent ? hex(accent.c) : '', share: groups[0].share };
 }
 
-module.exports = { pickColors, contrast, rgb, hex };
+module.exports = { pickColors, fixText, contrast, rgb, hex };

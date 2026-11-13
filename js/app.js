@@ -676,7 +676,8 @@ function findCover(w) {
   return COVER_ASK.get(w.id);
 }
 function coverImage(w) {
-  if (!coverColors(w) || !relayOn() || !w.known) return null;
+  // 카카오 중계는 지금까지처럼 주인 화면에서만 부른다(방문자에게 카카오 결과를 보여 줄지·하루 상한 3,000건을 같이 쓸지는 효니 확인 전, 2026-11-14 검토자 지적). 방문자는 표지 색 책등만 본다
+  if (!S.owner || !coverColors(w) || !relayOn() || !w.known) return null;
   const c = coverColors(w);
   const img = el('img', { className:'book-cover', alt:'', decoding:'async' });
   img.referrerPolicy = 'no-referrer';
