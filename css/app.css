@@ -781,7 +781,18 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 .spine-row input { width:100%; min-height:40px; }
 .spine-row .y24-prev img { height:120px; }
 .spine-row.picked { background:color-mix(in srgb, var(--accent) 10%, transparent); }
-@media (prefers-reduced-motion: no-preference) { .spine-row { transition:background-color .3s ease; } }
+@media (prefers-reduced-motion: no-preference) { .spine-row { transition:background-color .3s ease; } .spine-groups .spine-row { animation:drillIn .2s ease-out; } }
+/* 책등 다시 찾기 일괄 흐름(2026-11-14): 세 묶음, 접힌 묶음, 저장 단추 옆 «고른 책 n권 · 모두 고르기 · 모두 풀기» */
+.spine-groups { display:grid; gap:var(--space-2); }
+.spine-groups > .sec { margin:var(--space-3) 0 0; }
+.spine-groups > small { color:var(--muted); }
+.spine-fold { border-top:1px solid var(--line); padding-top:var(--space-2); }
+.spine-fold > summary { cursor:pointer; min-height:40px; display:flex; align-items:center; font-weight:600; }
+.spine-fold > small { display:block; color:var(--muted); margin:var(--space-1) 0; }
+.spine-known { margin:var(--space-2) 0 0; padding-left:var(--space-3); color:var(--muted); font-size:.85rem; display:grid; gap:var(--space-1); }
+#form-body > .form-foot:has(.pick-sum) { justify-content:space-between; flex-wrap:wrap; gap:var(--space-2); }
+.pick-sum { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-2); }
+.pick-sum small { font-weight:600; }
 /* 예스24 출처(이용약관 제6조, 2026-11-14): 책 창 표지 아래 상품 링크, 책장 아래 한 줄 */
 .cover-wrap { display:grid; justify-items:center; gap:var(--space-1); margin:0 auto var(--space-2); }
 .cover-wrap .book-cover-box { margin:0; }

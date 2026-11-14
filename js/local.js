@@ -144,6 +144,8 @@ function cleanData(d) {
     if (str(d.meta.name)) out.meta.name = str(d.meta.name).slice(0, 40);
     if (day(d.meta.lastBackup)) out.meta.lastBackup = day(d.meta.lastBackup);
     if (isObj(d.meta.notDup)) out.meta.notDup = Object.fromEntries(Object.keys(d.meta.notDup).filter((k) => /^[A-Za-z0-9_~-]{1,170}$/.test(k)).map((k) => [k, true]));
+    // 책등 다시 찾기가 «사진 없음·맞는 판 없음»으로 확인해 둔 책(2026-11-14). 다음에 열 때 다시 찾지 않는다
+    if (isObj(d.meta.y24tried)) out.meta.y24tried = Object.fromEntries(Object.entries(d.meta.y24tried).filter(([k, v]) => safeKey(k) && (v === 'noside' || v === 'nomatch')));
   }
   return out;
 }
