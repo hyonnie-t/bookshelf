@@ -17,7 +17,8 @@ const PLAN = path.join(process.cwd(), 'fill-plan.local.json');
 
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 const squeeze = (s) => String(s || '').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
-const bare = (s) => squeeze(String(s || '').replace(/\([^)]*\)|\[[^\]]*\]/g, '')); // 판 이름·총서명 괄호는 빼고 비교
+// 판 이름·총서명 괄호는 빼고 비교. 권 표시(숫자·상중하가 든 괄호)는 남긴다(1권 정보가 2권에 들어가지 않게, 제미나이 검토 2026-11-14)
+const bare = (s) => squeeze(String(s || '').replace(/\(([^)]*)\)|\[([^\]]*)\]/g, (m, a, b) => (/\d|^\s*[상중하]\s*$/.test(a || b || '') ? m : '')));
 // js/app.js의 bookTitle·bookAuthors와 같은 모양(책 찾기로 채운 칸과 같게)
 const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
 const peopleText = (xs) => { const n = (xs || []).map(tidy).filter(Boolean); return n.length > 3 ? `${n[0]} 외` : n.join(', '); };
@@ -130,7 +131,7 @@ h1{font-size:22px;margin:0 0 8px}.sum{display:grid;grid-template-columns:repeat(
 p.lead{color:var(--mute);margin:0 0 8px}table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}td,th{padding:8px;border-top:1px solid var(--line);vertical-align:top;text-align:left}td small{display:block;color:var(--mute);font-size:13px}
 .f{display:block}.tag{font-size:13px;border-radius:4px;padding:0 8px;border:1px solid var(--line)}tr.sure .tag{color:var(--ok);border-color:var(--ok)}tr.check .tag{color:var(--warn);border-color:var(--warn)}tr.none,tr.fail{opacity:.65}
 .bar{position:sticky;top:0;background:var(--bg);padding:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:16px}button{font:inherit;padding:0 16px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
-@media(max-width:640px){td:nth-child(1){display:none}table,tbody,tr,td{display:block}tr{border-top:1px solid var(--line);padding:8px 0}td{border:0;padding:4px 8px}}</style></head><body><main>
+@media(max-width:640px){thead{display:none}td:nth-child(1){display:none}table,tbody,tr,td{display:block}tr{border-top:1px solid var(--line);padding:8px 0}td{border:0;padding:4px 8px}}</style></head><body><main>
 <h1>책장 빈 칸 채우기 미리보기</h1>
 <p class="lead">이미 적힌 저자·출판사·주제는 그대로 두고 <b>빈 칸만</b> 채워요. 체크된 줄만 넣어요(«확실»은 미리 체크). 고친 뒤 «고른 번호 복사»를 눌러 채팅에 붙여 주면 그대로 넣어요.</p>
 <div class="sum"><div>제목 확인된 책<b>${p.total}</b></div><div>빈 칸 있는 책<b>${p.targets}</b></div><div>확실<b>${c('sure')}</b></div><div>확인 필요<b>${c('check')}</b></div><div>못 찾음<b>${c('none') + c('fail')}</b></div>

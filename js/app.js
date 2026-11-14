@@ -2351,7 +2351,7 @@ $('fixDups').onclick = openDupTool;
 // tools/fill-info.js와 같은 규칙: 저자·출판사·주제 중 빈 칸만 채운다(이미 적힌 칸은 덮지 않음). 제목·저자가 맞는 첫 결과만 «확실»로 미리 고른다
 const blankOf = (w) => ['a', 'p', 'th'].filter((k) => (k === 'th' ? !w.th.length : !tidy(w[k])));
 const fillTargets = () => list().filter((w) => w.id && w.k === 'book' && w.known && !w.guess && blankOf(w).length);
-const bareTitle = (s) => squeeze(String(s || '').replace(/\([^)]*\)|\[[^\]]*\]/g, ''));
+const bareTitle = (s) => squeeze(String(s || '').replace(/\(([^)]*)\)|\[([^\]]*)\]/g, (m, a, b) => (/\d|^\s*[상중하]\s*$/.test(a || b || '') ? m : ''))); // 권 표시 괄호는 남긴다(tools/fill-info.js와 같음)
 async function fillRow(w) {
   const fa = firstAuthor(w);
   let rows = await fromRelay(tidy(`${w.t} ${fa}`).slice(0, 100)).catch(() => null);
