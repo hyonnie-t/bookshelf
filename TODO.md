@@ -16,8 +16,8 @@
 - [x] B2. `tools/test-kdc.js`
 - [x] B3. `tools/fill-info.js` (계획 json + 미리보기 HTML)
 - [x] B4. `--limit 20`으로 맞는 비율
-- [ ] B5. 전체 미리보기 → 효니 확인 → `--apply`
-- [ ] B6. 다시 받아 빈 칸 건수 전/후
+- [x] B5. 전체 미리보기 → 효니 확인 → `--apply`
+- [x] B6 (publish·책등 색은 효니 확인 대기). 다시 받아 빈 칸 건수 전/후
 - [x] C1. `fromRelay`가 isbn 넘김
 - [x] C2. 책 찾기로 고르면 주제 자동
 - [x] D1. «책 고치기» 한 창(읽기 상태·나만 보기·빼기)

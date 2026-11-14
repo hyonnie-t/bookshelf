@@ -13,7 +13,7 @@ export function setReading(w, on) {
   w.notes = (w.notes || []).map((n) => (n.s === 'reading' ? (({ s, ...rest }) => rest)(n) : n));
 }
 
-// 가장 최근 미완독 기록의 자리(날짜가 같거나 없으면 뒤에 있는 것). 없으면 -1
+// 가장 최근 미완독 기록의 자리(날짜가 같으면 뒤에 있는 것, 날짜 없는 기록은 날짜 있는 기록보다 옛것으로 친다). 없으면 -1
 export function lastUnreadAt(w) {
   let at = -1;
   (w.recs || []).forEach((r, i) => { if (r.st === 'unread' && (at < 0 || (r.d || '') >= (w.recs[at].d || ''))) at = i; });

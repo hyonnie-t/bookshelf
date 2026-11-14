@@ -42,7 +42,7 @@ const isbn13 = (s) => String(s || '').split(/\s+/).find((x) => /^\d{13}$/.test(x
 
 async function plan(data, kdc) {
   const works = Object.entries(data.works || {}).map(([id, w]) => ({ ...w, id }));
-  const books = works.filter((w) => !w.del && w.k === 'book' && w.known);
+  const books = works.filter((w) => !w.del && (w.k || 'book') === 'book' && w.known); // k가 없으면 책(tools/publish.js와 같음)
   const shelf = books.filter((w) => (w.th || []).length);
   let targets = books.filter((w) => blank(w, 'a') || blank(w, 'p') || blank(w, 'th'));
   const limit = +opt('--limit');
@@ -67,6 +67,8 @@ async function plan(data, kdc) {
     if (!fits.length && pick) notes.push(titleOk(pick) ? '제목은 같고 저자 표기가 다름' : '제목이 조금 다름(부제·권 표시)');
     if (pick && list[0] !== pick) { status = 'check'; notes.push('첫 결과가 아님'); }
     if (pick && !fa && new Set(fits.map((b) => squeeze((b.authors || [])[0]))).size > 1) { status = 'check'; notes.push('같은 제목 다른 저자'); }
+    // 고전·번역서처럼 맞는 판이 여러 출판사에서 나왔으면 효니 판인지 모른다(검토자 재현 2026-11-14: 모비딕 6곳)
+    if (status === 'sure' && new Set(fits.map((b) => squeeze(b.publisher))).size > 1) { status = 'check'; notes.push(`판이 여럿(출판사 ${new Set(fits.map((b) => squeeze(b.publisher))).size}곳)`); }
     const fill = {}, why = {};
     if (pick) {
       if (blank(w, 'a')) { const a = bookAuthors(pick.authors, pick.translators); if (a) { fill.a = a; why.a = '카카오'; } }

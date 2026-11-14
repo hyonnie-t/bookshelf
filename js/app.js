@@ -2365,6 +2365,7 @@ async function fillRow(w) {
   const c = fits[0] || loose[0];
   let status = !c ? 'none' : fits.length && rows[0] === c ? 'sure' : 'check';
   if (c && !fa && new Set(fits.map((b) => squeeze(b.a.split(',')[0]))).size > 1) status = 'check';
+  if (status === 'sure' && new Set(fits.map((b) => squeeze(b.p))).size > 1) status = 'check'; // 판이 여러 출판사에서 나온 책(고전·번역서)은 효니 판인지 모른다
   const fill = {}, why = {};
   if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = RELAY_NAME; }
   if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = RELAY_NAME; }
