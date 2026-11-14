@@ -117,6 +117,9 @@ function cleanWork(w) {
   if (w.unread === true) o.unread = true;
   if (w.st === 'done') o.st = 'done';
   if (w.del === true) o.del = true;
+  // 실물 책등(2026-11-14): [예스24 상품 번호, 책등 그림 가로/세로] 또는 0(색 책등으로)
+  if (Array.isArray(w.y24) && /^\d{4,12}$/.test(String(w.y24[0])) && w.y24[1] > 0 && w.y24[1] < 1) o.y24 = [String(w.y24[0]), +w.y24[1]];
+  else if (w.y24 === 0) o.y24 = 0;
   if (safeKey(str(w.into))) { // 겹치는 책 합치기 되돌리기용
     o.into = str(w.into);
     o.at = Number.isFinite(w.at) ? w.at : 0;
