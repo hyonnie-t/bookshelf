@@ -552,6 +552,15 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .reading-more { display:grid; gap:var(--space-2); margin-top:var(--space-2); }
 .auto-note { color:var(--muted); font-size:.85rem; }
 .checks .check.just { animation:chip-picked 1.2s ease-out; border-radius:4px; }
+/* 여러 권 꽂기의 책마다 주제(2026-11-14). 고른 칸은 칩처럼 한 번 물든다 */
+.many-list { list-style:none; margin:0; padding:0; display:grid; gap:var(--space-2); }
+.many-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,9rem); gap:var(--space-1) var(--space-2); align-items:center; padding-bottom:var(--space-2); border-bottom:1px solid var(--line); }
+.many-row .auto-note { grid-column:1 / -1; }
+.many-name { display:grid; min-width:0; }
+.many-name strong, .many-name span { overflow-wrap:anywhere; }
+.many-name span { color:var(--muted); font-size:.85rem; }
+.many-row select { min-height:40px; min-width:0; border:1px solid var(--line); background:var(--surface); border-radius:6px; padding:0 var(--space-2); font:inherit; color:inherit; }
+.many-row select.just { animation:chip-picked 1.2s ease-out; }
 @keyframes chip-picked { 0% { background:color-mix(in srgb,var(--accent) 28%,transparent); } 100% { background:transparent; } }
 .form-tools { padding-top:var(--space-2); border-top:1px solid var(--line); }
 .form-tools .danger { margin-left:auto; }
