@@ -14,8 +14,8 @@
 - [x] A2. 중계 push → deploy → ISBN 5권 kdc 확인
 - [x] B1. `js/kdc.js` (kdcTheme·authorTheme·pickTheme)
 - [x] B2. `tools/test-kdc.js`
-- [ ] B3. `tools/fill-info.js` (계획 json + 미리보기 HTML)
-- [ ] B4. `--limit 20`으로 맞는 비율
+- [x] B3. `tools/fill-info.js` (계획 json + 미리보기 HTML)
+- [x] B4. `--limit 20`으로 맞는 비율
 - [ ] B5. 전체 미리보기 → 효니 확인 → `--apply`
 - [ ] B6. 다시 받아 빈 칸 건수 전/후
 - [ ] C1. `fromRelay`가 isbn 넘김
