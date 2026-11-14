@@ -75,7 +75,8 @@ export function mergePlan(keep, drop, opt = {}) {
   if (next.t !== (keep.t || '')) was.t = keep.t || '';
   if (next.st !== keep.st) was.st = keep.st === undefined ? 'none' : keep.st; // 'none': 합치기 전에 st 칸이 없었음
   if (next.wc !== keep.wc) was.wc = keep.wc === undefined ? 'none' : keep.wc;
-  if (opt.spine) { next.y24 = opt.spine; was.y24c = true; was.y24 = keep.y24 === undefined ? 'none' : keep.y24; } // 'none': 합치기 전에 y24 칸이 없었음(null은 저장소가 지운다)
+  // opt.spine이 0이면 색 책등(빠지는 칸의 다른 제목을 남길 때, 2026-11-15)
+  if (opt.spine != null) { next.y24 = opt.spine; was.y24c = true; was.y24 = keep.y24 === undefined ? 'none' : keep.y24; } // 'none': 합치기 전에 y24 칸이 없었음(null은 저장소가 지운다)
   const gone = { ...drop, recs:[], notes:[], archived:[], marks:[], del:true, into:keep.id, at:opt.now || 0, was };
   if (dup.length) gone.dupRecs = dup;
   return { next, gone, dups:dup.length };

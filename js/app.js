@@ -822,14 +822,16 @@ function findCover(w) {
 
     const pick = (list) => { const ok = list.filter((x) => /^https:\/\//.test(x.cover || '')); const au = (x) => !a || coverNorm((x.authors || []).join()).includes(a);
       return ok.find((x) => coverNorm(x.title) === t && au(x)) || ok.find((x) => coverNorm(x.title).startsWith(t) && au(x)) || ok.find((x) => coverNorm(x.title) === t) || null; };
-    COVER_ASK.set(w.id, (async () => {
+    const job = (async () => {
       let m = pick(await ask(`${title} ${author}`.trim()));
       if (!m && author) m = pick(await ask(title));
       const url = m ? m.cover : ''; // 예스24 표지 L 또는(예스24가 안 될 때) 카카오 미리보기 120×174를 받은 그대로 쓴다
+      if (COVER_ASK.get(w.id) !== job) return url; // 그사이 책 정보를 고쳐 forgetCover로 지워졌으면 옛 제목 결과를 메모리에 남기지 않는다(2026-11-15 검토자 지적)
       if (m && m.y24) COVER_Y24.set(w.id, m.y24); // 출처 링크용(메모리에만)
       COVER_URL.set(w.id, url); COVER_ASK.delete(w.id);
       return url;
-    })());
+    })();
+    COVER_ASK.set(w.id, job);
   }
   return COVER_ASK.get(w.id);
 }
@@ -867,7 +869,16 @@ function spineState(w) {
   return el('p', { className:'only-state spine-state' }, kids);
 }
 const canPickSpine = (w) => !!(w.id && (w.k || 'book') === 'book' && w.known);
+// 다른 책·다른 판으로 바뀐 책은 책등 색(data/spines.json)을 다시 뽑게 비공개 meta/recolor/{id}에 «제목|판»을 적는다(2026-11-15).
+// 색은 앱이 못 만든다. tools/cover-colors.js가 공개 반영 때 읽어 그 책만 다시 뽑고, spines.json rc에 같은 값을 적어 다음엔 건너뛴다. 범용판·책이 아닌 칸은 안 적는다
+async function markRecolor(w, t, y24) {
+  if (LOCAL || !w.id || (w.k || 'book') !== 'book') return; // 색이 없는(못 찾은) 책도 적는다: 고친 제목으로 다시 찾아 색이 생기면 책 창 표지도 생긴다(검토자 재현)
+  const v = `${t || ''}|${Array.isArray(y24) ? y24[0] : y24 === 0 ? 0 : ''}`;
+  try { await write(`meta/recolor/${w.id}`, v); const m = D.priv.meta = D.priv.meta || {}; m.recolor = { ...(m.recolor || {}), [w.id]:v }; } catch (e) { console.warn('책등 색 표시 저장 실패', e.message); }
+}
 async function setY24(w, v, msg, raise) {
+  forgetCover(w.id);
+  markRecolor(w, w.t, v); // 판이 바뀌면 표지·책등 색도 그 판으로(2026-11-15). 표지 메모리는 저장 전에 지워 다시 그릴 때 새로 찾는다
   try { await saveWork({ ...w, y24:v }, msg); } catch (e) { console.error(e); if (raise) throw e; toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); return; }
   if ($('sheet').open) reshow();
 }
@@ -1088,7 +1099,7 @@ function openSpineTool() {
     const out = {};
     Object.entries(picked).forEach(([id, v]) => { const cur = D.works.get(id); if (cur) out[id] = storedWork({ ...cur, y24:v }); });
     await write('works', out, 'update');
-    Object.entries(out).forEach(([id, v]) => { setPriv('works', id, v); SPINE.res.delete(id); });
+    Object.entries(out).forEach(([id, v]) => { setPriv('works', id, v); SPINE.res.delete(id); forgetCover(id); const cur = D.works.get(id); if (cur) markRecolor(cur, cur.t, v.y24); }); // 판이 바뀌면 표지도 그 판으로(2026-11-15)
     refreshAll();
     toast(`${Object.keys(out).length}권의 책등을 바꿨어요${LOCAL ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
   }, '고른 책등 저장');
@@ -2809,8 +2820,10 @@ function openMergePick(w) {
 // 어느 칸(id)을 남길지는 앱이 정한다(효니는 id를 모른다): 공개본에 있는 칸 → 서평·서재 연결이 있는 칸 → 글이 많은 칸
 const keepScore = (w) => (w.pub ? 4 : 0) + (reviewsOf(w).length || D.lib.some((x) => x.w && movedTo(x.w) === w.id) ? 2 : 0);
 const mergeLock = (keep, drop) => isOnlyMe(drop) && !drop.only && !isOnlyMe(keep); // 기본값으로 잠긴 칸을 공개될 수 있는 책에 합치면 책 정보는 안 옮긴다
-function mergeSpine(keep, drop) { // 남는 칸에 책등이 없고(색 책등으로 고른 것도 아님) 빠지는 칸에 있으면 그 판을 이어 준다
+function mergeSpine(keep, drop, tPick) { // 남는 칸에 책등이 없고(색 책등으로 고른 것도 아님) 빠지는 칸에 있으면 그 판을 이어 준다
   const rk = realOf(keep), rd = realOf(drop);
+  // 빠지는 칸의 다른 제목을 남기면(2026-11-15, 써 보며 찾음: 제목은 바뀌는데 책등·표지는 옛 책 판이 남았다) 그 책 판을, 없으면 색 책등(책 고치기의 «다른 책으로 바꾸기»와 같은 규칙)
+  if (tPick === 'drop' && tidy(drop.t) && tidy(drop.t) !== tidy(keep.t)) return rd ? [rd.no, rd.r] : rk ? 0 : null;
   return !rk && keep.y24 !== 0 && rd ? [rd.no, rd.r] : null;
 }
 function openMergeForm(a, b, backToList) {
@@ -2830,7 +2843,7 @@ function openMergeForm(a, b, backToList) {
   const dedupe = el('input', { type:'checkbox', checked:true });
   const dupBox = nDup ? el('label', { className:'check' }, dedupe, ` 같은 기록으로 보여 하나만 남겨요(${nDup}개). 날짜·미완독이 같고 별점이 같거나 한쪽이 비어 있는 기록이에요. 글이 긴 쪽을 남기고 빈 칸은 다른 쪽에서 채워요.`) : null;
   const preview = el('div', { className:'merge-preview', role:'status' });
-  const opt = () => ({ t:tBox ? tBox.value() : 'keep', a:aBox ? aBox.value() : 'keep', p:pBox ? pBox.value() : 'keep', dedupe:!!nDup && dedupe.checked, lock, spine:mergeSpine(keep, drop) });
+  const opt = () => ({ t:tBox ? tBox.value() : 'keep', a:aBox ? aBox.value() : 'keep', p:pBox ? pBox.value() : 'keep', dedupe:!!nDup && dedupe.checked, lock, spine:mergeSpine(keep, drop, tBox ? tBox.value() : 'keep') });
   const draw = () => {
     const { next, dups } = mergePlan(keep, drop, opt());
     const wasPub = !LOCAL && !!(keep.pub || drop.pub), dark = !LOCAL && isOnlyMe(next);
@@ -2842,7 +2855,8 @@ function openMergeForm(a, b, backToList) {
       el('p', { className:'dup-book' }, el('strong', { textContent:next.t || '제목 없음' }), el('span', { textContent:[next.a || '저자 없음', next.p, `기록 ${next.recs.length} · 메모 ${next.notes.length} · 밑줄 ${next.marks.length} · 서평 ${rv}`].filter(Boolean).join(' · ') })),
       next.recs.length ? el('ul', { className:'merge-recs' }, next.recs.map((r) => el('li', { textContent:[r.d || '날짜 없음', r.r == null ? '' : starText(r.r), r.st === 'unread' ? '읽는 중·미완독' : '', (r.mix || []).length ? '하나로 합침' : ''].filter(Boolean).join(' · ') }))) : null,
       dups ? el('small', { textContent:`같은 기록 ${dups}개를 하나로 합쳤어요. 되돌리면 두 기록으로 돌아가요.` }) : null,
-      opt().spine ? el('small', { textContent:'남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null,
+      opt().spine === 0 ? el('small', { textContent:'다른 칸의 제목을 남겨서, 남는 책의 옛 책등 사진은 빼고 색 책등으로 꽂아요(표지도 새 제목으로 다시 찾아요).' })
+        : opt().spine ? el('small', { textContent:opt().t === 'drop' ? '다른 칸의 제목을 남겨서 그 칸의 예스24 책등·표지를 써요.' : '남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null,
       // 공개에 걸리는 것(2026-11-14 연결 점검): 공개로 해 둔 글이 공개 책으로 오는지, 합친 책이 나만 보기로 잠겨 공개본에서 내려가는지, 서재 책 두 권이 이어지는지
       pubMoving ? el('small', { className:'warn-line', textContent:`공개로 해 둔 글 ${pubMoving}개가 이 책 공개 화면에 올라가요(다음 공개 반영 때).` }) : null,
       goesDark ? el('small', { className:'warn-line', textContent:'합친 책은 «나만 보기»라 지금 공개된 책이 다음 공개 반영 때 공개 페이지에서 내려가요.' }) : null,
@@ -2862,11 +2876,13 @@ function openMergeForm(a, b, backToList) {
   }, '합치기');
 }
 async function mergeWorks(keep, drop, opt = {}) {
-  const plan = mergePlan(keep, drop, { lock:mergeLock(keep, drop), spine:mergeSpine(keep, drop), ...opt, now:Date.now() });
+  const plan = mergePlan(keep, drop, { lock:mergeLock(keep, drop), spine:mergeSpine(keep, drop, opt.t), ...opt, now:Date.now() });
   const next = storedWork(plan.next), gone = storedWork(plan.gone);
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
   setPriv('works', drop.id, gone);
+  // 남는 책의 제목·판이 바뀌면 표지·책등 색도 다시(2026-11-15 검토자 재현: 합친 뒤 옛 표지가 남았다)
+  if (next.t !== keep.t || JSON.stringify(next.y24) !== JSON.stringify(keep.y24)) { forgetCover(keep.id); markRecolor({ ...keep, ...next, id:keep.id }, next.t, next.y24); }
   refreshAll();
   toast(`«${next.t || titleOf(keep)}» 한 권으로 합쳤어요${plan.dups ? ` · 같은 기록 ${plan.dups}개는 하나로` : ''}`);
 }
@@ -2882,6 +2898,8 @@ async function undoMerge(id) {
   await write('works', { [stored.into]:next, [id]:back }, 'update');
   setPriv('works', stored.into, next);
   setPriv('works', id, back);
+  forgetCover(stored.into); forgetCover(id); // 되돌린 두 책 표지를 다시 찾는다(2026-11-15)
+  if (next.t !== keep.t || JSON.stringify(next.y24) !== JSON.stringify(keep.y24)) markRecolor({ ...next, id:stored.into }, next.t, next.y24);
   refreshAll();
   toast('합치기 전으로 되돌렸어요');
 }
@@ -3029,7 +3047,7 @@ function openFillTool() {
     await write('works', out, 'update');
     Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
     // 제목을 고친 책은 표지 메모리와 «책등 사진 없음» 기억(meta/y24tried)을 지운다(새 제목으로 다시 찾게)
-    for (const id of retitled) { forgetCover(id); const t = (D.priv.meta || {}).y24tried; if (t && t[id]) { await write(`meta/y24tried/${id}`, null).catch(() => {}); delete t[id]; } SPINE.res.delete(id); }
+    for (const id of retitled) { forgetCover(id); const rw = D.works.get(id); if (rw) await markRecolor(rw, out[id].t, out[id].y24); const t = (D.priv.meta || {}).y24tried; if (t && t[id]) { await write(`meta/y24tried/${id}`, null).catch(() => {}); delete t[id]; } SPINE.res.delete(id); }
     refreshAll();
     toast(`${picked.length}권을 저장했어요 · 빈 칸 ${n}개${retitled.length ? ` · 제목 ${retitled.length}권` : ''}`);
   }, '고른 책 저장');
@@ -3222,7 +3240,13 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
       base.only = only.checked;
       if (!only.checked && ['book', 'film'].includes(base.k || 'book')) delete base.only;
     }
+    // 책 정보를 바꾼 뒤 표지·책등(2026-11-15, 효니 쪽지 «책 정보 고치거나 했을 때 표지 다시 제대로 넣기»): 제목·저자·판이 바뀌면 표지 메모리를 지워 다시 찾고,
+    // 제목이 바뀌면 «책등 사진 없음» 기억(meta/y24tried)도 지운다. 다른 책·판이면 책등 색을 다시 뽑게 적어 둔다
+    const y24Moved = !isNew && JSON.stringify(base.y24) !== JSON.stringify(w.y24);
+    if (!isNew && (retitled || a.value.trim() !== (w.a || '') || y24Moved)) forgetCover(base.id);
     await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
+    if (retitled) { const tr = (D.priv.meta || {}).y24tried; if (tr && tr[base.id]) { await write(`meta/y24tried/${base.id}`, null).catch(() => {}); delete tr[base.id]; } SPINE.res.delete(base.id); }
+    if (swapped || y24Moved || (retitled && !coverColors(w))) await markRecolor(w, title, base.y24); // 색을 못 찾은 책은 제목 오타를 고쳐도 다시 찾게
     if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
     else { // 다른 종류를 보고 있어도 꽂힌 걸 바로 보여 준다. 양식의 기록이 먼저 빠진 뒤 연다
