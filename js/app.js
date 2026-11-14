@@ -377,7 +377,7 @@ function renderShelf() {
     return;
   }
   $('shelves').replaceChildren(...ys.map((y) => jumpMark(el('section', { className:'shelf' },
-    el('div', { className:'shelf-head' }, el('h2', { textContent:y }), el('span', { textContent:`${byYear[y].length}${unit}` })),
+    el('div', { className:'shelf-head' }, el('h2', { textContent:y }), el('span', { textContent:`${byYear[y].length}${unit}` + ((n) => (n ? ` · 그중 안 읽음 ${n}` : ''))(byYear[y].filter(isNotRead).length) })), // 안 읽음(2026-11-15)은 책장에 꽂히되 머리글 «읽은 책» 수에서 빠지니 연도 머리글에 따로 적는다
     yearBody(y, byYear[y], unit)), y)));
   balanceRacks();
   if ($('y24Note')) $('y24Note').hidden = !(realView() && document.querySelector('#shelves .spine.real')); // 예스24 이용약관 제6조 출처 표기
