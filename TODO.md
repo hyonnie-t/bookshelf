@@ -12,8 +12,8 @@
 ## 목록
 - [x] A1. 중계 `pickNl_`에 `kdc`·`kid`
 - [x] A2. 중계 push → deploy → ISBN 5권 kdc 확인
-- [ ] B1. `js/kdc.js` (kdcTheme·authorTheme·pickTheme)
-- [ ] B2. `tools/test-kdc.js`
+- [x] B1. `js/kdc.js` (kdcTheme·authorTheme·pickTheme)
+- [x] B2. `tools/test-kdc.js`
 - [ ] B3. `tools/fill-info.js` (계획 json + 미리보기 HTML)
 - [ ] B4. `--limit 20`으로 맞는 비율
 - [ ] B5. 전체 미리보기 → 효니 확인 → `--apply`
