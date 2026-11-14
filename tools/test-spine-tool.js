@@ -13,6 +13,8 @@ const REPO = path.join(__dirname, '..');
     assert.equal(T.spineFit(book, { title:'채식주의자 (리커버)', authors:['한강'] }), true); // 괄호는 빼고 비교
     assert.equal(T.spineFit(book, { title:'채식주의자', authors:['다른 사람'] }), false);
     assert.equal(T.spineFit(w('y', '토지', ''), { title:'토지 1', authors:['박경리'] }), true); // 저자가 없으면 제목만
+    assert.equal(T.spineFit(w('y', '돈', ''), { title:'돈의 속성', authors:['김승호'] }), false); // 한 글자 제목은 같을 때만
+    assert.equal(T.spineFit(w('y', '돈', ''), { title:'돈', authors:['누구'] }), true);
     assert.equal(T.spineFit(w('z', '', '한강'), { title:'채식주의자', authors:['한강'] }), false);
     assert.equal(T.spineFit(w('z', '소년이 온다', '한강, 옮긴이 옮김'), { title:'소년이 온다', authors:['한강'] }), true); // 첫 저자만
   });
