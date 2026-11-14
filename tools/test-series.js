@@ -61,7 +61,14 @@ const REPO = path.join(__dirname, '..');
     assert(/from '\.\/series\.js'/.test(app));
     for (const [f, p] of [['sw.js', "'js/series.js'"], ['my/sw.js', "'../js/series.js'"]]) assert(fs.readFileSync(path.join(REPO, f), 'utf8').includes(p), f);
     assert(fs.readFileSync(path.join(REPO, 'tools/publish.js'), 'utf8').includes('o.ser'), '공개 반영이 ser을 옮김');
-    assert(/w\.ser === false \|\| typeof w\.ser === 'string'|ser/.test(fs.readFileSync(path.join(REPO, 'js/local.js'), 'utf8')), '범용판 거르기가 ser을 남김');
+    assert(fs.readFileSync(path.join(REPO, 'js/local.js'), 'utf8').includes('o.ser = w.ser === false ? false'), '범용판 거르기가 ser을 남김');
+    assert(app.includes('if (w.ser === undefined) delete m.ser;'), '지운 ser을 공개본이 되살리지 않음');
+    assert(/sa\.vol !== sb\.vol\) continue;/.test(app), '겹치는 책 고치기가 같은 시리즈 다른 권을 후보로 안 냄');
+  });
+  ok('다른 권 판정(겹치는 책 후보 빼기와 같은 기준)', () => {
+    const a = S.seriesKey('토지 1'), b = S.seriesKey('토지 1부 4권'), c = S.seriesKey('토지 1권 - 1부 1권');
+    assert(a.head === b.head && a.vol !== b.vol, '1권과 4권은 다른 권');
+    assert(a.vol === c.vol, '같은 1권(진짜 겹치는 책)은 후보로 남는다');
   });
   console.log(`test-series 통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });

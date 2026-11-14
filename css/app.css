@@ -583,7 +583,7 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .only-tag.line-vis { display:inline-flex; align-items:center; min-height:32px; padding:0 var(--space-2); background:none; cursor:pointer; transition:background-color .2s ease-out, color .2s ease-out; }
 @media (prefers-reduced-motion: reduce) { .only-tag.line-vis { transition:none; } }
 /* 시리즈 칩(2026-11-15): 책 창 제목 아래 «시리즈 토지 · 1 2 3». 지금 권은 진하게 */
-.series-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-1); margin:var(--space-1) 0 0; font-size:.85rem; color:var(--muted); }
+.series-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-2); margin:var(--space-1) 0 0; font-size:.85rem; color:var(--muted); }
 .series-row > span { margin-right:var(--space-1); }
 .series-vol { min-width:32px; min-height:32px; padding:0 var(--space-2); border:1px solid var(--line); border-radius:16px; background:none; color:var(--ink); font:inherit; cursor:pointer; transition:background-color .2s ease-out; }
 .series-vol:hover:not(:disabled) { background:var(--line); }
