@@ -1786,9 +1786,10 @@ function openManyForm() {
     if (!lines.some((l) => norm(manySplit(l).title) === norm(b.t))) x.value = [...lines, b.a ? `${b.t} / ${b.a}` : b.t].join('\n');
     draw();
   });
+  const pickSig = (k, author) => `${norm(author)}|${found.has(k) ? 1 : 0}`; // 저자를 나중에 붙이거나 책 찾기로 고르면 다시 고른다
   const choose = async (k, author) => { // 주제가 정해지지 않은 줄 하나에 주제를 고른다
     const f = found.get(k), info = f ? { ...f, a:author || f.a } : { a:author };
-    const pk = { th:'', why:'', auto:true, busy:!!(f && (f.kdc || f.isbn) && (f.kdc || relayOn())) };
+    const pk = { th:'', why:'', auto:true, sig:pickSig(k, author), busy:!!(f && (f.kdc || f.isbn) && (f.kdc || relayOn())) };
     picks.set(k, pk);
     const sync = pickTheme({ a:info.a, th:[] }, shelf(), info.kdc || '', info.kid);
     if (sync || !pk.busy) { Object.assign(pk, { th:sync ? sync.th : '', why:sync ? sync.why : '', busy:false, just:!!sync }); return; }
@@ -1808,7 +1809,8 @@ function openManyForm() {
       if (have.has(k)) { rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title })), el('small', { className:'auto-note', textContent:'이미 서재에 있어 빼요' }))); continue; }
       const hit = hits.get(k);
       if (!picks.has(k) && hit && hit.th.length) picks.set(k, { th:hit.th[0], why:'읽은 책의 주제', auto:true, keep:hit.th });
-      if (!picks.has(k)) choose(k, author);
+      const old = picks.get(k);
+      if (!old || (old.auto && !old.keep && old.sig !== pickSig(k, author))) choose(k, author);
       const pk = picks.get(k);
       const sel = el('select', { ariaLabel:`«${title}» 주제` }, el('option', { value:'', textContent:'주제 없음' }), ...THEMES.map(([t]) => el('option', { value:t, textContent:t })));
       sel.value = pk.th;
@@ -1827,6 +1829,7 @@ function openManyForm() {
     clearTimeout(timer); draw();
     const lines = manyLines(x.value);
     if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
+    if ([...picks.values()].some((p) => p.busy)) throw fail('주제를 찾는 중이에요. 잠깐 뒤에 다시 눌러 주세요');
     const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t)));
     const hits = works();
     const add = {};
