@@ -57,6 +57,9 @@ const REPO = path.join(__dirname, '..');
     assert(/from '\.\/fill-tool\.js'/.test(app));
     assert(!/const bareTitle = /.test(app), 'bareTitle가 앱에 따로 남아 있음');
     assert(!/RELAY_BACKUP/.test(app), '옛 예비 출처 한 곳 방식이 남아 있음');
+    // fromRelay(q, only)를 함수 값으로 넘기면 map의 번호가 출처로 들어가 범용판이 카카오를 부른다(2026-11-15 검토자 재현)
+    assert(!/\.map\(fromRelay\)|search:fromRelay|\(fromRelay\)/.test(app), 'fromRelay를 함수 값으로 넘김');
+    assert(app.includes("typeof only === 'string' && only in SRC_NAME"), 'fromRelay가 문자열 출처만 받음');
     assert(/rowSearch\(y24Query/.test(app) && /rowSearch\(tidy/.test(app), '다시 찾기가 빈 칸 채우기·책등 다시 찾기 두 곳에');
     for (const [f, p] of [['sw.js', "'js/fill-tool.js'"], ['my/sw.js', "'../js/fill-tool.js'"]]) assert(fs.readFileSync(path.join(REPO, f), 'utf8').includes(p), f);
   });
