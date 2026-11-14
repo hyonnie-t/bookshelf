@@ -561,6 +561,11 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 @media (prefers-reduced-motion: no-preference) { .more-menu:not([hidden]) { animation:drillIn .18s ease-out; } }
 .only-state { margin:0; display:grid; gap:2px; text-align:left; }
 .only-state small { color:var(--muted); font-size:.8rem; line-height:1.45; }
+.fill-list { display:grid; gap:var(--space-2); }
+.fill-whats { display:grid; gap:2px; font-size:.9rem; }
+.fill-what small { color:var(--muted); }
+.fill-row.none, .fill-row.fail { opacity:.7; }
+@media (prefers-reduced-motion: no-preference) { .fill-row { animation:drillIn .2s ease-out; } }
 
 /* 터치 화면의 누르는 크기: 기본값보다 뒤에 둔다 (2026-11-07) */
 @media (pointer:coarse) {

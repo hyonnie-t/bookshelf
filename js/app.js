@@ -2346,6 +2346,86 @@ async function undoMerge(id) {
   toast('합치기 전으로 되돌렸어요');
 }
 $('fixDups').onclick = openDupTool;
+
+/* ---------- 빈 칸 채우기 (관리, 2026-11-14) ---------- */
+// tools/fill-info.js와 같은 규칙: 저자·출판사·주제 중 빈 칸만 채운다(이미 적힌 칸은 덮지 않음). 제목·저자가 맞는 첫 결과만 «확실»로 미리 고른다
+const blankOf = (w) => ['a', 'p', 'th'].filter((k) => (k === 'th' ? !w.th.length : !tidy(w[k])));
+const fillTargets = () => list().filter((w) => w.id && w.k === 'book' && w.known && !w.guess && blankOf(w).length);
+const bareTitle = (s) => squeeze(String(s || '').replace(/\([^)]*\)|\[[^\]]*\]/g, ''));
+async function fillRow(w) {
+  const fa = firstAuthor(w);
+  let rows = await fromRelay(tidy(`${w.t} ${fa}`).slice(0, 100)).catch(() => null);
+  if (rows && !rows.length && fa) rows = await fromRelay(tidy(w.t).slice(0, 100)).catch(() => null);
+  if (rows == null) return { w, status:'fail', fill:{}, why:{} };
+  const tOk = (b) => bareTitle(b.t) === bareTitle(w.t);
+  const aOk = (b) => !fa || (squeeze(b.a).includes(squeeze(fa)) || squeeze(fa).includes(squeeze(b.a.split(',')[0])));
+  const fits = rows.filter((b) => tOk(b) && aOk(b));
+  const pre = (b) => { const x = bareTitle(b.t), y = bareTitle(w.t); return Math.min(x.length, y.length) >= 3 && x !== y && (x.startsWith(y) || y.startsWith(x)); };
+  const loose = fits.length ? [] : rows.filter((b) => (tOk(b) && !aOk(b)) || (pre(b) && aOk(b)));
+  const c = fits[0] || loose[0];
+  let status = !c ? 'none' : fits.length && rows[0] === c ? 'sure' : 'check';
+  if (c && !fa && new Set(fits.map((b) => squeeze(b.a.split(',')[0]))).size > 1) status = 'check';
+  const fill = {}, why = {};
+  if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = RELAY_NAME; }
+  if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = RELAY_NAME; }
+  if (!w.th.length) { const t = await autoTheme({ a:w.a || fill.a || '', isbn:c ? c.isbn : '', kdc:c ? c.kdc : '', kid:c ? c.kid : false }, w.id); if (t) { fill.th = [t.th]; why.th = t.why; } }
+  if (status === 'sure' && !Object.keys(fill).length) status = 'none';
+  return { w, c, status, fill, why };
+}
+function openFillTool() {
+  const targets = fillTargets();
+  const LABEL = { a:'저자', p:'출판사', th:'주제' }, STATE = { sure:'확실', check:'확인 필요', none:'못 찾음', fail:'찾기 실패' };
+  const head = el('p', { className:'warn', role:'status', textContent:targets.length ? `저자·출판사·주제 중 빈 칸이 있는 책이 ${targets.length}권이에요. 이미 적힌 칸은 그대로 두고 빈 칸만 채워요. 찾는 동안 제목·저자만 ${RELAY_NAME}으로 가요.` : '빈 칸이 있는 책이 없어요.' });
+  const list_ = el('div', { className:'fill-list' });
+  const go = el('button', { className:'btn', type:'button', textContent:'찾기 시작' });
+  const stop = el('button', { className:'btn ghost', type:'button', textContent:'멈추기', hidden:true });
+  const found = [];
+  let run = 0, busy = false;
+  const rowEl = (r) => {
+    const box = el('input', { type:'checkbox', checked:r.status === 'sure', disabled:!Object.keys(r.fill).length });
+    r.box = box;
+    const fills = Object.keys(r.fill).map((k) => el('span', { className:'fill-what' }, `${LABEL[k]}: `, el('strong', { textContent:[].concat(r.fill[k]).join(', ') }), el('small', { textContent:` ${r.why[k]}` })));
+    return el('div', { className:'dup-row fill-row ' + r.status },
+      el('label', { className:'check overlap-pick' }, box, el('strong', { textContent:titleOf(r.w) })),
+      el('div', { className:'when', textContent:[STATE[r.status], r.w.a || '저자 없음', r.c ? `찾은 책: ${[r.c.t, r.c.a, r.c.p].filter(Boolean).join(' · ')}` : ''].filter(Boolean).join(' · ') }),
+      fills.length ? el('div', { className:'fill-whats' }, fills) : el('small', { textContent:'채울 것을 찾지 못했어요' }));
+  };
+  go.onclick = async () => {
+    const mine = ++run;
+    busy = true; go.hidden = true; stop.hidden = false;
+    const todo = targets.filter((w) => !found.some((r) => r.w.id === w.id));
+    for (let i = 0; i < todo.length && mine === run; i += 3) {
+      head.textContent = `찾는 중이에요 ${found.length}/${targets.length}`;
+      const got = await Promise.all(todo.slice(i, i + 3).map(fillRow));
+      if (mine !== run) break;
+      got.forEach((r) => { found.push(r); list_.append(rowEl(r)); });
+    }
+    busy = false; stop.hidden = true;
+    const n = (s) => found.filter((r) => r.status === s).length;
+    head.textContent = `${found.length}/${targets.length}권을 찾았어요. 확실 ${n('sure')} · 확인 필요 ${n('check')} · 못 찾음 ${n('none') + n('fail')}. 확실한 줄만 골라 뒀어요.`;
+    if (found.length < targets.length) { go.textContent = '이어서 찾기'; go.hidden = false; }
+  };
+  stop.onclick = () => { run++; };
+  showForm('빈 칸 채우기', [head, el('div', { className:'actions' }, go, stop), list_], async () => {
+    if (busy) throw fail('찾는 중이에요. 다 찾거나 «멈추기»를 누른 뒤 저장해 주세요.');
+    const picked = found.filter((r) => r.box && r.box.checked);
+    if (!picked.length) throw fail('채울 책을 골라 주세요');
+    const out = {};
+    let n = 0;
+    picked.forEach((r) => {
+      const cur = D.works.get(r.w.id);
+      if (!cur) return;
+      const next = { ...cur };
+      Object.keys(r.fill).forEach((k) => { if (blankOf(cur).includes(k)) { next[k] = r.fill[k]; n++; } }); // 그사이 채운 칸은 덮지 않는다
+      out[r.w.id] = storedWork(next);
+    });
+    await write('works', out, 'update');
+    Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
+    refreshAll();
+    toast(`${picked.length}권의 빈 칸 ${n}개를 채웠어요`);
+  }, '고른 책 저장');
+}
+if ($('fillBlanks')) $('fillBlanks').onclick = openFillTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
 if ($('memoOverlap')) $('memoOverlap').onclick = openMemoOverlap;
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };
