@@ -101,7 +101,15 @@ function pickNl_(d) {
     year: (String(f_(d, /^pub_?year/i)).match(/\d{4}/) || [''])[0],
     isbn: tagless_(d.isbn),
     cover: nlCover_(tagless_(f_(d, /^image/i))), // 국립중앙도서관 표지(공공 데이터). 없는 책이 많다
+    kdc: kdc_(d),
+    kid: /^\s*(유|아)/.test(tagless_(f_(d, /^call_?no/i))), // 청구기호가 «유»·«아»로 시작하면 어린이 자료
   };
+}
+// 도서관 분류 번호(KDC) 앞부분(예 813.62). 분류 칸이 비면 청구기호 «813.62-23-70»에서 뗀다(2026-11-14, 주제 자동 고르기용)
+function kdc_(d) {
+  var k = tagless_(f_(d, /^kdc_?code_?1s$/i) || f_(d, /^kdc_?code/i));
+  var m = k.match(/\d{3}(\.\d+)?/) || tagless_(f_(d, /^call_?no/i)).match(/\d{3}(\.\d+)?/);
+  return m ? m[0] : '';
 }
 
 var TRANS_ = /(옮김|옮긴이|번역|역자|\s역$|譯|translated)/i; // «역사문제연구소»처럼 이름 속 «역»은 옮긴이로 치지 않는다

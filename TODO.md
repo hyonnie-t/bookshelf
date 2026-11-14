@@ -10,8 +10,8 @@
 - 공개 반영(publish) — 답이 없으면 하지 않는다.
 
 ## 목록
-- [ ] A1. 중계 `pickNl_`에 `kdc`·`kid`
-- [ ] A2. 중계 push → deploy → ISBN 5권 kdc 확인
+- [x] A1. 중계 `pickNl_`에 `kdc`·`kid`
+- [x] A2. 중계 push → deploy → ISBN 5권 kdc 확인
 - [ ] B1. `js/kdc.js` (kdcTheme·authorTheme·pickTheme)
 - [ ] B2. `tools/test-kdc.js`
 - [ ] B3. `tools/fill-info.js` (계획 json + 미리보기 HTML)
