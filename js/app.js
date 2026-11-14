@@ -171,7 +171,10 @@ function paintSpine(b, w) {
 const SPINE_VIEW_KEY = 'shelf-spineview';
 let spineView = 'real';
 try { if (localStorage.getItem(SPINE_VIEW_KEY) === 'color') spineView = 'color'; } catch (e) {}
-const Y24_IMG = (no) => `https://image.yes24.com/goods/${no}/SIDE/XL`;
+// L은 세로 400px·약 3KB, XL은 1200px·약 20KB(2026-11-14 실측). 책등은 198px까지라 화면 배율 2 이하는 L로 충분하다
+const Y24_IMG = (no) => `https://image.yes24.com/goods/${no}/SIDE/${(window.devicePixelRatio || 1) > 2 ? 'XL' : 'L'}`;
+// «이미지 없음» 그림은 L 280x400·XL 420x600이라 비율로 거른다(책등은 0.02~0.35)
+const notSpine = (img) => { const r = img.naturalWidth / img.naturalHeight; return !(r >= 0.02 && r <= 0.35); };
 function realOf(w) {
   if (LOCAL || !w || !w.id || (w.k || 'book') !== 'book') return null;
   const base = D.y24[w.id];
@@ -182,12 +185,16 @@ function realOf(w) {
 const useReal = (w) => (spineView === 'real' && document.documentElement.dataset.edition !== 'eink' ? realOf(w) : null);
 // 키: 실물 265mm 이상이면 선반 끝(198px), 모르면 210mm로. 폭은 그림 비율 그대로라 두께가 저절로 들어간다
 const realH = (mh) => Math.max(120, Math.min(198, Math.round((mh || 210) * 198 / 265)));
-function addRealImg(b, real, colorW) {
+let rebalanceTimer;
+function addRealImg(b, real, colorW, colorH) {
   b.classList.add('real');
   const img = el('img', { className:'real-img', alt:'', decoding:'async', loading:'lazy' });
   img.referrerPolicy = 'no-referrer';
-  const back = () => { img.remove(); b.classList.remove('real', 'real-on'); b.style.width = colorW + 'px'; }; // 못 받으면 원래 폭의 색 책등
-  img.onload = () => { if (img.naturalWidth === 420 && img.naturalHeight === 600) back(); else b.classList.add('real-on'); }; // 420x600은 예스24 «이미지 없음» 그림
+  const back = () => { // 못 받으면 원래 키·폭의 색 책등으로 돌리고 줄을 다시 고른다
+    img.remove(); b.classList.remove('real', 'real-on'); b.style.width = colorW + 'px'; b.style.height = colorH + 'px';
+    clearTimeout(rebalanceTimer); rebalanceTimer = setTimeout(() => { if (S.view === 'shelf') balanceRacks(); }, 300);
+  };
+  img.onload = () => { if (notSpine(img)) back(); else b.classList.add('real-on'); };
   img.onerror = back;
   img.src = Y24_IMG(real.no);
   b.append(img);
@@ -228,7 +235,7 @@ function spine(w, pose) {
   const real = useReal(w);
   const showPub = !real && pub && need <= 198;
   if (showPub) h = Math.max(h, need);
-  const colorW = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9);
+  const colorW = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9), colorH = h;
   if (real) h = realH(real.mh);
   const wd = real ? Math.max(14, Math.round(h * real.r)) : colorW;
   const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose === 'lean' ? ' lean' : '') });
@@ -244,7 +251,7 @@ function spine(w, pose) {
   if (showPub) { b.classList.add('has-pub'); b.style.paddingBottom = Math.ceil(pubH) + 'px'; b.append(el('small', { className:'pub', textContent:pub })); }
   if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
-  if (real) addRealImg(b, real, colorW);
+  if (real) addRealImg(b, real, colorW, colorH);
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
   b.onclick = () => pullOut(b, () => openBook(w.id, b));
   const slot = el('div', { className:'slot' + (pose === 'lean' ? ' lean' : '') }, b);
@@ -811,7 +818,7 @@ function openY24Form(w) {
     img.onload = () => {
       if (me !== seq) return;
       const r = img.naturalWidth / img.naturalHeight;
-      if ((img.naturalWidth === 420 && img.naturalHeight === 600) || r < 0.02 || r > 0.35) { msg.textContent = '이 상품에는 책등 사진이 없어요. 다른 판을 골라 주세요.'; return; }
+      if (notSpine(img)) { msg.textContent = '이 상품에는 책등 사진이 없어요. 다른 판을 골라 주세요.'; return; }
       got = [no, +r.toFixed(4)];
       msg.textContent = '이 책등으로 바꿀까요?';
       prev.replaceChildren(img);

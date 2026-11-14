@@ -38,10 +38,11 @@ function items(html) {
     return { no, alt, text: strip(seg.slice(0, 6000)).replace(/\s+/g, ' ') };
   }).filter((x) => x.no);
 }
-// 책등 그림 크기(JPEG SOF). 그림이 없으면 null
+// 책등 그림 크기(JPEG SOF). 그림이 없으면 null, 받지 못하면 'err'
 async function side(no) {
   const r = await get(`https://image.yes24.com/goods/${no}/SIDE/XL`, MUA, 'buf');
   const buf = r.body;
+  if (!r.status || r.status >= 500) return 'err';
   if (r.status !== 200 || buf.length === 4975 || buf[0] !== 0xff) return null;
   let w = 0, h = 0;
   for (let k = 2; k < buf.length - 9;) {
@@ -62,41 +63,50 @@ async function height(no) {
 }
 async function find(b) {
   const T = norm(mainTitle(b.t)), A = norm(firstAuthor(b.a)), V = volOf(b.t);
+  const P = norm(String(b.p || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/출판사|출판|주식회사|㈜/g, '').split(/\s*[:/]\s*/)[0]).slice(0, 6);
   if (!T) return { why: 'title' };
   const tries = [`${mainTitle(b.t)} ${firstAuthor(b.a)}`.trim(), mainTitle(b.t)];
-  let sawBook = false;
+  let sawBook = false, sawAuthor = false, fetchFail = false;
   for (const q of [...new Set(tries)]) {
     const r = await get('https://m.yes24.com/Search?query=' + encodeURIComponent(q), MUA);
     if (!r.status) return { why: 'fetch' };
-    const cands = items(r.body).map((x) => {
-      const at = norm(x.alt);
-      let s = 0;
-      if (at === T) s += 3; else if (at.startsWith(T) || T.startsWith(at)) s += 2; else if (T.length >= 4 && at.includes(T.slice(0, 4))) s += 1;
-      if (A && norm(x.text).includes(A)) s += 2;
+    const all = items(r.body).map((x) => {
+      const at = norm(x.alt), tx = norm(x.text);
+      const ts = at === T ? 3 : at && (at.startsWith(T) || T.startsWith(at)) ? 2 : 0; // 제목은 같거나 앞이 같아야 한다(«이방인/페스트/시지프 신화» 같은 묶음책이 붙었던 일)
+      let s = ts;
+      const am = !!A && tx.includes(A), pm = !!P && tx.includes(P);
+      if (am) s += 2;
+      if (pm) s += 1; // 같은 책의 여러 판 중 효니 판(출판사)을 먼저
       if (V) { const cv = volOf(x.alt); if (cv === V) s += 1; else if (cv) s -= 3; } // 권 번호가 다르면 다른 책(레퓨테이션 (1)이 2권에 붙었던 일)
       if (/eBook|전자책|\[중고\]|세트|오디오북|큰글자|리커버|양장 ?특별/.test(x.text.slice(0, 400) + x.alt)) s -= 3;
-      return { ...x, s };
-    }).filter((x) => x.s >= 3).sort((p, q) => q.s - p.s);
+      return { ...x, s, ts, am, pm, exact: at === T };
+    });
+    if (all.some((x) => x.am && x.s >= 3)) sawAuthor = true;
+    // 저자를 아는 책은 저자가 맞는 후보만 받는다. 저자 표기가 갈려(카뮈/까뮈) 맞는 후보가 하나도 없을 때만 제목이 똑같고 출판사도 맞는 책을 받는다(검토자 재현: 저자 맞는 판에 책등 사진이 없으면 다른 저자의 같은 제목 책으로 넘어갔다)
+    const ok = (x) => x.s >= 3 && x.ts >= 2 && (!A || x.am || (!sawAuthor && x.exact && (x.pm || !P)));
+    const cands = all.filter(ok).sort((p, q) => q.s - p.s);
     if (cands.length) sawBook = true;
-    for (const c of cands.slice(0, 4)) {
+    for (const c of cands.slice(0, 5)) {
       const sd = await side(c.no);
+      if (sd === 'err') { fetchFail = true; continue; }
       if (sd) return { no: c.no, r: +(sd.w / sd.h).toFixed(4), mh: await height(c.no) };
     }
     await sleep(300);
   }
+  if (fetchFail) return { why: 'fetch' }; // 받기 실패는 기록하지 않아 다음에 다시 찾는다
   return { why: sawBook ? 'noside' : 'nomatch' };
 }
 
 (async () => {
   const pub = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'public.json'), 'utf8'));
-  let books = pub.books.filter((b) => b.k === 'book').map((b) => ({ id: b.id, t: b.t, a: b.a }));
+  let books = pub.books.filter((b) => b.k === 'book').map((b) => ({ id: b.id, t: b.t, a: b.a, p: b.p }));
   if (privPath) {
     const have = new Set(books.map((b) => b.id));
     const raw = JSON.parse(fs.readFileSync(path.resolve(privPath), 'utf8'));
     const works = raw.works || raw;
     for (const [id, w] of Object.entries(works)) {
       if (!w || w.del || (w.k || 'book') !== 'book' || have.has(id) || !w.t || w.known === false) continue;
-      books.push({ id, t: w.t, a: w.a });
+      books.push({ id, t: w.t, a: w.a, p: w.p });
     }
   }
   const only = val('--only'); if (only) { const s = new Set(only.split(',')); books = books.filter((b) => s.has(b.id)); }
