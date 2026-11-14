@@ -2671,7 +2671,7 @@ const kindName = (w) => (KINDS.find((k) => k[0] === w.k) || [,''])[1];
 const bookCounts = (w) => `기록 ${w.recs.length} · 메모 ${w.notes.length}${w.marks.length ? ` · 밑줄 ${w.marks.length}` : ''} · 서평 ${reviewsOf(w).length}`;
 const bookMeta = (w) => [kindName(w), w.a || '저자 없음', w.y, bookCounts(w)].filter(Boolean).join(' · ');
 const bookWeight = (w) => w.recs.length + w.notes.length + w.marks.length + reviewsOf(w).length + (w.k === 'book' ? .5 : 0) + (w.a ? .25 : 0) - (w.guess || !w.t ? 100 : 0); // 추정 제목이나 제목 없는 칸보다 확인된 제목을 먼저 권한다
-const UNDO_MSG = '이 합치기를 되돌릴까요? 합친 뒤 고친 저자·출판사·주제·연도는 합치기 전 값으로 돌아가요. 옮긴 기록·메모·밑줄은 고친 내용 그대로 원래 칸으로 돌아가고, 하나로 합친 같은 기록은 합치기 전 두 기록으로 돌아가요.';
+const UNDO_MSG = '이 합치기를 되돌릴까요? 합친 뒤 고친 저자·출판사·주제·연도는 합치기 전 값으로 돌아가요. 옮긴 기록·메모·밑줄은 고친 내용 그대로 원래 칸으로 돌아가고, 하나로 합친 같은 기록은 합치기 전 두 기록으로 돌아가요(합친 뒤 그 기록을 고쳤으면 고친 내용은 남지 않아요).';
 const mergedInto = (id) => Object.entries(D.priv.works || {}).filter(([, x]) => x.del && x.into === id).sort((x, y) => (y[1].at || 0) - (x[1].at || 0)); // 가장 나중 것이 앞
 function openDupTool() {
   const pairs = dupPairs();
@@ -2806,13 +2806,13 @@ async function undoMerge(id) {
 $('fixDups').onclick = openDupTool;
 // 글 하나를 다른 책으로 옮기기(2026-11-14): 기록·밑줄·메모가 엉뚱한 책에 붙었을 때 «합치기 되돌리기» 말고도 고칠 길. 각 고치기 창 아래 줄에 있다
 // find(cur): 최신 칸에서 그 글의 자리(창을 연 뒤 바뀌었을 수 있다)
-const MOVE_NAME = { recs:'기록', notes:'메모', marks:'밑줄' };
+const MOVE_NAME = { recs:'기록', notes:'메모', marks:'밑줄' }, MOVE_OBJ = { recs:'기록을', notes:'메모를', marks:'밑줄을' }; // 조사(검토자: «메모을»)
 const moveBtn = (w, group, find) => formBtn('다른 책으로 옮기기', async () => openMoveForm(w, group, find));
 const emptyWork = (w) => !w.pub && !w.notes.length && !w.archived.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length; // 메모를 지울 때(emptyAfter)와 같은 기준
 function openMoveForm(w, group, find) {
   const name = MOVE_NAME[group];
   const pick = bookPicker(true, w.id);
-  showForm(`${name}을 옮길 책 고르기`, [el('p', { className:'warn', textContent:`«${titleOf(w)}»의 ${name} 하나를 고른 책으로 옮겨요. 내용과 공개 여부는 그대로예요.` }), field('옮길 책', pick.input, '읽은 책에 있는 제목을 골라 주세요'), pick.dl], async () => {
+  showForm(`${MOVE_OBJ[group]} 옮길 책 고르기`, [el('p', { className:'warn', textContent:`«${titleOf(w)}»의 ${name} 하나를 고른 책으로 옮겨요. 내용과 공개 여부는 그대로예요.` }), field('옮길 책', pick.input, '읽은 책에 있는 제목을 골라 주세요'), pick.dl], async () => {
     const hit = pick.pick();
     if (!hit) throw fail('아래 목록에서 책을 눌러 주세요');
     const dest = D.works.get(hit.id);
@@ -2828,7 +2828,7 @@ function openMoveForm(w, group, find) {
       [src, to].forEach((x) => { if (x.recs.length) x.unread = x.recs.every((r) => r.st === 'unread'); }); // 남은 기록으로 읽는 중인지 다시 정한다(delRec과 같은 기준)
     }
     const empty = emptyWork(src);
-    if (!await ask(`이 ${name}을 «${titleOf(dest)}»(으)로 옮길까요?${empty ? ` «${titleOf(cur)}»에는 남는 글이 없어서 책장에서 빠져요.` : ''}`, '옮기기', false)) return 'stay';
+    if (!await ask(`이 ${MOVE_OBJ[group]} «${titleOf(dest)}»(으)로 옮길까요?${empty ? ` «${titleOf(cur)}»에는 남는 글이 없어서 책장에서 빠져요.` : ''}`, '옮기기', false)) return 'stay';
     if (empty) src.del = true;
     const a = storedWork(src), b = storedWork(to);
     await write('works', { [cur.id]:a, [dest.id]:b }, 'update');
