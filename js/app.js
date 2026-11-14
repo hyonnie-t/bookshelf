@@ -800,27 +800,16 @@ function coverImage(w) {
   return el('div', { className:'cover-wrap' }, box, credit);
 }
 
-// 책등 고르기(주인): 지금 책등 상태와 «다른 판으로»(예스24 주소 붙여넣기)·«색 책등으로/실물 책등으로». 방문자에게는 «공개 반영» 뒤에 바뀐다
-function spineBox(w) {
-  const real = realOf(w), auto = D.y24[w.id];
-  const state = w.y24 === 0 ? '색 책등으로 꽂아 둠' : real ? (real.own ? '직접 고른 예스24 판' : '예스24 책등') : LOCAL ? '색 책등 · «다른 판으로»에서 예스24 책등을 골라요' : '예스24에서 못 찾아 색 책등';
-  const kids = [el('span', { className:'only-tag', textContent:'책등' }), el('small', { textContent:state })];
-  if (real) { const a = el('a', { href:`https://www.yes24.com/Product/Goods/${real.no}`, target:'_blank', rel:'noopener', textContent:'예스24에서 보기' }); kids.push(a); }
-  const other = el('button', { className:'copy', type:'button', textContent:'다른 판으로' });
-  other.onclick = () => openY24Form(w);
-  kids.push(other);
-  if (!LOCAL && (w.y24 === 0 || Array.isArray(w.y24))) { // 범용판은 «찾은 판»(y24.json)이 없어 되돌리기 대신 «다른 판으로»·«색 책등으로»만
-    const back = el('button', { className:'copy', type:'button', textContent:auto ? '찾은 판으로 되돌리기' : '자동으로 되돌리기' });
-    back.onclick = () => setY24(w, 1, '책등을 처음 찾은 판으로 되돌렸어요');
-    kids.push(back);
-  }
-  if (w.y24 !== 0 && real) {
-    const off = el('button', { className:'copy', type:'button', textContent:'색 책등으로' });
-    off.onclick = () => setY24(w, 0, '이 책은 색 책등으로 꽂을게요');
-    kids.push(off);
-  }
-  return el('div', { className:'spine-pick' }, kids);
+// 책등 상태 한 줄(주인). 2026-11-14 책 창 왼쪽의 책등 단추 줄(옛 spineBox)을 없애고 «⋯ 더 보기 → 책등 바꾸기» 창(openY24Form) 맨 위로 옮겼다
+// (효니 «책등 UI 버튼도 일일히 페이지마다 보이는 게 맞아?»). 방문자에게는 «공개 반영» 뒤에 바뀐다
+function spineState(w) {
+  const real = realOf(w);
+  const state = w.y24 === 0 ? '색 책등으로 꽂아 둠' : real ? (real.own ? '직접 고른 예스24 판' : '예스24 책등') : LOCAL ? '색 책등 · 아래에서 예스24 책등을 골라요' : '예스24에서 못 찾아 색 책등';
+  const kids = [el('span', { className:'only-tag', textContent:'지금' }), el('small', { textContent:state })];
+  if (real) kids.push(el('a', { href:`https://www.yes24.com/Product/Goods/${real.no}`, target:'_blank', rel:'noopener', textContent:'예스24에서 보기' }));
+  return el('p', { className:'only-state spine-state' }, kids);
 }
+const canPickSpine = (w) => !!(w.id && (w.k || 'book') === 'book' && w.known);
 async function setY24(w, v, msg, raise) {
   try { await saveWork({ ...w, y24:v }, msg); } catch (e) { console.error(e); if (raise) throw e; toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); return; }
   if ($('sheet').open) reshow();
@@ -829,8 +818,12 @@ async function setY24(w, v, msg, raise) {
 function openY24Form(w) {
   const p = y24Picker(w);
   p.findCands(); // 창을 열면 바로 후보를 찾는다
-  showForm('다른 판의 책등', [el('small', { textContent:'예스24에서 찾은 판이에요. 책등 사진을 누르면 골라져요.' }), p.cands, field('또는 예스24 상품 주소', p.inp, '예스24에서 맞는 판을 열고 주소를 붙여 넣어요'), p.search, p.msg, p.prev], async () => {
-    if (!p.got()) throw fail('책등 사진이 있는 상품 주소를 넣어 주세요');
+  const real = realOf(w), auto = D.y24[w.id];
+  // 창 아래 줄: «색 책등으로»·«되돌리기». 보이는 조건은 옛 spineBox와 같다(범용판은 «찾은 판»(y24.json)이 없어 되돌리기가 없다)
+  const back = !LOCAL && (w.y24 === 0 || Array.isArray(w.y24)) ? formBtn(auto ? '찾은 판으로 되돌리기' : '자동으로 되돌리기', async () => { $('form').close(); await setY24(w, 1, '책등을 처음 찾은 판으로 되돌렸어요'); }) : null;
+  const off = w.y24 !== 0 && real ? formBtn('색 책등으로', async () => { $('form').close(); await setY24(w, 0, '이 책은 색 책등으로 꽂을게요'); }) : null;
+  showForm('책등 바꾸기', [spineState(w), el('small', { textContent:'예스24에서 찾은 판이에요. 책등 사진을 누르면 골라져요.' }), p.cands, field('또는 예스24 상품 주소', p.inp, '예스24에서 맞는 판을 열고 주소를 붙여 넣어요'), p.search, p.msg, p.prev, formTools(off, back)].filter(Boolean), async () => {
+    if (!p.got()) throw fail('책등 사진을 고르거나, 책등 사진이 있는 상품 주소를 넣어 주세요');
     await setY24(w, p.got(), LOCAL ? '책등을 바꿨어요' : '책등을 바꿨어요. 방문자 화면은 공개 반영 뒤에 바뀌어요', true);
   }, '이 책등으로');
 }
@@ -843,7 +836,7 @@ function measureSpine(no) {
     img.src = Y24_IMG(no);
   });
 }
-// 주소 칸 하나: 붙여 넣으면 책등 사진을 받아 보여 주고, 책등이 맞으면 got()이 [번호, 비율]을 준다(«다른 판으로»와 관리의 «책등 다시 찾기»가 같이 씀)
+// 주소 칸 하나: 붙여 넣으면 책등 사진을 받아 보여 주고, 책등이 맞으면 got()이 [번호, 비율]을 준다(«책등 바꾸기»와 관리의 «책등 다시 찾기»가 같이 씀)
 function y24Picker(w, onGot) {
   const inp = el('input', { type:'text', inputMode:'url', placeholder:'https://www.yes24.com/Product/Goods/…', autocomplete:'off' });
   const prev = el('div', { className:'y24-prev' });
@@ -973,7 +966,6 @@ function renderTome(w, item, from) {
   if (S.owner) {
     lib = libBox(item, w);
     if (lib.box) left.push(lib.box);
-    if (w.id && (w.k || 'book') === 'book' && w.known) left.push(spineBox(w));
     if (!LOCAL && w.id && isOnlyMe(w)) left.push(el('p', { className:'only-state' }, el('span', { className:'only-tag', textContent:'이 책 전체 나만 보기' }), el('small', { textContent:onlyMeText(w) })));
     if (!rv.length && !w.recs.length && !w.notes.length && !w.marks.length) {
       const kids = [el('p', { className:'warn', textContent:w.id ? '아직 남긴 글이 없어요.' : '아직 읽은 기록이 없어요.' })];
@@ -1017,9 +1009,11 @@ function renderTome(w, item, from) {
     editBook.onclick = () => openBookForm(w);
     const merge = el('button', { className:'copy', type:'button', textContent:'같은 책과 합치기' });
     merge.onclick = () => openMergePick(w);
+    let spineBtn = null; // 책등 바꾸기(2026-11-14, 책 창 왼쪽에 늘 보이던 책등 줄을 메뉴로)
+    if (canPickSpine(w)) { spineBtn = el('button', { className:'copy', type:'button', textContent:'책등 바꾸기' }); spineBtn.onclick = () => openY24Form(w); }
     let addMark = null;
     if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
-    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, w.pub ? share : null, ...lib.tools])));
+    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, spineBtn, w.pub ? share : null, ...lib.tools])));
   } else if (S.owner && lib.tools.length) left.push(el('div', { className:'actions sub' }, lib.tools)); // 서재에만 있는 책: 서재 단추는 그대로
   else if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
