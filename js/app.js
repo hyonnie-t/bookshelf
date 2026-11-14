@@ -787,8 +787,8 @@ function coverImage(w) {
   box.style.backgroundColor = c ? c[0] : themeVar(w.th[0]); // 그림이 오기 전에는 책등 색 판
   box.setAttribute('aria-hidden', 'true'); // 제목·저자가 바로 아래 글자로 있다
   const gone = () => { box.remove(); credit.remove(); };
-  // 예스24는 표지가 없어도 «이미지 준비중» 그림을 준다(세로로 긴 책 모양이 아님). 가로가 세로보다 넓거나 너무 작으면 뺀다
-  img.onload = () => { if (img.naturalWidth > img.naturalHeight || img.naturalHeight < 100) gone(); else box.classList.remove('wait'); };
+  // 예스24는 표지가 없어도 «이미지 준비중» 그림을 준다: L은 정확히 280×400(2026-11-14 검토자 재현, 책장 561권 표지 중에는 없음). 그 크기이거나 가로가 더 넓거나 너무 작으면 뺀다
+  img.onload = () => { const W = img.naturalWidth, H = img.naturalHeight; if ((W === 280 && H === 400 && /yes24\.com/.test(img.src)) || W > H || H < 100) gone(); else box.classList.remove('wait'); };
   img.onerror = gone;
   findCover(w).then((url) => {
     if (!url) { gone(); return; }
@@ -880,7 +880,7 @@ function y24Picker(w, onGot) {
     cands.replaceChildren(...shown.map((b) => {
       const img = el('img', { alt:'', decoding:'async' }); // 사진 없는 판을 바로 빼야 해서 미루지 않고 받는다(L 한 장 약 3KB)
       img.referrerPolicy = 'no-referrer';
-      const btn = el('button', { type:'button', title:b.title, ariaLabel:`${b.title}, ${b.publisher} ${b.year}` }, img, el('span', { textContent:[b.publisher, b.year].filter(Boolean).join(' ') }));
+      const btn = el('button', { type:'button', title:b.title, ariaLabel:`${b.title}, ${b.publisher} ${b.year}` }, img, el('span', { textContent:[(b.title.match(/\(([^)]*)\)\s*$/) || [])[1], b.publisher, b.year].filter(Boolean).join(' ') })); // 판 이름(«큰글자도서» 등)이 있으면 앞에
       img.onload = () => { if (notSpine(img)) { btn.remove(); none(); } };
       img.onerror = () => { btn.remove(); none(); };
       img.src = Y24_IMG(b.y24);
