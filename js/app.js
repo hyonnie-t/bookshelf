@@ -4,7 +4,7 @@ import * as local from './local.js';
 import { hasText, suggest, wordStats } from './guess.js';
 import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
-import { pickTheme, authorTheme } from './kdc.js';
+import { pickTheme, authorTheme, firstAuthorOf } from './kdc.js';
 import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, canMarkReading, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
@@ -735,7 +735,7 @@ function guessBox(w) {
         const pick = el('button', { type:'button' }, el('strong', { textContent:c.t }), el('span', { textContent:[c.a, c.p, c.y].filter(Boolean).join(' · ') }), el('span', { className:'why', textContent:c.why }));
         pick.onclick = async () => {
           out.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-          try { const next = { ...w, t:c.t, a:c.a || w.a || '', p:c.p || w.p || '', known:true }; delete next.guess; await saveWork(next, `«${c.t}»로 채웠어요`); reshow(); }
+          try { const next = { ...w, t:c.t, a:c.a || w.a || '', p:c.p || w.p || '', known:true }; delete next.guess; if (!(next.th || []).length) { const got = await autoTheme({ a:next.a }, w.id); if (got) next.th = [got.th]; } await saveWork(next, `«${c.t}»로 채웠어요`); reshow(); }
           catch (e) { console.error(e); out.querySelectorAll('button').forEach((b) => { b.disabled = false; }); toast('채우지 못했어요'); }
         };
         return el('li', {}, pick);
@@ -1210,7 +1210,7 @@ const bookRows = (books) => books.map((w) => { const r = doneRecs(w).filter((x) 
 const meanOf = (rows) => (rows.length ? rows.reduce((a, x) => a + x.r, 0) / rows.length : 0);
 const pct = (n, total) => (total ? Math.round(n / total * 100) : 0);
 const ratingWord = (r) => (r === 0 ? '최하' : `${r}점`);
-const firstAuthor = (w) => (w.a || '').split(/[\/,]/)[0].trim().replace(/\s+(외(\s*\d+\s*(명|인)?)?|지음|지은이|저자|저|글\s*[·,]?\s*그림|글그림|글|그림|옮김|엮음|편저|편)$/, '').trim();
+const firstAuthor = (w) => firstAuthorOf(w.a); // 첫 저자 판정은 js/kdc.js 하나(2026-11-14 연결 점검: 앱·kdc·서재 세 곳이 달랐다)
 const signed = (n) => (Math.abs(n) < .05 ? '0.0' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}`);
 const DRILL_PAGE = 20;
 
@@ -1781,7 +1781,7 @@ const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
 const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !isReading(w); };
 const libThemes = (it) => (it.th.length ? it.th : (libWork(it) || {}).th || []);
 // 첫 저자만: «저자, 역자 옮김», «A / B», «홍길동(지은이)», «첫 사람 외» 꼴에서 이름만 남긴다
-const libAuthor = (it) => (it.a || (libWork(it) || {}).a || '').replace(/[(\[][^)\]]*[)\]]/g, '').split(/[\/,]/)[0].trim().replace(/\s+(외(\s*\d+\s*명)?|지음|옮김|엮음|저|역|글|그림)$/, '').trim();
+const libAuthor = (it) => firstAuthorOf(it.a || (libWork(it) || {}).a || '');
 const isLate = (l) => !!l.due && !l.back && l.due < today();
 const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
 function libMatches(it) {
@@ -2037,7 +2037,13 @@ function openLibForm(it, { work } = {}) {
     t.value = hit.t; a.value = hit.a || ''; p.value = hit.p || '';
     th.querySelectorAll('input').forEach((c) => { c.checked = hit.th.includes(c.value); });
   });
-  const kids = [bookLookup((b) => { t.value = b.t; a.value = b.a || a.value; p.value = b.p || p.value; }), field('제목', t, '읽은 책에 있으면 목록에서 골라 주세요. 서평과 이어져요'), pickr.dl, field('저자', a), field('출판사', p)];
+  let libPick = 0;
+  const kids = [bookLookup(async (b) => {
+    t.value = b.t; a.value = b.a || a.value; p.value = b.p || p.value;
+    if (th.values().length) return; // 주제가 비어 있을 때만(«책 고치기»의 autoTheme과 같은 규칙, 2026-11-14 연결 점검)
+    const mine = ++libPick, got = await autoTheme(b, '');
+    if (mine === libPick && got && !th.values().length) { th.set([got.th]); th.flash(got.th); }
+  }), field('제목', t, '읽은 책에 있으면 목록에서 골라 주세요. 서평과 이어져요'), pickr.dl, field('저자', a), field('출판사', p)];
   let st, who, d, due;
   if (isNew) {
     st = el('select', {}, el('option', { value:'own', textContent:'내 책' }), el('option', { value:'in', textContent:'빌려 온 책' }));
@@ -2049,12 +2055,16 @@ function openLibForm(it, { work } = {}) {
     kids.push(field('구분', st), loanBox, whereField, whereList());
   } else if (it.st === 'own') kids.push(field('어느 칸에 꽂을까요', where), whereList());
   kids.push(field('주제', th, '책등 색이 이 주제로 정해져요'));
+  // 이어진 읽은 책(2026-11-14 연결 점검): 전에는 연결을 풀 단추가 없고, 제목 오타만 고쳐도 연결이 지워졌다
+  const linkedW = it && it.w ? D.works.get(movedTo(it.w)) : null;
+  const unlink = linkedW ? el('input', { type:'checkbox' }) : null;
+  if (linkedW) kids.push(el('div', { className:'only-box' }, el('small', { textContent:`이어진 읽은 책: «${titleOf(linkedW)}»${linkedW.a ? ` (${linkedW.a})` : ''}. 다른 책과 이으려면 제목 칸에서 읽은 책을 골라 주세요.` }), el('label', { className:'check' }, unlink, ' 연결 풀기')));
   const save = async () => {
     const hit = pickr.pick();
     const title = hit ? hit.t : t.value.trim();
     if (!title) throw fail('제목을 적어 주세요');
     if (isNew && D.lib.some((x) => isActive(x) && norm(x.t) === norm(title))) throw fail('이미 내 서재에 있는 책이에요');
-    const link = hit ? hit.id : it && it.t === title ? it.w || '' : work && work.t === title ? work.id : '';
+    const link = hit ? hit.id : unlink && unlink.checked ? '' : it ? it.w || '' : work && work.t === title ? work.id : '';
     if (isNew && !newId) newId = await newLibId(); // 저장을 다시 눌러도 같은 칸에 쓰여 책이 겹치지 않는다
     const base = isNew ? { id:newId, st:st.value, added:today(), loans:[] } : { ...it };
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), w:link, th:th.values() });
@@ -2098,7 +2108,9 @@ function openManyForm() {
   const box = el('ul', { className:'many-list', hidden:true });
   // 같은 저자 책: 읽은 책 + 읽은 책과 안 이어진 서재 책
   const shelf = () => [...themeShelf(''), ...D.lib.filter((b) => isActive(b) && !b.w && (b.th || []).length).map((b) => ({ id:b.id, a:b.a, th:b.th }))];
-  const works = () => new Map(list().filter((w) => w.t && w.k === 'book').map((w) => [norm(w.t), w]));
+  // 이어질 읽은 책(2026-11-14 연결 점검): 전에는 제목만 보고 같은 제목이 둘이면 마지막 책에 이었다. 이제 첫 저자가 다르면 잇지 않고, 둘 이상이면 못 정해 잇지 않는다
+  const sameFirst = (x, y) => { const p = squeeze(firstAuthorOf(x)), q = squeeze(firstAuthorOf(y)); return !p || !q || p === q || p.includes(q) || q.includes(p); };
+  const readMatch = (title, author) => { const c = list().filter((w) => w.t && w.k === 'book' && norm(w.t) === norm(title) && sameFirst(author, w.a)); return c.length === 1 ? c[0] : null; };
   const lookup = bookLookup((b) => {
     found.set(norm(b.t), b);
     const lines = manyLines(x.value), line = b.a ? `${b.t} / ${b.a}` : b.t;
@@ -2124,13 +2136,13 @@ function openManyForm() {
   const noteText = (pk) => pk.busy ? '주제 찾는 중이에요' : !pk.auto ? (pk.th ? '직접 고른 주제' : '주제 없이 꽂아요') : pk.th ? `골라 둔 주제 · ${pk.why} 기준` : '주제는 못 골랐어요. 골라 주세요';
   let timer = 0;
   function draw() {
-    const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t))), hits = works(), seen = new Set(), rows = [];
+    const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t))), seen = new Set(), rows = [];
     for (const line of manyLines(x.value)) {
       const { title, author } = manySplit(line), k = norm(title);
       if (!title || seen.has(k)) continue;
       seen.add(k);
       if (have.has(k)) { rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title })), el('small', { className:'auto-note', textContent:'이미 서재에 있어 빼요' }))); continue; }
-      const hit = hits.get(k);
+      const hit = readMatch(title, author);
       if (!picks.has(k) && hit && hit.th.length) picks.set(k, { th:hit.th[0], why:'읽은 책의 주제', auto:true, keep:hit.th });
       const old = picks.get(k);
       if (!old || (old.auto && !old.keep && old.sig !== pickSig(k, author))) choose(k, author);
@@ -2141,7 +2153,7 @@ function openManyForm() {
       sel.onchange = () => { const next = { th:sel.value, why:'', auto:false }; picks.set(k, next); note.textContent = noteText(next); };
       if (pk.just) { sel.classList.add('just'); pk.just = false; }
       shown.set(k, { sel, note });
-      rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title }), author ? el('span', { textContent:author }) : null), sel, note));
+      rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title }), author ? el('span', { textContent:author }) : null, hit ? el('small', { className:'auto-note', textContent:`읽은 책 «${hit.t}»${hit.a ? `(${firstAuthorOf(hit.a)})` : ''}에 이어져요` }) : null), sel, note));
     }
     [...picks.keys()].forEach((k) => { if (!seen.has(k)) picks.delete(k); }); // 지운 줄은 잊는다(다시 적으면 다시 고른다)
     [...shown.keys()].forEach((k) => { if (!seen.has(k) || !picks.has(k)) shown.delete(k); });
@@ -2156,14 +2168,13 @@ function openManyForm() {
     if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
     if ([...picks.values()].some((p) => p.busy)) throw fail('주제를 찾는 중이에요. 잠깐 뒤에 다시 눌러 주세요');
     const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t)));
-    const hits = works();
     const add = {};
     let linked = 0, skipped = 0, n = 0;
     for (const line of lines) {
       const { title, author } = manySplit(line);
       if (!title || have.has(norm(title))) { skipped++; continue; }
       have.add(norm(title));
-      const hit = hits.get(norm(title)), f = found.get(norm(title)), pk = picks.get(norm(title));
+      const hit = readMatch(title, author), f = found.get(norm(title)), pk = picks.get(norm(title));
       if (hit) linked++;
       if (!ids.has(norm(title))) ids.set(norm(title), await newLibId(ids.size));
       n++;
@@ -2218,7 +2229,8 @@ const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (
 const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
-  const { hay, nameHay, pub, qs, ms, ...rest } = w; // qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다
+  const { hay, nameHay, pub, qs, ms, md, id, ...rest } = w; // qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다. md(달 묶음)·id는 rebuild가 늘 다시 만든다(2026-11-14)
+  if (rest.st === 'reading') delete rest.st; // 공개본의 «읽는 중» 표시(tools/publish.js가 만듦). 비공개 칸에 굳히지 않는다. 다 읽음 표시 st:'done'은 그대로
   return JSON.parse(JSON.stringify(rest));
 }
 async function saveWork(w, msg) {
@@ -2436,7 +2448,7 @@ function openMemoBin(onlyId) {
   });
   showForm(onlyId ? '이 책의 보관한 메모' : '보관한 메모', rows.length ? rows : [el('p', { className:'warn', textContent:'보관한 메모가 없어요.' })]);
 }
-/* ---------- 인스타와 겹치는 메모 ---------- */
+/* ---------- 인스타 글과 겹치는 메모 ---------- */
 // 메모와 인스타 글이 다섯 글자 묶음을 얼마나 함께 갖는지 짧은 쪽 기준으로 잰다. 실제 메모 389개에서 비율 0.3~0.8 사이 건수가 거의 안 변했다(2026-11-05)
 // 짧은 인용 메모는 긴 서평에 다 들어 있어도 같은 글이 아니므로, 미리 고르는 «거의 같음»은 긴 쪽 기준으로도 절반 넘게 겹칠 때만 준다
 const OVERLAP_MIN = .5, OVERLAP_SURE = .8, OVERLAP_SURE_LONG = .5, GRAMS_MIN = 20;
@@ -2564,9 +2576,10 @@ async function relayBooks(q, src) {
 }
 async function fromRelay(q) {
   let books;
-  try { books = await relayBooks(q, RELAY_SRC); } catch (e) { console.warn(`예스24 실패, ${BACKUP_NAME}으로`, e.message); books = await relayBooks(q, RELAY_BACKUP); }
-  // isbn·kdc는 주제 저절로 고르기에만 쓰고 저장하지 않는다. y24(상품 번호)는 책등 다시 찾기 후보에만 쓴다
-  return uniqueBooks(books.map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '', isbn:isbnOf(b.isbn), kdc:b.kdc || '', kid:!!b.kid, y24:b.y24 || '' })));
+  let from = RELAY_NAME;
+  try { books = await relayBooks(q, RELAY_SRC); } catch (e) { console.warn(`예스24 실패, ${BACKUP_NAME}으로`, e.message); books = await relayBooks(q, RELAY_BACKUP); from = BACKUP_NAME; }
+  // isbn·kdc는 주제 저절로 고르기에만 쓰고 저장하지 않는다. y24(상품 번호)는 책등 다시 찾기 후보에만 쓴다. from은 실제로 찾은 곳(빈 칸 채우기 표시용, 저장 안 함)
+  return uniqueBooks(books.map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '', isbn:isbnOf(b.isbn), kdc:b.kdc || '', kid:!!b.kid, y24:b.y24 || '', from })));
 }
 async function searchBooks(q) {
   const enc = encodeURIComponent(q);
@@ -2685,6 +2698,21 @@ function openDupTool() {
     const moved = c ? [c.recs && `기록 ${c.recs}`, c.notes && `메모 ${c.notes}`, c.marks && `밑줄 ${c.marks}`].filter(Boolean).join(' · ') : '';
     return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:w.t || '제목 없음' }), el('span', { textContent:keep ? [`«${keep.t || '제목 없음'}»에 합침`, w.at ? new Date(w.at + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') : '', moved ? `옮긴 글: ${moved}` : '옮긴 글 없음'].filter(Boolean).join(' · ') : '합친 책을 찾지 못함' })), el('div', { className:'dup-tools' }, back));
   })));
+  // 되돌릴 길(2026-11-14 연결 점검): «다른 책이에요»로 숨긴 짝과 «책장에서 빼기»로 뺀 책은 전에는 다시 볼 화면이 없었다. 접어 둔다
+  const notDup = Object.keys((D.priv.meta || {}).notDup || {});
+  const nameOf = (id) => { const w = D.works.get(movedTo(id)) || D.priv.works[id]; return w ? w.t || '제목 없음' : '지운 칸'; };
+  if (notDup.length) kids.push(el('details', { className:'spine-fold' }, el('summary', { textContent:`다른 책으로 표시한 짝 ${notDup.length}` }), el('small', { textContent:'잘못 눌렀으면 «다시 보기»를 눌러요. 그 짝이 위 목록에 다시 나와요.' }), notDup.map((key) => {
+    const again = el('button', { className:'copy', type:'button', textContent:'다시 보기' });
+    again.onclick = async () => { try { await write(`meta/notDup/${key}`, null); const m = D.priv.meta || {}; if (m.notDup) delete m.notDup[key]; refreshAll(); openDupTool(); } catch (e) { saveFailed(e); } };
+    const [x, y] = key.split('~');
+    return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:`${nameOf(x)} / ${nameOf(y)}` })), el('div', { className:'dup-tools' }, again));
+  })));
+  const out = Object.entries(D.priv.works || {}).filter(([, w]) => w.del && !w.into && (w.t || (w.recs || []).length || (w.notes || []).length || (w.marks || []).length || (w.archived || []).length));
+  if (out.length) kids.push(el('details', { className:'spine-fold' }, el('summary', { textContent:`책장에서 뺀 책 ${out.length}` }), el('small', { textContent:'«책 고치기 → 책장에서 빼기»로 뺐거나 마지막 글을 지운 칸이에요. «되살리기»를 누르면 책장에 다시 꽂혀요.' }), out.map(([id, w]) => {
+    const back = el('button', { className:'copy', type:'button', textContent:'되살리기' });
+    back.onclick = async () => { try { const { del, ...rest } = D.priv.works[id]; await write(`works/${id}`, rest); setPriv('works', id, rest); refreshAll(); openDupTool(); toast(`«${w.t || '제목 없음'}»을 다시 꽂았어요`); } catch (e) { saveFailed(e); } };
+    return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:w.t || '제목 없음' }), el('span', { textContent:[w.a, `기록 ${(w.recs || []).length} · 메모 ${(w.notes || []).length + (w.archived || []).length} · 밑줄 ${(w.marks || []).length}`].filter(Boolean).join(' · ') })), el('div', { className:'dup-tools' }, back));
+  })));
   showForm('겹치는 책 고치기', kids);
 }
 function openMergePick(w) {
@@ -2723,12 +2751,20 @@ function openMergeForm(a, b, backToList) {
   const opt = () => ({ t:tBox ? tBox.value() : 'keep', a:aBox ? aBox.value() : 'keep', p:pBox ? pBox.value() : 'keep', dedupe:!!nDup && dedupe.checked, lock, spine:mergeSpine(keep, drop) });
   const draw = () => {
     const { next, dups } = mergePlan(keep, drop, opt());
+    const wasPub = !LOCAL && !!(keep.pub || drop.pub), dark = !LOCAL && isOnlyMe(next);
+    const pubMoving = wasPub && !dark ? [...drop.recs, ...drop.notes].filter((x) => x.pub === true).length : 0;
+    const goesDark = wasPub && dark;
+    const libs = D.lib.filter((x) => x.w && [keep.id, drop.id].includes(movedTo(x.w))).length;
     const rv = new Set([...reviewsOf(keep), ...reviewsOf(drop)]).size;
     preview.replaceChildren(...[el('h3', { className:'sec', textContent:'합치면 이렇게 돼요' }),
       el('p', { className:'dup-book' }, el('strong', { textContent:next.t || '제목 없음' }), el('span', { textContent:[next.a || '저자 없음', next.p, `기록 ${next.recs.length} · 메모 ${next.notes.length} · 밑줄 ${next.marks.length} · 서평 ${rv}`].filter(Boolean).join(' · ') })),
       next.recs.length ? el('ul', { className:'merge-recs' }, next.recs.map((r) => el('li', { textContent:[r.d || '날짜 없음', r.r == null ? '' : starText(r.r), r.st === 'unread' ? '읽는 중·미완독' : '', (r.mix || []).length ? '하나로 합침' : ''].filter(Boolean).join(' · ') }))) : null,
       dups ? el('small', { textContent:`같은 기록 ${dups}개를 하나로 합쳤어요. 되돌리면 두 기록으로 돌아가요.` }) : null,
-      opt().spine ? el('small', { textContent:'남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null].filter(Boolean));
+      opt().spine ? el('small', { textContent:'남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null,
+      // 공개에 걸리는 것(2026-11-14 연결 점검): 공개로 해 둔 글이 공개 책으로 오는지, 합친 책이 나만 보기로 잠겨 공개본에서 내려가는지, 서재 책 두 권이 이어지는지
+      pubMoving ? el('small', { className:'warn-line', textContent:`공개로 해 둔 글 ${pubMoving}개가 이 책 공개 화면에 올라가요(다음 공개 반영 때).` }) : null,
+      goesDark ? el('small', { className:'warn-line', textContent:'합친 책은 «나만 보기»라 지금 공개된 책이 다음 공개 반영 때 공개 페이지에서 내려가요.' }) : null,
+      libs > 1 ? el('small', { className:'warn-line', textContent:`내 서재 책 ${libs}권이 이 책 하나에 이어져요. 책 창에는 첫 서재 책만 보여요.` }) : null].filter(Boolean));
   };
   [tBox, aBox, pBox].forEach((x) => x && x.addEventListener('change', draw));
   dedupe.addEventListener('change', draw);
@@ -2825,8 +2861,8 @@ async function fillRow(w) {
   if (c && !fa && new Set(fits.map((b) => squeeze(b.a.split(',')[0]))).size > 1) status = 'check';
   if (status === 'sure' && new Set(fits.map((b) => squeeze(b.p))).size > 1) status = 'check'; // 판이 여러 출판사에서 나온 책(고전·번역서)은 효니 판인지 모른다
   const fill = {}, why = {};
-  if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = RELAY_NAME; }
-  if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = RELAY_NAME; }
+  if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = c.from || RELAY_NAME; }
+  if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = c.from || RELAY_NAME; }
   if (!w.th.length) { const t = await autoTheme({ a:w.a || fill.a || '', isbn:c ? c.isbn : '', kdc:c ? c.kdc : '', kid:c ? c.kid : false }, w.id); if (t) { fill.th = [t.th]; why.th = t.why; } }
   if (status === 'sure' && !Object.keys(fill).length) status = 'none';
   return { w, c, status, fill, why };
@@ -2970,7 +3006,9 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), k:k.value, th:th.values(), known:true });
     delete base.guess;
     // 찾은 판의 책등: 제목을 찾은 그대로 두었고, 아직 고른 판이 없고(효니 책장은 y24.json에도 없는 책만) 책일 때만
-    if (spinePick && spinePick.t === title && k.value === 'book' && !Array.isArray(base.y24) && base.y24 !== 0 && !(D.y24[base.id])) base.y24 = spinePick.got;
+    // 제목을 다른 책으로 바꿨으면(연결 점검 2026-11-14) y24.json의 옛 자동 책등이 있어도 고른 판으로
+    const retitled = !isNew && title !== (w.t || '');
+    if (spinePick && spinePick.t === title && k.value === 'book' && !Array.isArray(base.y24) && base.y24 !== 0 && (retitled || !D.y24[base.id])) base.y24 = spinePick.got;
     if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
     if (only && only.checked !== isOnlyMe(w)) { // 예전 책 창 칸과 같은 규칙: 책·영화는 풀면 only를 지워 원래 기준으로
       base.only = only.checked;
