@@ -761,7 +761,7 @@ function findCover(w) {
     const title = String(w.t || '').split(/\s+[-:]\s+|\s*:\s*/)[0].trim();
     const author = String(w.a || '').split('/')[0].split(/[,·]/)[0].replace(/\s+외$/, '').trim();
     const t = coverNorm(title), a = coverNorm(author);
-    const ask = (q) => relayBooks(q, 'y24').catch(() => relayBooks(q, '')).catch(() => []); // 예스24가 안 되면 카카오
+    const ask = (q) => relayBooks(q, 'y24').catch(() => (LOCAL ? [] : relayBooks(q, ''))).catch(() => []); // 예스24가 안 되면 효니 책장만 카카오(범용판은 국립중앙도서관 표지가 거의 없어 비움)
 
     const pick = (list) => { const ok = list.filter((x) => /^https:\/\//.test(x.cover || '')); const au = (x) => !a || coverNorm((x.authors || []).join()).includes(a);
       return ok.find((x) => coverNorm(x.title) === t && au(x)) || ok.find((x) => coverNorm(x.title).startsWith(t) && au(x)) || ok.find((x) => coverNorm(x.title) === t) || null; };
@@ -778,7 +778,8 @@ function findCover(w) {
 }
 function coverImage(w) {
   // 방문자에게도 보여 준다(효니 2026-11-14 «방문자가 많을 거 같진 않은데»). 방문자도 중계 하루 상한 3,000건을 같이 쓴다
-  if (!(coverColors(w) || y24No(w)) || !relayOn() || !w.known) return null;
+  // 범용판(2026-11-14): 책등 색 자료가 없어 책마다 열 때 예스24에서 표지를 찾는다(제목이 있는 책, 저장하지 않음)
+  if (!(coverColors(w) || y24No(w) || (LOCAL && w.t)) || !relayOn() || !w.known) return null;
   const c = coverColors(w);
   const img = el('img', { className:'book-cover', alt:'', decoding:'async' });
   img.referrerPolicy = 'no-referrer';
@@ -2426,10 +2427,12 @@ function showForm(title, kids, onSave, saveLabel = '저장') {
 // 교보문고·알라딘은 다른 사이트에서 바로 읽을 수 없어(직접 확인 2026-11-05) 카카오 책 검색을 앱스크립트 중계로 먼저 찾고, 키 없는 공개 목록을 그다음에 쓴다. 안 나오면 서점 검색으로 넘겨 준다
 const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec'; // 앱스크립트 웹 앱 주소(tools/kakao-book-relay.gs). 주소는 공개돼도 되고 키는 스크립트 속성에만 있다
 const relayOn = () => !!BOOK_RELAY;
-// 범용판은 국립중앙도서관 소장자료 검색(효니 결정 2026-11-09). 효니 책장은 예스24 Open API(2026-11-14 효니 «응, 바꿔»)를 먼저 쓰고,
-// 예스24가 실패하면(키 없음·한도·서버 오류) 카카오로 한 번 더 찾는다. 카카오는 1~2주 지켜본 뒤 뺀다(결정-기록 2026-11-14)
-const RELAY_SRC = LOCAL ? 'nl' : 'y24';
-const RELAY_NAME = LOCAL ? '국립중앙도서관 소장자료 검색' : '예스24 책 검색';
+// 예스24 Open API를 먼저 쓴다(효니 책장 2026-11-14 «응, 바꿔», 범용판도 같은 날 «응, 바꿔»).
+// 예스24가 실패하면(키 없음·한도·서버 오류) 효니 책장은 카카오, 범용판은 국립중앙도서관으로 한 번 더 찾는다(범용판은 카카오 약관 «타인에게 제공» 해석 여지로 카카오를 쓰지 않음, 2026-11-05 결정). 카카오는 2026-11-28쯤 뺀다
+const RELAY_SRC = 'y24';
+const RELAY_BACKUP = LOCAL ? 'nl' : '';
+const RELAY_NAME = '예스24 책 검색';
+const BACKUP_NAME = LOCAL ? '국립중앙도서관 소장자료 검색' : '카카오 책 검색';
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 // 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
 const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
@@ -2453,7 +2456,7 @@ async function relayBooks(q, src) {
 }
 async function fromRelay(q) {
   let books;
-  try { books = await relayBooks(q, RELAY_SRC); } catch (e) { if (RELAY_SRC !== 'y24') throw e; console.warn('예스24 실패, 카카오로', e.message); books = await relayBooks(q, ''); }
+  try { books = await relayBooks(q, RELAY_SRC); } catch (e) { console.warn(`예스24 실패, ${BACKUP_NAME}으로`, e.message); books = await relayBooks(q, RELAY_BACKUP); }
   // isbn·kdc는 주제 저절로 고르기에만 쓰고 저장하지 않는다. y24(상품 번호)는 책등 다시 찾기 후보에만 쓴다
   return uniqueBooks(books.map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '', isbn:isbnOf(b.isbn), kdc:b.kdc || '', kid:!!b.kid, y24:b.y24 || '' })));
 }
@@ -2513,7 +2516,7 @@ function bookLookup(apply) {
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small', { textContent:relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요${RELAY_SRC === 'y24' ? '(예스24가 안 되면 카카오 책 검색)' : ''}. 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
+  const note = el('small', { textContent:relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24가 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go), msg, found,
     el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
