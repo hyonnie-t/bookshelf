@@ -112,6 +112,28 @@ const REPO = path.join(__dirname, '..');
     no.forEach(([x, y]) => assert.equal(M.seriesPair(x, y), false, `${x} / ${y}`));
   });
 
+  ok('다 읽음 표시·왓챠 코드(연결 점검)', () => {
+    // 남는 칸은 다 읽음 표시뿐, 빠지는 칸에 미완독 기록 → 읽는 중(앱과 공개 반영이 같은 답)
+    const k1 = book('k', { t:'A', st:'done' }), d1 = book('d', { t:'A', recs:[{ d:'2024-01-01', st:'unread' }] });
+    const m1 = M.mergePlan(k1, d1, {});
+    assert.equal(m1.next.st, undefined); assert.equal(m1.next.unread, true);
+    roundTrip(k1, d1, {});
+    // 빠지는 칸에만 다 읽음 표시(기록 없음) → 합친 뒤 다 읽음
+    const k2 = book('k', { t:'B', unread:true }), d2 = book('d', { t:'B', st:'done' });
+    const m2 = M.mergePlan(k2, d2, {});
+    assert.equal(m2.next.st, 'done'); assert.equal(m2.next.unread, undefined);
+    roundTrip(k2, d2, {});
+    // 공개본의 st:'reading'은 다 읽은 기록이 오면 지운다
+    const k3 = book('k', { t:'C', st:'reading' }), d3 = book('d', { t:'C', recs:[{ d:'2024-02-02', r:4 }] });
+    assert.equal(M.mergePlan(k3, d3, {}).next.st, undefined);
+    roundTrip(k3, d3, {});
+    // 왓챠 코드
+    const k4 = book('k', { t:'영화', k:'film' }), d4 = book('d', { t:'영화', k:'film', wc:'abc' });
+    assert.equal(M.mergePlan(k4, d4, {}).next.wc, 'abc');
+    roundTrip(k4, d4, {});
+    assert.equal(M.mergePlan(k4, d4, { lock:true }).next.wc, undefined); // 잠긴 칸 정보는 안 옮김
+  });
+
   ok('앱 연결', () => {
     const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8');
     assert.ok(app.includes("from './merge.js'"));

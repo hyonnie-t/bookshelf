@@ -10,7 +10,9 @@ const firstAuthor = (a) => String(a || '').split(/[,·/]/)[0].replace(/\s+외$/,
 export function spineFit(w, b) {
   const t = coverNorm(mainTitle(w.t)), a = coverNorm(firstAuthor(w.a)), x = coverNorm(b.title);
   if (!t || !x) return false;
-  return (x === t || x.startsWith(t) || t.startsWith(x)) && (!a || coverNorm((b.authors || []).join()).includes(a));
+  // 한 글자 제목(«돈»·«섬»)은 앞부분만 맞아도 다른 책(«돈의 속성»)이 걸리므로 같을 때만(2026-11-14 제미나이 의견. 두 글자 «토지»→«토지 1»은 그대로)
+  const head = Math.min(t.length, x.length) > 1 && (x.startsWith(t) || t.startsWith(x));
+  return (x === t || head) && (!a || coverNorm((b.authors || []).join()).includes(a));
 }
 
 // 창을 열 때 네트워크 없이 대상을 둘로 나눈다.

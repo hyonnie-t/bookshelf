@@ -47,7 +47,7 @@ export const dupCount = (keepRecs, dropRecs) => mergeRecs(keepRecs, dropRecs, '_
 // 합치기 계획. opt: { t, a, p: 'keep'|'drop'(둘 다 있고 다를 때 고른 쪽), dedupe, lock(빠지는 칸 책 정보를 안 옮김), spine([번호, 비율] 이어 줄 책등), now }
 // 돌려주는 것: next(남는 칸), gone(빠지는 칸), dups(하나로 합친 기록 수)
 export function mergePlan(keep, drop, opt = {}) {
-  const src = opt.lock ? { ...drop, t:'', a:'', p:'', th:[], known:false, guess:false, y:'', fd:'' } : drop;
+  const src = opt.lock ? { ...drop, t:'', a:'', p:'', th:[], known:false, guess:false, y:'', fd:'', wc:'' } : drop;
   const tag = tagFrom(drop.id);
   const { recs, dup } = mergeRecs(keep.recs || [], drop.recs || [], drop.id, !!opt.dedupe);
   const pick = (f) => { const k = keep[f] || '', d = src[f] || ''; return opt[f] === 'drop' && d ? d : (k || d); };
@@ -58,8 +58,17 @@ export function mergePlan(keep, drop, opt = {}) {
   else if (keep.unread || drop.unread) next.unread = true;
   if (keep.guess && src.known && !src.guess) delete next.guess; // 확인된 책과 합쳤으면 더는 추정이 아니다
   if (keep.only || drop.only) next.only = true; // 한쪽이라도 나만 보기로 잠갔으면 합친 뒤에도 잠근다
+  // 다 읽음 표시 st:'done'(2026-11-14 연결 점검): 다 읽은 기록이 없고 미완독 기록이 있으면 읽는 중이 이긴다(앱 isReading과 tools/publish.js가 같은 답을 내게).
+  // 기록이 없으면 한쪽이라도 다 읽음 표시면 다 읽음. 공개본에서 온 st:'reading'은 표시로 치지 않는다
+  if (recs.some((r) => r.st !== 'unread')) { if (keep.st === 'reading') delete next.st; }
+  else if (recs.length) delete next.st;
+  else if (keep.st === 'done' || drop.st === 'done') { next.st = 'done'; delete next.unread; }
+  else if (keep.st === 'reading') delete next.st;
+  if (!next.wc && src.wc) next.wc = src.wc; // 왓챠 작품 코드(영화 공개 판정에 쓰임)
   const was = { a:keep.a || '', p:keep.p || '', th:keep.th || [], known:keep.known, unread:keep.unread, guess:keep.guess, only:keep.only, y:keep.y || '', fd:keep.fd || '' };
   if (next.t !== (keep.t || '')) was.t = keep.t || '';
+  if (next.st !== keep.st) was.st = keep.st === undefined ? 'none' : keep.st; // 'none': 합치기 전에 st 칸이 없었음
+  if (next.wc !== keep.wc) was.wc = keep.wc === undefined ? 'none' : keep.wc;
   if (opt.spine) { next.y24 = opt.spine; was.y24c = true; was.y24 = keep.y24 === undefined ? 'none' : keep.y24; } // 'none': 합치기 전에 y24 칸이 없었음(null은 저장소가 지운다)
   const gone = { ...drop, recs:[], notes:[], archived:[], marks:[], del:true, into:keep.id, at:opt.now || 0, was };
   if (dup.length) gone.dupRecs = dup;
@@ -82,10 +91,12 @@ export function undoPlan(stored, keep, id) {
   const keepRecs = recs.filter((x) => !cameFrom(x, id)).map((x) => { const n = mixOf(x, id); return n >= 0 && dups[n] ? dups[n].k : x; });
   const backRecs = [...recs.filter((x) => cameFrom(x, id)).map(stepBack), ...dups.map((x) => x.d)].sort(byDate);
   const back = clone({ ...rest, recs:backRecs, notes:notes.filter((x) => cameFrom(x, id)).map(stepBack), archived:archived.filter((x) => cameFrom(x, id)).map(stepBack), marks:marks.filter((x) => cameFrom(x, id)).map(stepBack) });
-  const { y24c, y24, ...wasRest } = was || {};
+  const { y24c, y24, st, wc, ...wasRest } = was || {};
   const next = clone({ ...keep, ...wasRest, th:(was && was.th) || [], recs:keepRecs.sort(byDate), notes:notes.filter((x) => !cameFrom(x, id)), archived:archived.filter((x) => !cameFrom(x, id)), marks:marks.filter((x) => !cameFrom(x, id)) });
   ['unread', 'guess', 'known', 'only'].forEach((k) => { if (!was || was[k] === undefined) delete next[k]; }); // 합치기 전에 없던 표시는 지운다
   if (y24c) { if (y24 === 'none') delete next.y24; else next.y24 = y24; }
+  if (st !== undefined) { if (st === 'none') delete next.st; else next.st = st; }
+  if (wc !== undefined) { if (wc === 'none') delete next.wc; else next.wc = wc; }
   return { next, back };
 }
 

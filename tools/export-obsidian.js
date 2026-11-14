@@ -139,7 +139,10 @@ async function main(argv) {
   const posts = new Map((pubAll.posts || []).map((p) => [p.c, { ...p }]));
   Object.values(priv.igAdded || {}).forEach((p) => { if (p && p.c) posts.set(p.c, { ...p }); });
   Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && l) { p.w = l.w || []; if (l.k) p.k = l.k; } });
-  posts.forEach((p) => { if (p.k !== 'review') return; (p.w || []).forEach((id) => { if (!reviews.has(id)) reviews.set(id, []); reviews.get(id).push(p.x); }); });
+  // 합친 책(del + into)과 공개본 옮김 표(moved)를 따라 남긴 책으로 서평을 옮겨 읽는다(앱 movedTo와 같음, 2026-11-14 연결 점검: 빠진 칸 id에 붙은 서평이 낱말 재료에서 빠졌다)
+  const pw = priv.works || {};
+  const movedTo = (id) => { for (let n = 0; n < 9; n++) { const w = pw[id], to = w ? (w.del && w.into ? w.into : '') : (pubAll.moved || {})[id]; if (!to) break; id = to; } return id; };
+  posts.forEach((p) => { if (p.k !== 'review') return; [...new Set((p.w || []).map(movedTo))].forEach((id) => { if (!reviews.has(id)) reviews.set(id, []); reviews.get(id).push(p.x); }); });
   const allWorks = { ...Object.fromEntries(Object.entries(pub).map(([id, b]) => [id, { ...b, known:true }])), ...priv.works };
   const wordIndex = buildWordIndex(Object.entries(allWorks).filter(([id, w]) => w && !w.del && (w.known || pub[id]) && WORD_KINDS.includes(w.k || 'book')).map(([id, w]) => wordDoc(id, { ...w, t:w.t || (pub[id] || {}).t, a:w.a || (pub[id] || {}).a }, reviews.get(id))));
   const works = Object.entries(priv.works || {}).filter(([, w]) => w && !w.del).map(([id, w]) => ({ id, t:w.t || (pub[id] || {}).t || '', a:w.a || (pub[id] || {}).a || '', marks:marksOf(w).sort(inOrder) }));
