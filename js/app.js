@@ -867,7 +867,16 @@ function spineState(w) {
   return el('p', { className:'only-state spine-state' }, kids);
 }
 const canPickSpine = (w) => !!(w.id && (w.k || 'book') === 'book' && w.known);
+// 다른 책·다른 판으로 바뀐 책은 책등 색(data/spines.json)을 다시 뽑게 비공개 meta/recolor/{id}에 «제목|판»을 적는다(2026-11-15).
+// 색은 앱이 못 만든다. tools/cover-colors.js가 공개 반영 때 읽어 그 책만 다시 뽑고, spines.json rc에 같은 값을 적어 다음엔 건너뛴다. 범용판·색이 없는 책은 안 적는다
+async function markRecolor(w, t, y24) {
+  if (LOCAL || !w.id || !coverColors(w)) return;
+  const v = `${t || ''}|${Array.isArray(y24) ? y24[0] : y24 === 0 ? 0 : ''}`;
+  try { await write(`meta/recolor/${w.id}`, v); const m = D.priv.meta = D.priv.meta || {}; m.recolor = { ...(m.recolor || {}), [w.id]:v }; } catch (e) { console.warn('책등 색 표시 저장 실패', e.message); }
+}
 async function setY24(w, v, msg, raise) {
+  forgetCover(w.id);
+  markRecolor(w, w.t, v); // 판이 바뀌면 표지·책등 색도 그 판으로(2026-11-15). 표지 메모리는 저장 전에 지워 다시 그릴 때 새로 찾는다
   try { await saveWork({ ...w, y24:v }, msg); } catch (e) { console.error(e); if (raise) throw e; toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); return; }
   if ($('sheet').open) reshow();
 }
@@ -1088,7 +1097,7 @@ function openSpineTool() {
     const out = {};
     Object.entries(picked).forEach(([id, v]) => { const cur = D.works.get(id); if (cur) out[id] = storedWork({ ...cur, y24:v }); });
     await write('works', out, 'update');
-    Object.entries(out).forEach(([id, v]) => { setPriv('works', id, v); SPINE.res.delete(id); });
+    Object.entries(out).forEach(([id, v]) => { setPriv('works', id, v); SPINE.res.delete(id); forgetCover(id); const cur = D.works.get(id); if (cur) markRecolor(cur, cur.t, v.y24); }); // 판이 바뀌면 표지도 그 판으로(2026-11-15)
     refreshAll();
     toast(`${Object.keys(out).length}권의 책등을 바꿨어요${LOCAL ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
   }, '고른 책등 저장');
@@ -3029,7 +3038,7 @@ function openFillTool() {
     await write('works', out, 'update');
     Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
     // 제목을 고친 책은 표지 메모리와 «책등 사진 없음» 기억(meta/y24tried)을 지운다(새 제목으로 다시 찾게)
-    for (const id of retitled) { forgetCover(id); const t = (D.priv.meta || {}).y24tried; if (t && t[id]) { await write(`meta/y24tried/${id}`, null).catch(() => {}); delete t[id]; } SPINE.res.delete(id); }
+    for (const id of retitled) { forgetCover(id); const rw = D.works.get(id); if (rw) await markRecolor(rw, out[id].t, out[id].y24); const t = (D.priv.meta || {}).y24tried; if (t && t[id]) { await write(`meta/y24tried/${id}`, null).catch(() => {}); delete t[id]; } SPINE.res.delete(id); }
     refreshAll();
     toast(`${picked.length}권을 저장했어요 · 빈 칸 ${n}개${retitled.length ? ` · 제목 ${retitled.length}권` : ''}`);
   }, '고른 책 저장');
@@ -3222,7 +3231,13 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
       base.only = only.checked;
       if (!only.checked && ['book', 'film'].includes(base.k || 'book')) delete base.only;
     }
+    // 책 정보를 바꾼 뒤 표지·책등(2026-11-15, 효니 쪽지 «책 정보 고치거나 했을 때 표지 다시 제대로 넣기»): 제목·저자·판이 바뀌면 표지 메모리를 지워 다시 찾고,
+    // 제목이 바뀌면 «책등 사진 없음» 기억(meta/y24tried)도 지운다. 다른 책·판이면 책등 색을 다시 뽑게 적어 둔다
+    const y24Moved = !isNew && JSON.stringify(base.y24) !== JSON.stringify(w.y24);
+    if (!isNew && (retitled || a.value.trim() !== (w.a || '') || y24Moved)) forgetCover(base.id);
     await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
+    if (retitled) { const tr = (D.priv.meta || {}).y24tried; if (tr && tr[base.id]) { await write(`meta/y24tried/${base.id}`, null).catch(() => {}); delete tr[base.id]; } SPINE.res.delete(base.id); }
+    if (swapped || y24Moved) await markRecolor(w, title, base.y24);
     if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
     else { // 다른 종류를 보고 있어도 꽂힌 걸 바로 보여 준다. 양식의 기록이 먼저 빠진 뒤 연다
