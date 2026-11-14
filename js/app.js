@@ -6,6 +6,7 @@ import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
 import { pickTheme, authorTheme, firstAuthorOf } from './kdc.js';
 import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.js';
+import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillGroup, FILL_GROUPS, titleDiffers } from './fill-tool.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
 
@@ -806,6 +807,8 @@ const COVER_URL = new Map(), COVER_ASK = new Map(), COVER_Y24 = new Map();
 // 예스24 상품 번호를 아는 책(실물 책등 판)은 표지도 그 판의 그림을 바로 쓴다(2026-11-14, 예스24 Open API로 옮김). 표지 L은 세로 약 500px
 const y24No = (w) => { const r = realOf(w); return r ? r.no : ''; };
 const Y24_COVER = (no) => `https://image.yes24.com/goods/${no}/L`;
+// 책 정보를 바꾼 뒤 표지를 다시 찾게 메모리를 지운다(2026-11-15, 효니 쪽지 «책 정보 고치거나 했을 때 표지 다시 제대로 넣기»)
+function forgetCover(id) { COVER_URL.delete(id); COVER_ASK.delete(id); COVER_Y24.delete(id); }
 function findCover(w) {
   if (COVER_URL.has(w.id)) return Promise.resolve(COVER_URL.get(w.id));
   if (y24No(w)) { const url = Y24_COVER(y24No(w)); COVER_URL.set(w.id, url); return Promise.resolve(url); }
@@ -813,7 +816,9 @@ function findCover(w) {
     const title = String(w.t || '').split(/\s+[-:]\s+|\s*:\s*/)[0].trim();
     const author = String(w.a || '').split('/')[0].split(/[,·]/)[0].replace(/\s+외$/, '').trim();
     const t = coverNorm(title), a = coverNorm(author);
-    const ask = (q) => relayBooks(q, 'y24').catch(() => (LOCAL ? [] : relayBooks(q, ''))).catch(() => []); // 예스24가 안 되면 효니 책장만 카카오(범용판은 국립중앙도서관 표지가 거의 없어 비움)
+    // 예스24에 맞는 표지가 없거나 안 되면(2026-11-15: 0건·안 맞을 때도) 효니 책장만 카카오. 국립중앙도서관 표지는 20권 시험 0권이라 쓰지 않는다(범용판은 비움)
+    const fromSrc = (q, src) => relayBooks(q, src).catch(() => []);
+    const ask = async (q) => { const y = await fromSrc(q, 'y24'); return pick(y) || LOCAL ? y : fromSrc(q, ''); };
 
     const pick = (list) => { const ok = list.filter((x) => /^https:\/\//.test(x.cover || '')); const au = (x) => !a || coverNorm((x.authors || []).join()).includes(a);
       return ok.find((x) => coverNorm(x.title) === t && au(x)) || ok.find((x) => coverNorm(x.title).startsWith(t) && au(x)) || ok.find((x) => coverNorm(x.title) === t) || null; };
@@ -1029,7 +1034,9 @@ function openSpineTool() {
     const p = y24Picker(r.w, (g) => { r.manual = g; row.classList.toggle('picked', !!g); sum(); });
     if (r.manual) { p.inp.value = r.manual[0]; row.classList.add('picked'); } // 다시 연 창에서도 넣어 둔 주소가 보이게(다시 확인하지 않아 r.manual이 잠깐 비지 않는다)
     row.append(el('strong', { textContent:titleOf(r.w) }), el('div', { className:'when', textContent:[r.w.a || '저자 없음', r.status === 'fail' ? '찾다가 끊겼어요(«이어서 찾기»로 다시)' : Y24_MISS[r.why]].filter(Boolean).join(' · ') }),
-      el('div', { className:'memo-foot' }, p.search), el('details', {}, el('summary', { textContent:'주소로 넣기' }), p.inp), p.msg, p.prev);
+      el('div', { className:'memo-foot' }, p.search), el('details', {}, el('summary', { textContent:'주소로 넣기' }), p.inp), p.msg, p.prev,
+      // 다시 찾기(2026-11-15): 찾는 말을 고쳐 예스24 판을 찾고, 고르면 주소 칸에 번호가 들어가 책등 사진을 확인한다
+      rowSearch(y24Query(r.w), (b) => { p.inp.value = b.y24; p.inp.dispatchEvent(new Event('input')); }, { only:'y24' }));
     return row;
   };
   const elOf = (r) => r.el || (r.el = r.status === 'found' || r.status === 'pick' ? card(r) : missRow(r));
@@ -2618,10 +2625,11 @@ const BOOK_RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvm
 const relayOn = () => !!BOOK_RELAY;
 // 예스24 Open API를 먼저 쓴다(효니 책장 2026-11-14 «응, 바꿔», 범용판도 같은 날 «응, 바꿔»).
 // 예스24가 실패하면(키 없음·한도·서버 오류) 효니 책장은 카카오, 범용판은 국립중앙도서관으로 한 번 더 찾는다(범용판은 카카오 약관 «타인에게 제공» 해석 여지로 카카오를 쓰지 않음, 2026-11-05 결정). 카카오는 2026-11-28쯤 뺀다
+// 2026-11-15 바뀜(효니 쪽지 «yes24로 못 찾았을 때 대안»): 실패뿐 아니라 0건(세트 거른 뒤 포함)일 때도 다음 출처로. 순서는 js/fill-tool.js relayChain
+// (예스24 → 국립중앙도서관 → 효니 책장만 카카오). 한 책에 중계를 최대 세 번 부른다
 const RELAY_SRC = 'y24';
-const RELAY_BACKUP = LOCAL ? 'nl' : '';
-const RELAY_NAME = '예스24 책 검색';
-const BACKUP_NAME = LOCAL ? '국립중앙도서관 소장자료 검색' : '카카오 책 검색';
+const RELAY_NAME = SRC_NAME.y24;
+const BACKUP_NAME = LOCAL ? SRC_NAME.nl : `${SRC_NAME.nl}·${SRC_NAME['']}`;
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 // 책 칸 형식에 맞춘다: 제본 표시는 빼고, 저자는 «저자, 역자 옮김», 넷 이상이면 «첫 사람 외». 괄호 안은 판 이름·총서명일 수 있어 부제로 바꾸지 않는다
 const bookTitle = (s) => tidy(s).replace(/\s*\((?:반?양장본?(?:\s*hard\s*cover)?|hard\s*cover|paperback)\)$/i, '');
@@ -2643,10 +2651,14 @@ async function relayBooks(q, src) {
   if (!r.ok) throw new Error(r.error || 'relay');
   return (r.books || []).filter((b) => !(src === 'y24' && isSet(b.title || '')));
 }
-async function fromRelay(q) {
-  let books;
-  let from = RELAY_NAME;
-  try { books = await relayBooks(q, RELAY_SRC); } catch (e) { console.warn(`예스24 실패, ${BACKUP_NAME}으로`, e.message); books = await relayBooks(q, RELAY_BACKUP); from = BACKUP_NAME; }
+// only: 한 출처만(책등 다시 찾기의 예스24 판 찾기)
+async function fromRelay(q, only) {
+  const tries = [];
+  for (const src of only != null ? [only] : relayChain(LOCAL)) {
+    try { tries.push({ src, rows:await relayBooks(q, src) }); } catch (e) { console.warn(`${SRC_NAME[src]} 실패`, e.message); tries.push({ src, err:e }); }
+    if (!needNext(tries[tries.length - 1])) break;
+  }
+  const got = pickSource(tries), books = got.rows, from = SRC_NAME[got.src];
   // isbn·kdc는 주제 저절로 고르기에만 쓰고 저장하지 않는다. y24(상품 번호)는 책등 다시 찾기 후보에만 쓴다. from은 실제로 찾은 곳(빈 칸 채우기 표시용, 저장 안 함)
   return uniqueBooks(books.map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '', isbn:isbnOf(b.isbn), kdc:b.kdc || '', kid:!!b.kid, y24:b.y24 || '', from })));
 }
@@ -2706,7 +2718,7 @@ function bookLookup(apply) {
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small', { textContent:relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24가 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
+  const note = el('small', { textContent:relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go), msg, found,
     el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
@@ -2914,69 +2926,111 @@ function openMoveForm(w, group, find) {
 // tools/fill-info.js와 같은 규칙: 저자·출판사·주제 중 빈 칸만 채운다(이미 적힌 칸은 덮지 않음). 제목·저자가 맞는 첫 결과만 «확실»로 미리 고른다
 const blankOf = (w) => ['a', 'p', 'th'].filter((k) => (k === 'th' ? !w.th.length : !tidy(w[k])));
 const fillTargets = () => list().filter((w) => w.id && w.k === 'book' && w.known && !w.guess && blankOf(w).length);
-const bareTitle = (s) => squeeze(String(s || '').replace(/\(([^)]*)\)|\[([^\]]*)\]/g, (m, a, b) => (/\d|^\s*[상중하]\s*$/.test(a || b || '') ? m : ''))); // 권 표시 괄호는 남긴다(tools/fill-info.js와 같음)
+// 판정은 js/fill-tool.js judgeFill(시험 tools/test-fill-tool.js). 찾은 후보 c로 채울 것을 정한다
+async function fillFrom(w, c, status) {
+  const fill = {}, why = {};
+  if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = c.from || RELAY_NAME; }
+  if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = c.from || RELAY_NAME; }
+  if (!w.th.length) { const t = await autoTheme({ a:w.a || fill.a || '', isbn:c ? c.isbn : '', kdc:c ? c.kdc : '', kid:c ? c.kid : false }, w.id); if (t) { fill.th = [t.th]; why.th = t.why; } }
+  return { w, c, status, fill, why };
+}
 async function fillRow(w) {
   const fa = firstAuthor(w);
   let rows = await fromRelay(tidy(`${w.t} ${fa}`).slice(0, 100)).catch(() => null);
   if (rows && !rows.length && fa) rows = await fromRelay(tidy(w.t).slice(0, 100)).catch(() => null);
   if (rows == null) return { w, status:'fail', fill:{}, why:{} };
-  const tOk = (b) => bareTitle(b.t) === bareTitle(w.t);
-  const aOk = (b) => !fa || (squeeze(b.a).includes(squeeze(fa)) || squeeze(fa).includes(squeeze(b.a.split(',')[0])));
-  const fits = rows.filter((b) => tOk(b) && aOk(b));
-  const pre = (b) => { const x = bareTitle(b.t), y = bareTitle(w.t); return Math.min(x.length, y.length) >= 3 && x !== y && (x.startsWith(y) || y.startsWith(x)); };
-  const loose = fits.length ? [] : rows.filter((b) => (tOk(b) && !aOk(b)) || (pre(b) && aOk(b)));
-  const c = fits[0] || loose[0];
-  let status = !c ? 'none' : fits.length && rows[0] === c ? 'sure' : 'check';
-  if (c && !fa && new Set(fits.map((b) => squeeze(b.a.split(',')[0]))).size > 1) status = 'check';
-  if (status === 'sure' && new Set(fits.map((b) => squeeze(b.p))).size > 1) status = 'check'; // 판이 여러 출판사에서 나온 책(고전·번역서)은 효니 판인지 모른다
-  const fill = {}, why = {};
-  if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = c.from || RELAY_NAME; }
-  if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = c.from || RELAY_NAME; }
-  if (!w.th.length) { const t = await autoTheme({ a:w.a || fill.a || '', isbn:c ? c.isbn : '', kdc:c ? c.kdc : '', kid:c ? c.kid : false }, w.id); if (t) { fill.th = [t.th]; why.th = t.why; } }
-  if (status === 'sure' && !Object.keys(fill).length) status = 'none';
-  return { w, c, status, fill, why };
+  const { c, status } = judgeFill(w, rows, fa);
+  const r = await fillFrom(w, c, status);
+  if (r.status === 'sure' && !Object.keys(r.fill).length) r.status = 'none';
+  return r;
+}
+// 줄에서 다시 찾기(2026-11-15, 효니 쪽지 «빈 칸 채우기 오탈자로 거기서 다시 재검색»): 누르면 그 줄 안에 찾는 말 칸이 열리고, 고쳐서 찾으면 후보를 최대 5개 보인다.
+// 하나를 누르면 onPick(책). «빈 칸 채우기»·«책등 다시 찾기»의 못 찾은 줄이 같이 쓴다. only: 한 출처만(책등은 예스24 판이어야 사진이 있다)
+function rowSearch(initial, onPick, { only } = {}) {
+  const open = el('button', { className:'copy', type:'button', textContent:'다시 찾기' });
+  open.setAttribute('aria-expanded', 'false');
+  const q = el('input', { type:'search', value:initial, maxLength:100, ariaLabel:'다시 찾을 말(제목·저자)' });
+  const go = el('button', { className:'btn ghost', type:'button', textContent:'찾기' });
+  const msg = el('small', { role:'status' });
+  const cands = el('div', { className:'row-cands' });
+  const box = el('div', { className:'row-search', hidden:true }, el('div', { className:'row-search-bar' }, q, go), msg, cands);
+  open.onclick = () => { box.hidden = !box.hidden; open.setAttribute('aria-expanded', String(!box.hidden)); if (!box.hidden) { q.focus(); q.select(); } };
+  const run = async () => {
+    const s = tidy(q.value);
+    if (!s) { msg.textContent = '찾을 말을 적어 주세요'; return; }
+    go.disabled = true; msg.textContent = '찾는 중…'; cands.replaceChildren();
+    try {
+      const rows = (await fromRelay(s.slice(0, 100), only)).filter((b) => b.t && (!only || b.y24)).slice(0, 5);
+      msg.textContent = rows.length ? `후보 ${rows.length}개 · 맞는 책을 눌러 주세요` : '못 찾았어요. 찾는 말을 줄이거나 바꿔 보세요.';
+      cands.replaceChildren(...rows.map((b) => {
+        const x = el('button', { type:'button', className:'row-cand' }, el('strong', { textContent:b.t }), el('small', { textContent:[b.a, b.p, b.y, b.from].filter(Boolean).join(' · ') }));
+        x.setAttribute('aria-pressed', 'false');
+        x.onclick = () => { cands.querySelectorAll('.row-cand').forEach((y) => y.setAttribute('aria-pressed', String(y === x))); onPick(b); };
+        return x;
+      }));
+    } catch (e) { msg.textContent = '찾지 못했어요. 인터넷 연결을 확인해 주세요.'; }
+    finally { go.disabled = false; }
+  };
+  go.onclick = run;
+  q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } }); // 양식 저장으로 넘어가지 않게
+  return el('div', { className:'row-search-wrap' }, open, box);
 }
 function openFillTool() {
   const targets = fillTargets();
-  const LABEL = { a:'저자', p:'출판사', th:'주제' }, STATE = { sure:'확실', check:'확인 필요', none:'못 찾음', fail:'찾기 실패' };
-  const head = el('p', { className:'warn', role:'status', textContent:targets.length ? `저자·출판사·주제 중 빈 칸이 있는 책이 ${targets.length}권이에요. 이미 적힌 칸은 그대로 두고 빈 칸만 채워요. 찾는 동안 제목·저자만 ${RELAY_NAME}으로 가요.` : '빈 칸이 있는 책이 없어요.' });
-  const list_ = el('div', { className:'fill-list' });
+  const LABEL = { a:'저자', p:'출판사', th:'주제' }, STATE = { sure:'확실', picked:'직접 고름', check:'확인 필요', none:'못 찾음', fail:'찾기 실패' };
+  const head = el('p', { className:'warn', role:'status', textContent:targets.length ? `저자·출판사·주제 중 빈 칸이 있는 책이 ${targets.length}권이에요. 이미 적힌 칸은 그대로 두고 빈 칸만 채워요. 찾는 동안 제목·저자만 ${RELAY_NAME}(없으면 ${BACKUP_NAME})으로 가요.` : '빈 칸이 있는 책이 없어요.' });
+  // 결과 묶음(2026-11-15): 채울 수 있어요 / 확인해 주세요 / 못 찾았어요(책등 다시 찾기와 같은 모양). 못 찾은 줄이 묻히지 않게
+  const groups = Object.fromEntries(FILL_GROUPS.map(([k, name]) => { const h = el('h4', { className:'sec' }), body = el('div', {}); const sec = el('section', { className:'fill-group', hidden:true }, h, body); return [k, { sec, h, body, name }]; }));
+  const list_ = el('div', { className:'fill-list' }, FILL_GROUPS.map(([k]) => groups[k].sec));
   const found = [];
   let upd = () => {}; // 저장 단추 옆 «고른 책 n»(창을 연 뒤 붙임)
+  const paintGroups = () => FILL_GROUPS.forEach(([k]) => { const g = groups[k], n = found.filter((r) => fillGroup(r.status) === k).length; g.sec.hidden = !n; g.h.textContent = `${g.name} ${n}`; });
+  const place = (r) => { const i = found.findIndex((x) => x.w.id === r.w.id); if (i >= 0) { found[i].el.remove(); found.splice(i, 1); } r.el = rowEl(r); found.push(r); groups[fillGroup(r.status)].body.append(r.el); paintGroups(); upd(); };
   const rowEl = (r) => {
-    const box = el('input', { type:'checkbox', checked:r.status === 'sure', disabled:!Object.keys(r.fill).length });
+    const can = () => !!Object.keys(r.fill).length || !!(r.retitle && r.retitle.input.checked);
+    const box = el('input', { type:'checkbox', checked:r.status === 'sure' || (r.status === 'picked' && !!Object.keys(r.fill).length), disabled:!can() });
     r.box = box;
     const fills = Object.keys(r.fill).map((k) => el('span', { className:'fill-what' }, `${LABEL[k]}: `, el('strong', { textContent:[].concat(r.fill[k]).join(', ') }), el('small', { textContent:` ${r.why[k]}` })));
+    // 찾은 책 제목이 책장 제목과 다르면(오타 등) «책 제목도 고치기»(기본 끔)
+    r.retitle = r.status === 'picked' && titleDiffers(r.w, r.c) ? (() => { const input = el('input', { type:'checkbox' }); const lab = el('label', { className:'check' }, input, ` 책 제목도 «${r.c.t}»(으)로 고치기`); lab.input = input; input.onchange = () => { box.disabled = !can(); if (input.checked) box.checked = true; else if (!Object.keys(r.fill).length) box.checked = false; upd(); }; return lab; })() : null;
+    const again = r.status === 'sure' ? null : rowSearch(tidy(`${r.w.t} ${firstAuthor(r.w)}`), async (b) => { place(await fillFrom(r.w, b, 'picked')); });
     return el('div', { className:'dup-row fill-row ' + r.status },
       el('label', { className:'check overlap-pick' }, box, el('strong', { textContent:titleOf(r.w) })),
       el('div', { className:'when', textContent:[STATE[r.status], r.w.a || '저자 없음', r.c ? `찾은 책: ${[r.c.t, r.c.a, r.c.p].filter(Boolean).join(' · ')}` : ''].filter(Boolean).join(' · ') }),
-      fills.length ? el('div', { className:'fill-whats' }, fills) : el('small', { textContent:'채울 것을 찾지 못했어요' }));
+      fills.length ? el('div', { className:'fill-whats' }, fills) : el('small', { textContent:'채울 것을 찾지 못했어요' }), r.retitle, again);
   };
   const n = (st) => found.filter((r) => r.status === st).length;
   const batch = batchRun({ // 책등 다시 찾기와 같은 뼈대(2026-11-14): «한꺼번에 찾기»·«멈추기»·«이어서 찾기», 세 권씩
     todo:() => targets.filter((w) => !found.some((r) => r.w.id === w.id && r.status !== 'fail')), size:3, job:fillRow, // 찾다 실패한 책은 «이어서 찾기»로 다시(책등 다시 찾기와 같게)
-    onEach:(r) => { const i = found.findIndex((x) => x.w.id === r.w.id); if (i >= 0) { found[i].el.remove(); found.splice(i, 1); } r.el = rowEl(r); found.push(r); list_.append(r.el); upd(); },
+    onEach:place,
     progress:() => { head.textContent = `찾는 중 ${found.length}/${targets.length} · 채울 것 찾음 ${n('sure') + n('check')}`; },
-    done:() => { head.textContent = `${found.length}/${targets.length}권을 찾았어요. 확실 ${n('sure')} · 확인 필요 ${n('check')} · 못 찾음 ${n('none') + n('fail')}. 확실한 줄만 골라 뒀어요.`; },
+    done:() => { head.textContent = `${found.length}/${targets.length}권을 찾았어요. 확실 ${n('sure')} · 확인 필요 ${n('check')} · 못 찾음 ${n('none') + n('fail')}. 확실한 줄만 골라 뒀어요. 틀린 줄은 «다시 찾기»로 찾는 말을 고쳐 찾아요.`; },
   });
   batch.go.hidden = !targets.length;
   showForm('빈 칸 채우기', [head, el('div', { className:'actions' }, batch.go, batch.stop), list_], async () => {
     if (batch.busy()) throw fail('찾는 중이에요. 다 찾거나 «멈추기»를 누른 뒤 저장해 주세요.');
     const picked = found.filter((r) => r.box && r.box.checked);
     if (!picked.length) throw fail('채울 책을 골라 주세요');
-    const out = {};
+    const out = {}, retitled = [];
     let n = 0;
-    picked.forEach((r) => {
+    for (const r of picked) {
       const cur = D.works.get(r.w.id);
-      if (!cur) return;
+      if (!cur) continue;
       const next = { ...cur };
       Object.keys(r.fill).forEach((k) => { if (blankOf(cur).includes(k)) { next[k] = r.fill[k]; n++; } }); // 그사이 채운 칸은 덮지 않는다
+      if (r.retitle && r.retitle.input.checked && r.c && r.c.t !== cur.t) {
+        next.t = r.c.t; retitled.push(cur.id);
+        // 다른 책(판)으로 제목을 바꾸면 옛 책등이 남지 않게: 고른 판의 책등 사진, 없으면 색 책등(책 고치기 openBookForm과 같은 규칙)
+        if (D.y24[cur.id] || Array.isArray(cur.y24)) { const g = r.c.y24 ? await measureSpine(r.c.y24).catch(() => null) : null; next.y24 = g || 0; }
+      }
       out[r.w.id] = storedWork(next);
-    });
+    }
     await write('works', out, 'update');
     Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
+    // 제목을 고친 책은 표지 메모리와 «책등 사진 없음» 기억(meta/y24tried)을 지운다(새 제목으로 다시 찾게)
+    for (const id of retitled) { forgetCover(id); const t = (D.priv.meta || {}).y24tried; if (t && t[id]) { await write(`meta/y24tried/${id}`, null).catch(() => {}); delete t[id]; } SPINE.res.delete(id); }
     refreshAll();
-    toast(`${picked.length}권의 빈 칸 ${n}개를 채웠어요`);
+    toast(`${picked.length}권을 저장했어요 · 빈 칸 ${n}개${retitled.length ? ` · 제목 ${retitled.length}권` : ''}`);
   }, '고른 책 저장');
   upd = footCount('고른 책', () => found.filter((r) => r.box && r.box.checked).length);
   list_.addEventListener('change', upd);
