@@ -922,16 +922,20 @@ function openSpineTool() {
     return { w, p, row, find };
   });
   const all = el('button', { className:'btn ghost', type:'button', textContent:'후보 한꺼번에 찾기', hidden:!rows.length });
+  let running = false;
   all.onclick = async () => {
-    all.disabled = true;
+    all.disabled = true; running = true;
     for (let i = 0; i < rows.length; i += 3) {
       all.textContent = `찾는 중 ${Math.min(i + 3, rows.length)}/${rows.length}`;
       await Promise.all(rows.slice(i, i + 3).map((r) => { r.find.remove(); return r.p.findCands(true); }));
-      if (!$('form').open) return; // 창을 닫으면 멈춘다
+      if (!$('form').open) { running = false; return; } // 창을 닫으면 멈춘다
     }
+    await new Promise((r) => setTimeout(r, 1500)); // 마지막 줄의 저절로 고른 사진이 확인될 틈(검토자 지적: 그 전에 저장하면 그 줄이 빠졌다)
+    running = false;
     all.textContent = '다 찾았어요';
   };
   showForm('책등 다시 찾기', [head, el('div', { className:'actions' }, all, count), el('div', { className:'fill-list' }, rows.map((r) => r.row))], async () => {
+    if (running) throw fail('후보를 찾는 중이에요. «다 찾았어요»가 뜬 뒤 저장해 주세요.');
     const picked = rows.filter((r) => r.p.got());
     if (!picked.length) throw fail('책등 사진이 맞는 주소를 하나 이상 넣어 주세요');
     const out = {};
