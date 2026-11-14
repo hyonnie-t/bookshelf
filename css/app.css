@@ -329,6 +329,14 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .dup-book strong { font-family:var(--font-title); }
 .dup-book span { display:block; font-size:.84rem; color:var(--muted); font-variant-numeric:tabular-nums; }
 .dup-tools { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+/* 합치기 미리보기(2026-11-14): 남길 제목·저자 고르기, «합치면 이렇게 돼요», 합친 뒤 기록 목록 */
+.dup-note { color:var(--muted); font-size:.84rem; }
+.keep-pick { display:grid; gap:var(--space-1); }
+.merge-preview { display:grid; gap:var(--space-2); padding:var(--space-2) var(--space-3); border:1px solid var(--line); border-radius:8px; background:color-mix(in srgb, var(--accent) 5%, transparent); }
+.merge-preview > .sec { margin:0; }
+.merge-preview small { color:var(--muted); }
+.merge-recs { margin:0; padding-left:var(--space-3); display:grid; gap:var(--space-1); font-size:.86rem; font-variant-numeric:tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .merge-preview { transition:background-color .3s ease; } }
 .keep-opt { display:flex; gap:var(--space-2); align-items:flex-start; padding:var(--space-2); border:1px solid var(--line); border-radius:8px; }
 .keep-opt:has(input:checked) { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
 
