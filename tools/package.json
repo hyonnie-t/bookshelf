@@ -1,0 +1,9 @@
+{
+  "name": "bookshelf-tools",
+  "private": true,
+  "description": "책장 도구 전용 의존성(tools/cover-colors.js의 표지 그림 읽기). 앱은 쓰지 않는다",
+  "dependencies": {
+    "jpeg-js": "0.4.4",
+    "pngjs": "7.0.0"
+  }
+}

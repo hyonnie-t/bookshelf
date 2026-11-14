@@ -7,4 +7,4 @@ http.createServer((q, s) => {
   const f = path.join(root, p);
   if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.statusCode = 404; return s.end('없음'); }
   s.setHeader('content-type', T[path.extname(f)] || 'application/octet-stream'); fs.createReadStream(f).pipe(s);
-}).listen(8780, '127.0.0.1');
+}).listen(Number(process.argv[2]) || 8780, '127.0.0.1'); // worktree에서 따로 띄울 때는 포트를 인자로(node tools/serve.js 8791)

@@ -38,7 +38,8 @@ function kakaoSearch_(q, key) {
   return { ok: true, books: (JSON.parse(res.getContentText()).documents || []).map(pick_) };
 }
 
-// 필요한 칸만 고른다. 소개글·표지·가격·판매 링크는 내보내지 않는다
+// 필요한 칸만 고른다. 소개글·가격·판매 링크는 내보내지 않는다.
+// 표지 미리보기 주소(cover)는 책 창에 그때그때 보여 주는 용도로만 내보낸다(2026-11-14). 앱은 이 주소를 저장하지 않는다(운영정책 제5조 제20호)
 function pick_(d) {
   return {
     title: d.title || '',
@@ -47,7 +48,21 @@ function pick_(d) {
     publisher: d.publisher || '',
     year: String(d.datetime || '').slice(0, 4),
     isbn: d.isbn || '',
+    cover: https_(d.thumbnail),
   };
+}
+// 표지 주소를 https로 맞춘다(GitHub Pages가 https라 http 그림은 막힌다). «cover.nl.go.kr/…»처럼 앞이 빠진 주소도 받는다
+function https_(u) {
+  u = String(u == null ? '' : u).trim();
+  if (!u) return '';
+  if (/^\/\//.test(u)) return 'https:' + u;
+  if (!/^https?:/i.test(u)) u = 'https://' + u.replace(/^\/+/, '');
+  return u.replace(/^http:/i, 'https:');
+}
+// 국립중앙도서관 표지는 «/kolis/2022/KMO…_thumbnail.jpg»처럼 호스트 없이 온다(2026-11-14 실측). 그림은 cover.nl.go.kr에 있다
+function nlCover_(u) {
+  if (/^\/[^\/]/.test(u)) return 'https://cover.nl.go.kr' + u;
+  return https_(u);
 }
 
 // 국립중앙도서관 소장자료 검색. ISBN(10·13자리)이면 ISBN으로 찾는다
@@ -85,6 +100,7 @@ function pickNl_(d) {
     publisher: publisher_(tagless_(f_(d, /^pub_?(info|lisher)/i))),
     year: (String(f_(d, /^pub_?year/i)).match(/\d{4}/) || [''])[0],
     isbn: tagless_(d.isbn),
+    cover: nlCover_(tagless_(f_(d, /^image/i))), // 국립중앙도서관 표지(공공 데이터). 없는 책이 많다
   };
 }
 

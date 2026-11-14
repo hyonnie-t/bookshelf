@@ -20,7 +20,7 @@ const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
 const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0 };
-const D = { pub:null, blog:[], works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
+const D = { pub:null, blog:[], spines:{}, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
 const squeeze = (s) => (s || '').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
@@ -135,6 +135,20 @@ function pullOut(b, go) {
   setTimeout(() => b.classList.remove('pull'), 620);
 }
 const spineMark = (w) => (w.guess ? '추정' : isReading(w) ? '미완' : showsOnlyMe(w) ? '나만' : '');
+// 책등 색(2026-11-14): data/spines.json의 [바탕, 글자, 강조]는 tools/cover-colors.js가 표지에서 뽑았다. 글자는 바탕과 대비 4.5 이상.
+// 색이 없는 책(표지를 못 찾음·범용판)은 예전처럼 주제 색 바탕이고, 색이 있는 책은 주제 색을 아래 작은 띠로 남긴다
+const coverColors = (w) => (!LOCAL && w && (w.k || 'book') === 'book' && D.spines[w.id]) || null;
+function paintSpine(b, w) {
+  const c = coverColors(w);
+  if (!c) { b.style.backgroundColor = themeVar(w.th[0]); return null; } // background 대신 색만(css의 결·그늘 background-image가 덧입혀진다)
+  b.classList.add('cov');
+  b.style.backgroundColor = c[0]; b.style.color = c[1];
+  b.style.setProperty('--ln', c[2] || c[1]);
+  if (w.th[0]) { const band = el('b', { className:'band' }); band.style.background = themeVar(w.th[0]); b.append(band); }
+  return c;
+}
+// 출판사: 책등 아래쪽에 작게(실제 책처럼). 괄호·«출판사» 꼬리를 떼고 다섯 글자까지
+const pubShort = (p) => { const s = String(p || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/\s*(출판사|출판|주식회사|㈜|\(주\))\s*/g, '').trim(); return s.length > 5 ? s.slice(0, 5) : s; };
 // 눕혀 쌓은 책: 가로 제목 22px, 폭은 제목 길이로만 정한다. 서평 막대는 오른쪽 끝, ×n은 제목 오른쪽
 function lyingSpine(w) {
   const rv = reviewsOf(w), items = w.notes.length + w.recs.length + rv.length;
@@ -143,8 +157,10 @@ function lyingSpine(w) {
   const label = raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
   const wd = Math.max(70, Math.min(130, 32 + label.length * 10));
   const b = el('button', { type:'button', className:'spine lie' + (w.known ? '' : ' unknown') + (rv.length ? ' has-ig' : '') });
-  b.style.width = wd + 'px'; b.style.backgroundColor = themeVar(w.th[0]);
+  b.style.width = wd + 'px';
   b.append(el('span', { textContent:label }));
+  if (coverColors(w)) { const c = coverColors(w); b.classList.add('cov'); b.style.backgroundColor = c[0]; b.style.color = c[1]; b.style.setProperty('--ln', c[2] || c[1]); }
+  else b.style.backgroundColor = themeVar(w.th[0]);
   if (mark) b.append(el('i', { textContent:mark }));
   if (items > 1) b.append(el('i', { textContent:'×' + items }));
   b.setAttribute('aria-label', full + (w.a ? ', ' + w.a : '') + ', 글 ' + rv.length + '개' + (showsOnlyMe(w) ? ', 나만 보기' : ''));
@@ -159,7 +175,13 @@ function spine(w, pose) {
   const cols = label.length <= 8 ? 1 : label.length <= 16 ? 2 : 3;
   const len = rv.reduce((a, p) => a + p.x.length, 0) + w.notes.reduce((a, n) => a + (n.len || 0), 0);
   const mark = spineMark(w);
-  const h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (mark ? 18 : 0));
+  let h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (mark ? 18 : 0));
+  // 출판사 자리: 제목 글자 높이(한 줄 약 13.5px)+위아래 여백+출판사 글자(약 10.5px)+띠. 198px 안에 다 들어갈 때만 넣고 그만큼 책을 키운다
+  const pub = coverColors(w) && !mark ? pubShort(w.p) : '';
+  const pubH = pub ? pub.length * 10.5 + 18 : 0;
+  const need = Math.ceil(Math.ceil(label.length / cols) * 13.5 + 16 + (multi ? 16 : 0) + pubH + 6);
+  const showPub = pub && need <= 198;
+  if (showPub) h = Math.max(h, need);
   const wd = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9);
   const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose === 'lean' ? ' lean' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
@@ -169,8 +191,9 @@ function spine(w, pose) {
     b.style.setProperty('--tilt', tilt + 'deg');
     gap = Math.ceil(h * Math.sin(tilt * Math.PI / 180)) + 2;
   }
-  b.style.backgroundColor = themeVar(w.th[0]); // background 대신 색만: 책등 질감(background-image)이 css에서 덧입혀진다
   b.append(spineText(label));
+  paintSpine(b, w);
+  if (showPub) { b.classList.add('has-pub'); b.style.paddingBottom = Math.ceil(pubH) + 'px'; b.append(el('small', { className:'pub', textContent:pub })); }
   if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
@@ -629,6 +652,43 @@ function reshow() {
   if (!$('sheet').open || !S.cur) return;
   if (S.cur.lib) openLib(S.cur.lib, $('sheet').returnEl); else openBook(S.cur.id, $('sheet').returnEl);
 }
+// 책 창 표지 그림(2026-11-14): 책을 열 때 중계(카카오 책 검색)로 그때그때 찾는다. 주소는 이 창이 열려 있는 동안 메모리에만 두고 저장하지 않는다(운영정책 제5조 제20호).
+// 표지 색이 있는 책(= 도구가 표지를 찾은 책)만 찾는다. 못 찾거나 그림이 안 열리면 자리를 비운다
+const COVER_URL = new Map(), COVER_ASK = new Map();
+const coverNorm = (s) => String(s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
+function findCover(w) {
+  if (COVER_URL.has(w.id)) return Promise.resolve(COVER_URL.get(w.id));
+  if (!COVER_ASK.has(w.id)) {
+    const title = String(w.t || '').split(/\s+[-:]\s+|\s*:\s*/)[0].trim();
+    const author = String(w.a || '').split('/')[0].split(/[,·]/)[0].replace(/\s+외$/, '').trim();
+    const t = coverNorm(title), a = coverNorm(author);
+    const ask = (q) => getJson(`${BOOK_RELAY}?q=${encodeURIComponent(q)}`, 12000).then((r) => (r.ok ? r.books || [] : [])).catch(() => []);
+    const pick = (list) => { const ok = list.filter((x) => /^https:\/\//.test(x.cover || '')); const au = (x) => !a || coverNorm((x.authors || []).join()).includes(a);
+      return ok.find((x) => coverNorm(x.title) === t && au(x)) || ok.find((x) => coverNorm(x.title).startsWith(t) && au(x)) || ok.find((x) => coverNorm(x.title) === t) || null; };
+    COVER_ASK.set(w.id, (async () => {
+      let m = pick(await ask(`${title} ${author}`.trim()));
+      if (!m && author) m = pick(await ask(title));
+      const url = m ? m.cover : ''; // 카카오 미리보기는 120×174. 크기를 주소로 바꾸면 허용된 크기만 열린다(240×348은 403, 2026-11-14 실측)라 받은 그대로 쓴다
+      COVER_URL.set(w.id, url); COVER_ASK.delete(w.id);
+      return url;
+    })());
+  }
+  return COVER_ASK.get(w.id);
+}
+function coverImage(w) {
+  // 방문자에게도 보여 준다(효니 2026-11-14 «방문자가 많을 거 같진 않은데»). 방문자도 중계 하루 상한 3,000건을 같이 쓴다
+  if (!coverColors(w) || !relayOn() || !w.known) return null;
+  const c = coverColors(w);
+  const img = el('img', { className:'book-cover', alt:'', decoding:'async' });
+  img.referrerPolicy = 'no-referrer';
+  const box = el('div', { className:'book-cover-box wait' }, img);
+  box.style.backgroundColor = c[0]; // 그림이 오기 전에는 책등 색 판
+  box.setAttribute('aria-hidden', 'true'); // 제목·저자가 바로 아래 글자로 있다
+  img.onload = () => box.classList.remove('wait');
+  img.onerror = () => box.remove();
+  findCover(w).then((url) => { if (url) img.src = url; else box.remove(); });
+  return box;
+}
 // 왼쪽 면은 책 정보, 오른쪽 면은 글. 폰에서는 한 면으로 이어진다
 function renderTome(w, item, from) {
   const close = el('button', { className:'close', type:'button', textContent:'×', ariaLabel:'닫기' });
@@ -637,7 +697,8 @@ function renderTome(w, item, from) {
   const rv = reviewsOf(w);
   const byline = [w.a, w.p, kindName === '책' ? '' : kindName].filter(Boolean).join(' · ');
   const cq = coverQuote(w);
-  const left = [el('div', { className:'title-page' }, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }),
+  const cover = coverImage(w);
+  const left = [el('div', { className:'title-page' }, cover, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }),
     cq ? el('figure', { className:'cover-q' }, el('blockquote', { textContent:cq.q }), cq.where ? el('figcaption', { textContent:cq.where }) : null) : null)];
   if (isReading(w)) left.push(el('p', { className:'by', textContent:'읽는 중' }));
   if (w.th.length) left.push(el('div', { className:'title-tags' }, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
@@ -705,7 +766,10 @@ function renderTome(w, item, from) {
     el('div', { className:'flip-front' }, el('strong', { textContent:titleOf(w) }), w.a ? el('span', { textContent:w.a }) : null, cq ? el('em', { className:'flip-q', textContent:cq.q }) : null),
     el('div', { className:'flip-back' }));
   flip.setAttribute('aria-hidden', 'true');
-  flip.firstChild.style.backgroundColor = themeVar(w.th[0]);
+  const fc = coverColors(w), front = flip.firstChild, seen = COVER_URL.get(w.id);
+  front.style.backgroundColor = fc ? fc[0] : themeVar(w.th[0]);
+  if (fc) front.style.color = fc[1];
+  if (seen) { front.classList.add('pic'); front.style.setProperty('--pic', `url("${seen}")`); } // 한 번 받은 표지는 펼칠 때 앞표지 그림으로
   const rightLeaf = el('div', { className:'leaf r', tabIndex:0 }, body.flat());
   rightLeaf.setAttribute('role', 'region');
   rightLeaf.setAttribute('aria-label', '서평과 기록');
@@ -2625,8 +2689,12 @@ async function start() {
     const r = await fetch('data/public.json', { cache:'no-cache' });
     if (!r.ok) throw new Error(String(r.status));
     D.pub = await r.json();
-    // 블로그 글은 없어도 책장은 열린다
-    D.blog = await fetch('data/blog.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.posts || []).catch(() => []);
+    // 블로그 글·책등 색은 없어도 책장은 열린다(색이 없으면 주제 색)
+    const [blog, spines] = await Promise.all([
+      fetch('data/blog.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.posts || []).catch(() => []),
+      fetch('data/spines.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.c || {}).catch(() => ({})),
+    ]);
+    D.blog = blog; D.spines = spines;
   } catch (e) {
     console.error(e);
     const retry = el('button', { className:'btn', type:'button', textContent:'다시 불러오기' });

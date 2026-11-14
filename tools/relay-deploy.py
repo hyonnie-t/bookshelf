@@ -1,11 +1,12 @@
 # 책장 중계 프로젝트의 배포 버전만 새 버전으로 바꾼다("배포 관리 > 수정 > 새 버전"과 같은 일, 주소 그대로).
-# 사용: python relay_deploy.py check | deploy | rollback N
+# 사용: python relay-deploy.py check | push <gs 경로> | deploy "설명" | rollback N
 # history26 포털 배포는 건드리지 않는다. 열쇠는 gas_sync.py의 deploy_credentials()를 그대로 쓴다(내용은 출력하지 않는다).
 import sys, json, time, urllib.request, urllib.parse, importlib.util
 from pathlib import Path
 from googleapiclient.discovery import build
 
-GS = Path(r"D:\OneDrive - 대영중학교\교사업무\웹앱\history26_backend\tools\gas_sync.py")
+# PC마다 OneDrive 위치가 달라(C:·D:) 이 파일 기준으로 찾는다. worktree(웹앱\.wt-*)도 같은 깊이다
+GS = Path(__file__).resolve().parents[2] / "history26_backend" / "tools" / "gas_sync.py"
 spec = importlib.util.spec_from_file_location("gas_sync", GS)
 gs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gs)
@@ -54,7 +55,7 @@ cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
 d = current()
 cfg = d["deploymentConfig"]
 prev = cfg.get("versionNumber")
-urls = [e.get("uri") for e in d.get("entryPoints", [])]
+urls = [e.get("webApp", {}).get("url") or e.get("uri") for e in d.get("entryPoints", [])]
 print("지금 배포 버전:", prev, "/ 주소 일치:", any(u and u.endswith(DEPLOY_ID + "/exec") for u in urls))
 files = svc.projects().getContent(scriptId=SCRIPT_ID).execute().get("files", [])
 print("편집기 파일:", [f["name"] for f in files])
@@ -69,10 +70,11 @@ if cmd == "push":
     svc.projects().updateContent(scriptId=SCRIPT_ID, body={"files": out}).execute()
     print("편집기 «코드» 갱신:", len(new_src), "자")
 elif cmd == "deploy":
-    v = svc.projects().versions().create(scriptId=SCRIPT_ID, body={"description": "국립중앙도서관 칸 이름 맞춤 2026-11-10"}).execute()["versionNumber"]
+    desc = sys.argv[2] if len(sys.argv) > 2 else "책장 중계 갱신"
+    v = svc.projects().versions().create(scriptId=SCRIPT_ID, body={"description": desc}).execute()["versionNumber"]
     print("새 버전", v, "만듦")
     try:
-        set_version(v, f"국립중앙도서관 칸 이름 맞춤 prev={prev}")
+        set_version(v, f"{desc} prev={prev}")
         problem = smoke()
     except Exception as ex:
         problem = str(ex)
