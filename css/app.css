@@ -568,6 +568,17 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .read-filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap:var(--space-2) var(--space-3); }
 .read-filters select, .read-filters input { width:100%; min-width:0; }
 .fill-row.locked { opacity:.55; }
+/* 줄에서 다시 찾기(2026-11-15): 찾는 말 칸 + 후보 최대 5개. 후보는 누르면 고른 표시 */
+.fill-group + .fill-group { margin-top:var(--space-4); }
+.row-search-wrap { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-1); margin-top:var(--space-1); }
+.row-search { display:flex; flex-direction:column; gap:var(--space-1); width:100%; animation:drillIn .2s ease-out; }
+.row-search-bar { display:flex; gap:var(--space-1); }
+.row-search-bar input { flex:1; min-width:0; min-height:40px; }
+.row-cands { display:flex; flex-direction:column; gap:var(--space-1); }
+.row-cand { display:flex; flex-direction:column; align-items:flex-start; gap:2px; /* 제목·정보 두 줄 사이: 8pt 눈금보다 좁게 붙여 한 후보로 읽히게 */ min-height:40px; padding:var(--space-1) var(--space-2); border:1px solid var(--line); border-radius:6px; background:var(--card, transparent); color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.row-cand small { color:var(--muted); }
+.row-cand[aria-pressed="true"] { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+@media (prefers-reduced-motion: reduce) { .row-search { animation:none; } }
 /* 한 줄 평 옆 공개/숨김 단추(2026-11-15). 표(only-tag) 모양이지만 누르는 단추라 높이 32 */
 .only-tag.line-vis { display:inline-flex; align-items:center; min-height:32px; padding:0 var(--space-2); background:none; cursor:pointer; transition:background-color .2s ease-out, color .2s ease-out; }
 @media (prefers-reduced-motion: reduce) { .only-tag.line-vis { transition:none; } }
