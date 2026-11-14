@@ -3033,7 +3033,11 @@ function openFillTool() {
     const fills = Object.keys(r.fill).map((k) => el('span', { className:'fill-what' }, `${LABEL[k]}: `, el('strong', { textContent:[].concat(r.fill[k]).join(', ') }), el('small', { textContent:` ${r.why[k]}` })));
     // 찾은 책 제목이 책장 제목과 다르면(오타 등) «책 제목도 고치기»(기본 끔)
     r.retitle = r.status === 'picked' && titleDiffers(r.w, r.c) ? (() => { const input = el('input', { type:'checkbox' }); const lab = el('label', { className:'check' }, input, ` 책 제목도 «${r.c.t}»(으)로 고치기`); lab.input = input; input.onchange = () => { box.disabled = !can(); if (input.checked) box.checked = true; else if (!Object.keys(r.fill).length) box.checked = false; upd(); }; return lab; })() : null;
-    const again = r.status === 'sure' ? null : rowSearch(tidy(`${r.w.t} ${firstAuthor(r.w)}`), async (b) => { place(await fillFrom(r.w, b, 'picked')); });
+    const again = r.status === 'sure' ? null : rowSearch(tidy(`${r.w.t} ${firstAuthor(r.w)}`), async (b) => {
+      const nr = await fillFrom(r.w, b, 'picked'); place(nr);
+      // 써 보며 고침(2026-11-15): 고른 줄이 «채울 수 있어요» 묶음으로 옮겨 가 눈앞에서 사라졌다. 옮긴 줄로 따라가 한 번 물든다
+      nr.el.scrollIntoView({ block:'center', behavior:calm() ? 'auto' : 'smooth' }); nr.el.classList.add('just');
+    });
     return el('div', { className:'dup-row fill-row ' + r.status },
       el('label', { className:'check overlap-pick' }, box, el('strong', { textContent:titleOf(r.w) })),
       el('div', { className:'when', textContent:[STATE[r.status], r.w.a || '저자 없음', r.c ? `찾은 책: ${[r.c.t, r.c.a, r.c.p].filter(Boolean).join(' · ')}` : ''].filter(Boolean).join(' · ') }),
