@@ -538,6 +538,30 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
   .filters.folded > .fold-panel { flex:1 1 100%; }
 }
 
+/* 책 고치기 한 창·단추 정리 (2026-11-14) */
+.reading-pick { border:0; margin:0; padding:0; min-width:0; }
+.reading-pick legend { padding:0; margin-bottom:var(--space-1); font-size:.88rem; color:var(--muted); }
+.segs { display:flex; border:1px solid var(--strong); border-radius:6px; overflow:hidden; width:max-content; max-width:100%; }
+.seg { position:relative; display:flex; }
+.seg input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+.seg span { display:flex; align-items:center; min-height:40px; padding:0 var(--space-3); font-size:.92rem; }
+.seg + .seg span { border-left:1px solid var(--strong); }
+.seg input:checked + span { background:var(--accent); color:var(--accent-ink); font-weight:700; }
+.seg input:focus-visible + span { outline:2px solid var(--focus,var(--accent)); outline-offset:-3px; }
+.seg-fixed { margin:0; font-weight:700; }
+.reading-more { display:grid; gap:var(--space-2); margin-top:var(--space-2); }
+.auto-note { color:var(--muted); font-size:.85rem; }
+.checks .check.just { animation:chip-picked 1.2s ease-out; border-radius:4px; }
+@keyframes chip-picked { 0% { background:color-mix(in srgb,var(--accent) 28%,transparent); } 100% { background:transparent; } }
+.form-tools { padding-top:var(--space-2); border-top:1px solid var(--line); }
+.form-tools .danger { margin-left:auto; }
+.more-wrap { display:contents; }
+.more-menu { flex:1 1 100%; display:grid; gap:var(--space-1); padding:var(--space-2); border:1px solid var(--line); border-radius:6px; background:var(--surface); text-align:left; }
+.more-menu .copy, .more-menu .btn { justify-self:stretch; text-align:left; min-height:32px; }
+@media (prefers-reduced-motion: no-preference) { .more-menu:not([hidden]) { animation:drillIn .18s ease-out; } }
+.only-state { margin:0; display:grid; gap:2px; text-align:left; }
+.only-state small { color:var(--muted); font-size:.8rem; line-height:1.45; }
+
 /* 터치 화면의 누르는 크기: 기본값보다 뒤에 둔다 (2026-11-07) */
 @media (pointer:coarse) {
   .chip,.copy { min-height:40px; }
