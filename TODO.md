@@ -25,6 +25,6 @@
 - [x] D3. `tools/test-reading-form.js`
 - [x] E1. 책 창 왼쪽 단추 줄이기 + «더 보기» 메뉴
 - [x] E2. 글 카드엔 «고치기»만, 공개·보관·지우기는 고치기 창 안
-- [ ] E3. CLAUDE.md·sw VERSION
+- [x] E3. CLAUDE.md·sw VERSION
 - [ ] F1. 관리 창 «빈 칸 채우기»
 - [ ] G1~G5. 시험·검토자·화면 확인·제미나이·PR
