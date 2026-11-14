@@ -1,6 +1,6 @@
 // 책장 앱의 책 찾기 중계(구글 앱스크립트 웹 앱). 이 파일은 키 없는 사본이고 실행본은 앱스크립트 프로젝트 «책장 책 찾기 중계»에 있다.
-// 출처 두 가지: src 없음 = 카카오 책 검색(효니 책장), src=nl = 국립중앙도서관 소장자료 검색(범용판, 2026-11-09 효니 결정).
-// 키는 프로젝트 설정 > 스크립트 속성 KAKAO_REST_KEY·NL_API_KEY에만 둔다. 찾는 말과 응답 본문을 로그에 남기지 않는다.
+// 출처 세 가지: src 없음 = 카카오 책 검색(효니 책장), src=nl = 국립중앙도서관 소장자료 검색(범용판, 2026-11-09 효니 결정), src=y24 = 예스24 Open API(2026-11-14).
+// 키는 프로젝트 설정 > 스크립트 속성 KAKAO_REST_KEY·NL_API_KEY·YES24_API_KEY에만 둔다. 찾는 말과 응답 본문을 로그에 남기지 않는다.
 // 배포: 웹 앱, 실행 사용자 «나», 액세스 «모든 사용자»(«Google 계정이 있는 모든 사용자»로 하면 로그인 화면이 와서 앱에서 읽지 못한다).
 // 결과를 저장하지 않는다(카카오 운영정책 제5조 제20호 캐시 조항). 호출 허용 IP는 켜지 않는다(앱스크립트 서버 IP가 고정이 아님).
 var MAX_QUERY = 100;   // 찾는 말 글자 수 상한
@@ -16,13 +16,13 @@ function search_(raw, src) {
   var q = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
   if (!q) return { ok: false, error: 'empty' };
   if (q.length > MAX_QUERY) return { ok: false, error: 'too_long' };
-  var nl = src === 'nl';
+  var nl = src === 'nl', y24 = src === 'y24';
   var props = PropertiesService.getScriptProperties();
-  var key = props.getProperty(nl ? 'NL_API_KEY' : 'KAKAO_REST_KEY');
+  var key = props.getProperty(nl ? 'NL_API_KEY' : y24 ? 'YES24_API_KEY' : 'KAKAO_REST_KEY');
   if (!key) return { ok: false, error: 'no_key' };
-  if (!underLimit_(props, nl ? 'DAY_COUNT_NL' : 'DAY_COUNT')) return { ok: false, error: 'limit' };
+  if (!underLimit_(props, nl ? 'DAY_COUNT_NL' : y24 ? 'DAY_COUNT_Y24' : 'DAY_COUNT')) return { ok: false, error: 'limit' };
   try {
-    return nl ? nlSearch_(q, key) : kakaoSearch_(q, key);
+    return nl ? nlSearch_(q, key) : y24 ? y24Search_(q, key) : kakaoSearch_(q, key);
   } catch (err) {
     return { ok: false, error: 'fetch' }; // 예외 메시지에 요청 정보(키 포함 주소)가 섞일 수 있어 돌려주지 않는다
   }
@@ -36,6 +36,48 @@ function kakaoSearch_(q, key) {
   var code = res.getResponseCode();
   if (code !== 200) return { ok: false, error: 'upstream', status: code }; // 응답 본문은 돌려주지 않는다
   return { ok: true, books: (JSON.parse(res.getContentText()).documents || []).map(pick_) };
+}
+
+// 예스24 Open API 상품 검색(2026-11-14 더함, 키는 스크립트 속성 YES24_API_KEY). 책(국내·외국 도서)만, 세트·eBook은 앱이 거른다.
+// 이용약관 제6조: 화면에 예스24 출처와 상품 링크를 표시할 것, 대량 수집·재배포 금지. 응답 본문·키를 로그에 남기지 않는다
+function y24Search_(q, key) {
+  var res = UrlFetchApp.fetch('https://apis.yes24.com/v1/goods/itemList?category=BOOK&detail=Y&pageSize=' + PAGE_SIZE + '&query=' + encodeURIComponent(q), {
+    headers: { 'X-Api-Key': key },
+    muteHttpExceptions: true,
+  });
+  var code = res.getResponseCode();
+  if (code === 404) return { ok: true, books: [] }; // SEARCH_001 검색 결과 없음
+  if (code !== 200) return { ok: false, error: 'upstream', status: code };
+  var items = ((JSON.parse(res.getContentText()).data || {}).items) || [];
+  return { ok: true, books: items.map(pickY24_) };
+}
+// «보니 가머스 저/심연희 역/이태수 감수» → 저자·역자. 감수·그림 등은 저자 쪽에 그대로 둔다
+function y24People_(s) {
+  var authors = [], translators = [];
+  String(s || '').split('/').forEach(function (part) {
+    var p = part.trim(); if (!p) return;
+    var m = p.match(/^(.*?)\s*(저|글|지음|편저|엮음|역|옮김|번역)$/);
+    var name = m ? m[1].trim() : p;
+    if (m && /^(역|옮김|번역)$/.test(m[2])) translators.push(name); else authors.push(name);
+  });
+  return { authors: authors, translators: translators };
+}
+function pickY24_(d) {
+  var who = y24People_(d.author);
+  return {
+    title: d.title || '',
+    authors: who.authors,
+    translators: who.translators,
+    publisher: d.publisher || '',
+    year: String(d.publishDate || '').slice(0, 4),
+    isbn: d.isbn13 || d.isbn10 || '',
+    cover: https_(d.cover),
+    y24: d.itemId ? String(d.itemId) : '',         // 예스24 상품 번호(책등 사진 image.yes24.com/goods/<번호>/SIDE/L)
+    size: [d.width || 0, d.length || 0, d.height || 0], // 가로·세로·두께 mm(두께는 5·10mm 단위로 둥근 값이 많다)
+    pages: d.pages || 0,
+    sub: d.subTitle || '',
+    kind: d.goodsSortNm || '',
+  };
 }
 
 // 필요한 칸만 고른다. 소개글·가격·판매 링크는 내보내지 않는다.
