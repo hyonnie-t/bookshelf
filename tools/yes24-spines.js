@@ -23,6 +23,11 @@ const firstAuthor = (a) => String(a || '').split('/')[0].split(/[,·]/)[0].repla
 
 // 권 번호: «(1)», «1권», «1부 1권»의 마지막 «n권», 끝의 «상·하»는 1·2. 없으면 ''
 const volOf = (t) => { const s = strip(t).trim(); const m = s.match(/(\d+)\s*권(?!.*\d+\s*권)/) || s.match(/\((\d+)\)\s*$/) || s.match(/\s(\d{1,2})\s*$/); if (m) return m[1]; const h = s.match(/[\s(]([상중하])\)?\s*$/); return h ? { 상:'1', 중:'2', 하:'3' }[h[1]] : ''; };
+const dist = (a, b) => { // 글자 편집 거리
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) { const cur = [i]; for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+  return prev[b.length];
+};
 async function get(url, headers, type = 'text') {
   for (let i = 0; i < 3; i++) {
     try {
@@ -72,9 +77,12 @@ async function find(b) {
     if (!r.status) return { why: 'fetch' };
     const all = items(r.body).map((x) => {
       const at = norm(x.alt), tx = norm(x.text);
-      const ts = at === T ? 3 : at && (at.startsWith(T) || T.startsWith(at)) ? 2 : 0; // 제목은 같거나 앞이 같아야 한다(«이방인/페스트/시지프 신화» 같은 묶음책이 붙었던 일)
+      // 제목은 같거나 앞이 같아야 한다(«이방인/페스트/시지프 신화» 같은 묶음책이 붙었던 일). 표기 차이(«해방일기/일지», «2025년/2025»)는 글자 1~2개까지, 긴 제목(8자 이상)은 앞에 시리즈 이름이 붙어도(«일상이 고고학, 나 혼자 …») 받는다
+      const near = T.length >= 6 && Math.abs(at.length - T.length) <= 2 && dist(at, T) <= (T.length >= 10 ? 2 : 1);
+      const ts = at === T ? 3 : at && (at.startsWith(T) || T.startsWith(at) || near || (T.length >= 8 && at.includes(T))) ? 2 : 0;
       let s = ts;
-      const am = !!A && tx.includes(A), pm = !!P && tx.includes(P);
+      // 저자 표기 차이(«캐럴라인/캐롤라인», «샬럿/샬롯»)는 이름 끝 세 글자로 본다
+      const am = !!A && (tx.includes(A) || (A.length >= 4 && tx.includes(A.slice(-3)))), pm = !!P && tx.includes(P);
       if (am) s += 2;
       if (pm) s += 1; // 같은 책의 여러 판 중 효니 판(출판사)을 먼저
       if (V) { const cv = volOf(x.alt); if (cv === V) s += 1; else if (cv) s -= 3; } // 권 번호가 다르면 다른 책(레퓨테이션 (1)이 2권에 붙었던 일)
