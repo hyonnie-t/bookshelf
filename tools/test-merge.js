@@ -51,7 +51,7 @@ const REPO = path.join(__dirname, '..');
     const k2 = book('k', { recs:[{ d:'2023-12-22', r:4, l:'짧', lp:false }] }), d2 = book('d', { recs:[{ d:'2023-12-22', r:4, l:'더 긴 한 줄 평' }] });
     assert.equal(M.mergePlan(k2, d2, { dedupe:true }).next.recs[0].lp, false);
     const k3 = book('k', { recs:[{ d:'2023-12-22', r:4 }] }), d3 = book('d', { recs:[{ d:'2023-12-22', r:4, l:'더 긴 한 줄 평', lp:false }] });
-    assert.equal(M.mergePlan(k3, d3, { dedupe:true }).next.recs[0].lp, undefined);
+    assert.equal(M.mergePlan(k3, d3, { dedupe:true }).next.recs[0].lp, false); // 빠지는 칸의 숨긴 한 줄 평이 채워져도 숨긴 채로
     roundTrip(k2, d2, { dedupe:true }); roundTrip(k3, d3, { dedupe:true });
   });
 

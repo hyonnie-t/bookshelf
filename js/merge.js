@@ -25,7 +25,8 @@ function combine(k, d, tag) {
   const o = { ...main };
   ['r', 'l', 'b', 'cd', 'rd'].forEach((f) => { if (blank(o[f]) && !blank(other[f])) o[f] = other[f]; });
   delete o.pub; if (k.pub) o.pub = k.pub;
-  delete o.lp; if (k.lp === false) o.lp = false; // 한 줄 평 공개 끄기(2026-11-15)도 남는 칸 기록을 따른다
+  // 한 줄 평 공개 끄기(2026-11-15): 어느 쪽이든 숨긴 한 줄 평이면 숨긴 채로(빠지는 칸의 숨긴 한 줄 평이 빈 l을 채워 공개되지 않게, 검토자 재현)
+  delete o.lp; if (k.lp === false || d.lp === false) o.lp = false;
   delete o.from; if (k.from) o.from = k.from;
   o.mix = [...(k.mix || []), tag];
   return o;
