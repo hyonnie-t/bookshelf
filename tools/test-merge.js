@@ -133,6 +133,30 @@ const REPO = path.join(__dirname, '..');
     roundTrip(k4, d4, {});
     assert.equal(M.mergePlan(k4, d4, { lock:true }).next.wc, undefined); // 잠긴 칸 정보는 안 옮김
   });
+  ok('안 읽음 st:not 합치기(2026-11-15): 다 읽은 기록 > 다 읽음 표시 > 읽는 중 > 안 읽음', () => {
+    const R = (keep, drop) => M.mergePlan(keep, drop, {}).next;
+    // 둘 다 안 읽음 → 안 읽음
+    const a1 = book('k', { t:'A', st:'not' }), a2 = book('d', { t:'A', st:'not' });
+    assert.equal(R(a1, a2).st, 'not'); roundTrip(a1, a2, {});
+    // 한쪽만 안 읽음, 다른 쪽 표시 없음 → 안 읽음(빠지는 칸 쪽이어도)
+    const b1 = book('k', { t:'B' }), b2 = book('d', { t:'B', st:'not' });
+    assert.equal(R(b1, b2).st, 'not'); roundTrip(b1, b2, {});
+    // 안 읽음 + 읽는 중 → 읽는 중
+    const c1 = book('k', { t:'C', st:'not' }), c2 = book('d', { t:'C', unread:true });
+    const c = R(c1, c2); assert.equal(c.st, undefined); assert.equal(c.unread, true); roundTrip(c1, c2, {});
+    // 안 읽음(메모 s:reading이 남아 있음) + 표시 없음 → 안 읽음(그 메모는 읽는 중으로 치지 않음)
+    const e1 = book('k', { t:'E', st:'not', notes:[{ b:'가', s:'reading' }] }), e2 = book('d', { t:'E' });
+    assert.equal(R(e1, e2).st, 'not'); roundTrip(e1, e2, {});
+    // 안 읽음 + 다 읽음 표시 → 다 읽음
+    const f1 = book('k', { t:'F', st:'not' }), f2 = book('d', { t:'F', st:'done' });
+    assert.equal(R(f1, f2).st, 'done'); roundTrip(f1, f2, {});
+    // 안 읽음 + 다 읽은 기록 → 표시 지움(다 읽음)
+    const g1 = book('k', { t:'G', st:'not' }), g2 = book('d', { t:'G', recs:[{ d:'2024-01-01', r:4 }] });
+    assert.equal(R(g1, g2).st, undefined); roundTrip(g1, g2, {});
+    // 안 읽음 + 미완독 기록 → 읽는 중
+    const h1 = book('k', { t:'H', st:'not' }), h2 = book('d', { t:'H', recs:[{ d:'2024-01-01', st:'unread' }] });
+    const h = R(h1, h2); assert.equal(h.st, undefined); assert.equal(h.unread, true); roundTrip(h1, h2, {});
+  });
 
   ok('앱 연결', () => {
     const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8');

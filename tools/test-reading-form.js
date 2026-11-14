@@ -5,9 +5,11 @@ const REPO = path.join(__dirname, '..');
   const R = await import(`data:text/javascript;base64,${fs.readFileSync(path.join(REPO, 'js/reading.js')).toString('base64')}`);
   const pub = fs.readFileSync(path.join(REPO, 'tools/publish.js'), 'utf8');
   // tools/publish.js의 두 판정(읽는 중 st:'reading', 다 읽은 책)이 이 시험이 흉내 내는 모양 그대로인지 먼저 본다
-  assert(pub.includes("!recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'"), 'publish.js 읽는 중 판정이 바뀜');
+  assert(pub.includes("!recs.some((r) => r.st !== 'unread') && w.st === 'not') o.st = 'not'"), 'publish.js 안 읽음 판정이 바뀜');
+  assert(pub.includes("!recs.some((r) => r.st !== 'unread') && w.st !== 'not' && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'"), 'publish.js 읽는 중 판정이 바뀜');
   assert(pub.includes("(recs.some((r) => r.st !== 'unread') || w.st === 'done'"), 'publish.js 다 읽음 판정이 바뀜');
-  const pubReading = (w) => { const recs = w.recs || []; return !recs.some((r) => r.st !== 'unread') && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading')); };
+  const pubNot = (w) => !(w.recs || []).some((r) => r.st !== 'unread') && w.st === 'not';
+  const pubReading = (w) => { const recs = w.recs || []; return !recs.some((r) => r.st !== 'unread') && w.st !== 'not' && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading')); };
   const pubDone = (w) => (w.recs || []).some((r) => r.st !== 'unread') || w.st === 'done';
   let n = 0;
   const ok = (name, fn) => { try { fn(); n++; } catch (e) { console.error('실패:', name); throw e; } };
@@ -62,12 +64,55 @@ const REPO = path.join(__dirname, '..');
     const w = { id:'f', k:'film', recs:[], notes:[], unread:true };
     assert(!R.readingPatch(w, 'done').st);
   });
+  // 안 읽음(2026-11-15)
+  ok('읽는 중(메모 s:reading) → 안 읽음: unread 지우고 st:not, 메모는 그대로', () => {
+    const w = book({ unread:true, notes:[{ b:'가', s:'reading' }] });
+    const x = R.readingPatch(w, 'not');
+    assert.strictEqual(x.st, 'not'); assert(!x.unread); assert.strictEqual(x.notes[0].s, 'reading');
+    assert(R.isNotRead(x)); assert(!R.isReading(x)); assert.strictEqual(R.readState(x), 'not'); assert(!R.countsRead(x));
+    assert(pubNot(x)); assert(!pubReading(x)); assert(!pubDone(x));
+  });
+  ok('다 읽음(표시) → 안 읽음 → 다 읽음', () => {
+    const x = R.readingPatch(book({ st:'done' }), 'not');
+    assert.strictEqual(x.st, 'not');
+    const y = R.readingPatch(x, 'done');
+    assert.strictEqual(y.st, 'done'); assert(R.countsRead(y)); assert(pubDone(y));
+  });
+  ok('안 읽음 → 읽는 중: st 지우고 unread', () => {
+    const x = R.readingPatch(book({ st:'not' }), 'reading');
+    assert(!x.st); assert(x.unread); assert(R.isReading(x)); assert(pubReading(x));
+  });
+  ok('안 읽음 → 다 읽음(날짜·별점): 다 읽은 기록 하나', () => {
+    const x = R.readingPatch(book({ st:'not' }), 'done', { d:'2026-11-15', r:4 });
+    assert.strictEqual(x.recs.length, 1); assert(R.hasDoneRec(x)); assert(!R.isNotRead(x));
+  });
+  ok('미완독 기록이 있으면 안 읽음을 못 고름', () => {
+    const w = book({ unread:true, recs:[{ d:'2026-01-01', st:'unread' }] });
+    assert(!R.canMarkNot(w));
+    const x = R.readingPatch(w, 'not');
+    assert(!x.st); assert(x.unread);
+  });
+  ok('다 읽은 기록이 이김: st:not이 있어도 다 읽음', () => {
+    const w = book({ st:'not', recs:[{ d:'2026-01-01', r:3 }] });
+    assert(!R.isNotRead(w)); assert(R.countsRead(w)); assert(!pubNot(w)); assert(pubDone(w));
+  });
+  ok('settleRecs: 다 읽은 기록을 더하면 안 읽음이 풀림, 미완독이면 읽는 중', () => {
+    const a = R.settleRecs(book({ st:'not', recs:[{ d:'2026-11-15' }] }));
+    assert(!a.st); assert(!a.unread); assert(R.countsRead(a));
+    const b = R.settleRecs(book({ st:'not', recs:[{ d:'2026-11-15', st:'unread' }] }));
+    assert(!b.st); assert(b.unread); assert(R.isReading(b));
+    const c = R.settleRecs(book({ st:'not' }));
+    assert.strictEqual(c.st, 'not', '기록이 없으면 그대로');
+  });
+  ok('책이 아니면 안 읽음이 아님', () => { assert(!R.isNotRead({ k:'film', st:'not', recs:[] })); });
   // 앱이 옛 함수 대신 js/reading.js를 쓰는지(같은 기준이 두 곳에 생기지 않게)
   const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8');
   ok('앱이 reading.js를 불러옴', () => {
     assert(/from '\.\/reading\.js'/.test(app));
     assert(!/const isReading = /.test(app) && !/function setReading/.test(app));
     assert(!/visToggle|onlyMeBox/.test(app), '옛 단추 함수가 남아 있음');
+    assert(!app.includes("w.k === 'book' && !isReading(w)).length"), '읽은 권수는 countsRead로 센다(안 읽음 빼기)');
+    for (const f of ['index.html', 'my/index.html']) assert(fs.readFileSync(path.join(REPO, f), 'utf8').includes('id="readStates"'), f + ' 관리 «읽기 상태 한꺼번에» 단추');
   });
   ok('서비스워커 목록', () => {
     for (const f of ['kdc.js', 'reading.js']) {

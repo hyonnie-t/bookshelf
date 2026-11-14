@@ -123,7 +123,7 @@ function cleanWork(w) {
   const marks = cleanMarks(w.marks);
   if (marks.length) o.marks = marks;
   if (w.unread === true) o.unread = true;
-  if (w.st === 'done') o.st = 'done';
+  if (w.st === 'done' || w.st === 'not') o.st = w.st; // 'not': 안 읽음(2026-11-15)
   if (w.del === true) o.del = true;
   // 실물 책등(2026-11-14): [예스24 상품 번호, 책등 그림 가로/세로] 또는 0(색 책등으로)
   if (Array.isArray(w.y24) && /^\d{4,12}$/.test(String(w.y24[0])) && w.y24[1] > 0 && w.y24[1] < 1) o.y24 = [String(w.y24[0]), +w.y24[1]];
@@ -135,7 +135,7 @@ function cleanWork(w) {
       o.was = { a:str(w.was.a), p:str(w.was.p), th:Array.isArray(w.was.th) ? w.was.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.was.y).slice(0, 4), fd:day(w.was.fd) || str(w.was.fd).slice(0, 4), known:true };
       if (w.was.unread === true) o.was.unread = true;
       if (typeof w.was.t === 'string') o.was.t = str(w.was.t); // 합치기에서 다른 칸 제목을 골랐으면 원래 제목(2026-11-14)
-      if (w.was.st === 'done' || w.was.st === 'none') o.was.st = w.was.st; // 합치며 바뀐 다 읽음 표시의 원래 값
+      if (w.was.st === 'done' || w.was.st === 'none' || w.was.st === 'not') o.was.st = w.was.st; // 합치며 바뀐 다 읽음 표시의 원래 값
       if (w.was.y24c === true) { o.was.y24c = true; o.was.y24 = w.was.y24 === 'none' || w.was.y24 === 0 || w.was.y24 === 1 ? w.was.y24 : Array.isArray(w.was.y24) && /^\d{4,12}$/.test(String(w.was.y24[0])) ? [String(w.was.y24[0]), +w.was.y24[1]] : 'none'; } // 이어 준 책등의 원래 값
     }
     // 같은 기록으로 하나만 남긴 짝(되돌리면 두 기록으로 돌아간다)
