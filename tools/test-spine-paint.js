@@ -10,12 +10,12 @@ const REPO = path.join(__dirname, '..');
   const hash = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
   const hue = (h) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); const M = Math.max(r, g, b), m = Math.min(r, g, b), d = M - m; if (d < 0.04) return null; return ((M === r ? (g - b) / d + 6 : M === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60) % 360; };
   const eds = Object.keys(SPINE_EDITIONS);
-  const blkOk = (p) => !p.blk || contrast(p.blk, p.ink) >= 4.5;
+  const blkOk = (p) => p.stops.every((s) => contrast(s, p.ink) >= 4.5);
   ok(`대비 4.5 이상: ${covers.length}권 × 에디션 ${eds.length} × 밝은·어두운 판`, () => {
     let min = 99;
     for (const ed of eds) for (const dark of [false, true]) for (const [id, c] of covers.concat(SAMPLE_COVERS.map((x, i) => ['s' + i, [x]]))) {
       const p = spineColor(c, ed, dark, hash(id)); const k = contrast(p.bg, p.ink); min = Math.min(min, k);
-      assert(blkOk(p), 'blk ' + ed + ' ' + id); assert(k >= 4.5, `${ed} ${dark ? '어두운' : '밝은'} 판 ${id}: ${k.toFixed(2)}`);
+      assert(blkOk(p), '색 조각 ' + ed + ' ' + id); assert(k >= 4.5, `${ed} ${dark ? '어두운' : '밝은'} 판 ${id}: ${k.toFixed(2)}`);
       assert(/^#[0-9a-f]{6}$/.test(p.bg) && /^#[0-9a-f]{6}$/.test(p.ink), '색 형식');
     }
     console.log('   가장 낮은 대비', min.toFixed(2));

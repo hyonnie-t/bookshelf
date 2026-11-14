@@ -43,4 +43,24 @@ function pickColors(data, w, h) {
   return { base: hex(base), text: hex(text), accent: accent ? hex(accent.c) : '', share: groups[0].share };
 }
 
-module.exports = { pickColors, fixText, contrast, rgb, hex };
+// 표지 세로 색 조각(2026-11-14 2단계): 표지를 위에서 아래로 n칸으로 나눠 칸마다 가장 넓은 색을 뽑는다. 책등에 흐릿한 표지 조각처럼 깐다.
+// 가운데 70% 폭만 본다(가장자리 테두리·띠지 그림자 제외). 돌려주는 값은 '#' 없는 6자리 색을 이어 붙인 문자열(색만 저장, 그림·주소는 저장하지 않는다).
+function stripes(data, w, h, n = 7) {
+  const x0 = Math.round(w * 0.15), x1 = Math.round(w * 0.85), my = Math.round(h * 0.04);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const ya = my + Math.floor((h - 2 * my) * i / n), yb = my + Math.floor((h - 2 * my) * (i + 1) / n);
+    const bins = new Map();
+    for (let y = ya; y < yb; y++) for (let x = x0; x < x1; x++) {
+      const o = (y * w + x) * 4; if (data[o + 3] < 128) continue;
+      const k = (data[o] >> 5) << 6 | (data[o + 1] >> 5) << 3 | (data[o + 2] >> 5);
+      const e = bins.get(k) || { n: 0, r: 0, g: 0, b: 0 }; e.n++; e.r += data[o]; e.g += data[o + 1]; e.b += data[o + 2]; bins.set(k, e);
+    }
+    const top = [...bins.values()].sort((a, b) => b.n - a.n)[0];
+    if (!top) return '';
+    out.push(hex([top.r / top.n, top.g / top.n, top.b / top.n]).slice(1));
+  }
+  return out.join('');
+}
+
+module.exports = { pickColors, fixText, stripes, contrast, rgb, hex };
