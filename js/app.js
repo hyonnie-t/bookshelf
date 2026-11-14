@@ -5,6 +5,7 @@ import { hasText, suggest, wordStats } from './guess.js';
 import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
 import { pickTheme, authorTheme } from './kdc.js';
+import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, canMarkReading, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
 
@@ -1102,11 +1103,14 @@ function renderTome(w, item, from) {
     editBook.onclick = () => openBookForm(w);
     const merge = el('button', { className:'copy', type:'button', textContent:'같은 책과 합치기' });
     merge.onclick = () => openMergePick(w);
+    const lastIn = mergedInto(w.id)[0];
+    let unmerge = null; // 합치기 되돌리기(2026-11-14): «겹치는 책 고치기» 안에만 있어 찾기 어려웠다
+    if (lastIn) { unmerge = el('button', { className:'copy', type:'button', textContent:`합치기 되돌리기(«${lastIn[1].t || '제목 없음'}»)` }); unmerge.onclick = async () => { if (await ask(UNDO_MSG, '되돌리기')) undoMerge(lastIn[0]).then(() => { if ($('sheet').open) reshow(); }).catch(saveFailed); }; }
     let spineBtn = null; // 책등 바꾸기(2026-11-14, 책 창 왼쪽에 늘 보이던 책등 줄을 메뉴로)
     if (canPickSpine(w)) { spineBtn = el('button', { className:'copy', type:'button', textContent:'책등 바꾸기' }); spineBtn.onclick = () => openY24Form(w); }
     let addMark = null;
     if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
-    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, spineBtn, w.pub ? share : null, ...lib.tools])));
+    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, ...lib.tools])));
   } else if (S.owner && lib.tools.length) left.push(el('div', { className:'actions sub' }, lib.tools)); // 서재에만 있는 책: 서재 단추는 그대로
   else if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
@@ -2211,7 +2215,7 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupPairs().length; $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, nameHay, pub, qs, ms, ...rest } = w; // qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다
@@ -2280,7 +2284,7 @@ function openMarkForm(w, id) {
     const cur = D.works.get(w.id) || w;
     await keepScroll(() => memoSave({ ...cur, marks:cur.marks.filter((x) => x.id !== id) }, '밑줄을 지웠어요'));
   }, true) : null;
-  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d), openBox, formTools(del)].filter(Boolean), async () => {
+  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d), openBox, formTools(id ? moveBtn(w, 'marks', (cur) => cur.marks.findIndex((x) => x.id === id)) : null, del)].filter(Boolean), async () => {
     const text = q.value.replace(/\r\n?/g, '\n').trim();
     if (!text) throw fail('문장을 붙여 넣어 주세요.');
     const next = { ...m, id:m.id || markId(), d:d.value, p:pageText(p.value), q:text, why:why.value.replace(/\r\n?/g, '\n').trim() };
@@ -2378,7 +2382,8 @@ function memoTools(w, n0) {
     const notes = cur.notes.filter((_, x) => x !== i);
     await memoSave({ ...cur, notes, ...(emptyAfter(cur, notes, cur.archived) ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
   }, true);
-  return formTools(keep, del);
+  const move = moveBtn(w, 'notes', (cur) => cur.notes.findIndex((x) => x === n0 || (n0.id != null && x.id === n0.id)));
+  return formTools(keep, move, del);
 }
 // 메모 고치기: 본문(b)과 날짜(d)만 고친다. 첫 줄(l)과 글자 수(len)는 본문에서 다시 만들어 책등 높이·찾기·돌아보기·낱말·겹침 판정이 새 글을 따른다. 보관한 메모는 «되돌리기» 뒤에 고친다
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -2625,11 +2630,14 @@ function bookLookup(apply) {
 }
 
 /* ---------- 겹치는 책 고치기 ---------- */
+// 2026-11-14 바로잡음(효니 «책 기록이 잘못합쳐지는 경우 수정 필요»): 합치기 창이 «합치면 이렇게 돼요» 미리보기가 되고, 남길 제목을 고르고, 같은 기록은 하나만 남긴다.
+// 시리즈의 한 권(«토지»·«토지 4»)은 따로 묶는다. 합치기·되돌리기 계산은 js/merge.js(시험 tools/test-merge.js), 여기는 쓰기·화면만
 const dupNorm = (s) => (s || '').replace(/[\s:·,.\-()«»"'!?~]/g, '').toLowerCase();
 const pairKey = (a, b) => [a, b].sort().join('~');
 function dupPairs() {
   const skip = (D.priv.meta || {}).notDup || {};
   const named = list().filter((w) => w.t && w.id).map((w) => [w, dupNorm(w.t)]).filter(([, n]) => n);
+  const fa = (w) => dupNorm(firstAuthor(w));
   const out = [];
   named.forEach(([a, x], i) => {
     for (let j = i + 1; j < named.length; j++) {
@@ -2637,37 +2645,45 @@ function dupPairs() {
       // 왓챠 작품은 코드가 다르면 다른 작품이고(리메이크 등), 같은 제목의 책·공연과도 다른 작품이다
       if (a.wc && b.wc) continue;
       if ((a.wc || b.wc) && a.k !== b.k) continue;
-      const same = x === y;
-      if ((same || (Math.min(x.length, y.length) >= 3 && (x.startsWith(y) || y.startsWith(x)))) && !skip[pairKey(a.id, b.id)]) out.push({ a, b, same });
+      if (!(x === y || (Math.min(x.length, y.length) >= 3 && (x.startsWith(y) || y.startsWith(x)))) || skip[pairKey(a.id, b.id)]) continue;
+      const adiff = !!(fa(a) && fa(b) && fa(a) !== fa(b)); // 첫 저자가 둘 다 있고 다르면 «제목이 같아요»에서 «비슷해요»로 내린다
+      const series = x !== y && seriesPair(a.t, b.t);
+      out.push({ a, b, same:x === y && !adiff, series, adiff });
     }
   });
   return out.sort((p, q) => q.same - p.same);
 }
+const dupCountShown = () => dupPairs().filter((p) => !p.series).length; // 관리 단추의 숫자에는 시리즈 묶음을 세지 않는다
 const kindName = (w) => (KINDS.find((k) => k[0] === w.k) || [,''])[1];
 const bookCounts = (w) => `기록 ${w.recs.length} · 메모 ${w.notes.length}${w.marks.length ? ` · 밑줄 ${w.marks.length}` : ''} · 서평 ${reviewsOf(w).length}`;
 const bookMeta = (w) => [kindName(w), w.a || '저자 없음', w.y, bookCounts(w)].filter(Boolean).join(' · ');
 const bookWeight = (w) => w.recs.length + w.notes.length + w.marks.length + reviewsOf(w).length + (w.k === 'book' ? .5 : 0) + (w.a ? .25 : 0) - (w.guess || !w.t ? 100 : 0); // 추정 제목이나 제목 없는 칸보다 확인된 제목을 먼저 권한다
+const UNDO_MSG = '이 합치기를 되돌릴까요? 합친 뒤 고친 저자·출판사·주제·연도는 합치기 전 값으로 돌아가요. 옮긴 기록·메모·밑줄은 고친 내용 그대로 원래 칸으로 돌아가고, 하나로 합친 같은 기록은 합치기 전 두 기록으로 돌아가요.';
+const mergedInto = (id) => Object.entries(D.priv.works || {}).filter(([, x]) => x.del && x.into === id).sort((x, y) => (y[1].at || 0) - (x[1].at || 0)); // 가장 나중 것이 앞
 function openDupTool() {
   const pairs = dupPairs();
-  const row = ({ a, b }) => {
-    const go = el('button', { className:'btn', type:'button', textContent:'합치기' });
+  const row = ({ a, b, series, adiff }) => {
+    const go = el('button', { className:series ? 'copy' : 'btn', type:'button', textContent:series ? '그래도 합치기' : '합치기' });
     go.onclick = () => openMergeForm(a, b, true);
-    const no = el('button', { className:'copy', type:'button', textContent:'다른 책이에요' });
+    const no = el('button', { className:series ? 'btn' : 'copy', type:'button', textContent:'다른 책이에요' });
     no.onclick = async () => {
       try { await write(`meta/notDup/${pairKey(a.id, b.id)}`, true); const m = D.priv.meta = D.priv.meta || {}; m.notDup = { ...(m.notDup || {}), [pairKey(a.id, b.id)]:true }; refreshAll(); openDupTool(); } catch (e) { saveFailed(e); }
     };
     const line = (w) => el('p', { className:'dup-book' }, el('strong', { textContent:w.t }), el('span', { textContent:bookMeta(w) }));
-    return el('div', { className:'dup-row' }, line(a), line(b), el('div', { className:'dup-tools' }, go, no));
+    return el('div', { className:'dup-row' }, line(a), line(b), adiff ? el('small', { className:'dup-note', textContent:'저자가 달라요' }) : null, el('div', { className:'dup-tools' }, ...(series ? [no, go] : [go, no])));
   };
-  const sec = (title, rows) => (rows.length ? el('section', { className:'dup-sec' }, el('h3', { className:'sec', textContent:`${title} ${rows.length}` }), rows.map(row)) : null);
-  const kids = [sec('제목이 같아요', pairs.filter((p) => p.same)), sec('제목이 비슷해요', pairs.filter((p) => !p.same))].filter(Boolean);
+  const sec = (title, rows, note) => (rows.length ? el('section', { className:'dup-sec' }, el('h3', { className:'sec', textContent:`${title} ${rows.length}` }), note ? el('small', { className:'dup-note', textContent:note }) : null, rows.map(row)) : null);
+  const kids = [sec('제목이 같아요', pairs.filter((p) => p.same)), sec('제목이 비슷해요', pairs.filter((p) => !p.same && !p.series)),
+    sec('시리즈의 한 권으로 보여요', pairs.filter((p) => p.series), '한 권과 시리즈 전체(또는 다른 권)로 보여요. 같은 책이 아니면 «다른 책이에요»를 눌러 주세요.')].filter(Boolean);
   if (!kids.length) kids.push(el('p', { className:'warn', textContent:'겹쳐 보이는 책이 없어요.' }));
   const done = Object.entries(D.priv.works || {}).filter(([, w]) => w.del && w.into).sort((x, y) => (y[1].at || 0) - (x[1].at || 0)); // 먼저 되돌릴 수 있는 최근 합치기가 위로
   if (done.length) kids.push(el('section', { className:'dup-sec' }, el('h3', { className:'sec', textContent:`합친 책 ${done.length}` }), done.map(([id, w]) => {
     const back = el('button', { className:'copy', type:'button', textContent:'되돌리기' });
-    back.onclick = async () => { if (await ask('이 합치기를 되돌릴까요? 합친 뒤 고친 저자·출판사·주제·연도는 합치기 전 값으로 돌아가요. 기록은 고친 내용 그대로 원래 칸으로 돌아가요.', '되돌리기')) undoMerge(id).then(openDupTool).catch(saveFailed); };
+    back.onclick = async () => { if (await ask(UNDO_MSG, '되돌리기')) undoMerge(id).then(openDupTool).catch(saveFailed); };
     const keep = D.priv.works[w.into]; // 남긴 책을 나중에 책장에서 뺐어도 되돌릴 수 있게 저장된 값을 본다
-    return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:w.t || '제목 없음' }), el('span', { textContent:keep ? `«${keep.t || '제목 없음'}»에 합침${w.at ? ` · ${new Date(w.at + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')}` : ''}` : '합친 책을 찾지 못함' })), el('div', { className:'dup-tools' }, back));
+    const c = keep ? movedCounts(keep, id) : null;
+    const moved = c ? [c.recs && `기록 ${c.recs}`, c.notes && `메모 ${c.notes}`, c.marks && `밑줄 ${c.marks}`].filter(Boolean).join(' · ') : '';
+    return el('div', { className:'dup-row' }, el('p', { className:'dup-book' }, el('strong', { textContent:w.t || '제목 없음' }), el('span', { textContent:keep ? [`«${keep.t || '제목 없음'}»에 합침`, w.at ? new Date(w.at + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') : '', moved ? `옮긴 글: ${moved}` : '옮긴 글 없음'].filter(Boolean).join(' · ') : '합친 책을 찾지 못함' })), el('div', { className:'dup-tools' }, back));
   })));
   showForm('겹치는 책 고치기', kids);
 }
@@ -2680,41 +2696,62 @@ function openMergePick(w) {
     return 'stay';
   }, '다음');
 }
+// 어느 칸(id)을 남길지는 앱이 정한다(효니는 id를 모른다): 공개본에 있는 칸 → 서평·서재 연결이 있는 칸 → 글이 많은 칸
+const keepScore = (w) => (w.pub ? 4 : 0) + (reviewsOf(w).length || D.lib.some((x) => x.w && movedTo(x.w) === w.id) ? 2 : 0);
+const mergeLock = (keep, drop) => isOnlyMe(drop) && !drop.only && !isOnlyMe(keep); // 기본값으로 잠긴 칸을 공개될 수 있는 책에 합치면 책 정보는 안 옮긴다
+function mergeSpine(keep, drop) { // 남는 칸에 책등이 없고(색 책등으로 고른 것도 아님) 빠지는 칸에 있으면 그 판을 이어 준다
+  const rk = realOf(keep), rd = realOf(drop);
+  return !rk && keep.y24 !== 0 && rd ? [rd.no, rd.r] : null;
+}
 function openMergeForm(a, b, backToList) {
-  const first = bookWeight(b) > bookWeight(a) ? b : a;
-  const opts = [a, b].map((w) => el('label', { className:'keep-opt' }, el('input', { type:'radio', name:'keep', value:w.id, checked:w === first }), el('span', { className:'dup-book' }, el('strong', { textContent:titleOf(w) }), el('span', { textContent:bookMeta(w) }))));
+  const keep = keepScore(b) > keepScore(a) || (keepScore(b) === keepScore(a) && bookWeight(b) > bookWeight(a)) ? b : a, drop = keep === a ? b : a;
+  const lock = mergeLock(keep, drop), heavy = bookWeight(drop) > bookWeight(keep) ? 'drop' : 'keep';
+  const choose = (f, label) => { // 둘 다 있고 다를 때만 고르기(한쪽만 있으면 그쪽)
+    const k = tidy(keep[f]), d = lock ? '' : tidy(drop[f]);
+    if (!k || !d || k === d) return null;
+    const first = f === 't' ? heavy : 'keep';
+    const box = el('fieldset', { className:'field keep-pick' }, el('legend', { textContent:label }),
+      ...[['keep', k], ['drop', d]].map(([v, text]) => el('label', { className:'check' }, el('input', { type:'radio', name:`m-${f}`, value:v, checked:v === first }), ` ${text}`)));
+    box.value = () => box.querySelector('input:checked').value;
+    return box;
+  };
+  const tBox = choose('t', '남길 제목'), aBox = choose('a', '남길 저자'), pBox = choose('p', '남길 출판사');
+  const nDup = dupCount(keep.recs, drop.recs);
+  const dedupe = el('input', { type:'checkbox', checked:true });
+  const dupBox = nDup ? el('label', { className:'check' }, dedupe, ` 같은 기록으로 보여 하나만 남겨요(${nDup}개). 날짜·미완독이 같고 별점이 같거나 한쪽이 비어 있는 기록이에요. 글이 긴 쪽을 남기고 빈 칸은 다른 쪽에서 채워요.`) : null;
+  const preview = el('div', { className:'merge-preview', role:'status' });
+  const opt = () => ({ t:tBox ? tBox.value() : 'keep', a:aBox ? aBox.value() : 'keep', p:pBox ? pBox.value() : 'keep', dedupe:!!nDup && dedupe.checked, lock, spine:mergeSpine(keep, drop) });
+  const draw = () => {
+    const { next, dups } = mergePlan(keep, drop, opt());
+    const rv = new Set([...reviewsOf(keep), ...reviewsOf(drop)]).size;
+    preview.replaceChildren(...[el('h3', { className:'sec', textContent:'합치면 이렇게 돼요' }),
+      el('p', { className:'dup-book' }, el('strong', { textContent:next.t || '제목 없음' }), el('span', { textContent:[next.a || '저자 없음', next.p, `기록 ${next.recs.length} · 메모 ${next.notes.length} · 밑줄 ${next.marks.length} · 서평 ${rv}`].filter(Boolean).join(' · ') })),
+      next.recs.length ? el('ul', { className:'merge-recs' }, next.recs.map((r) => el('li', { textContent:[r.d || '날짜 없음', r.r == null ? '' : starText(r.r), r.st === 'unread' ? '읽는 중·미완독' : '', (r.mix || []).length ? '하나로 합침' : ''].filter(Boolean).join(' · ') }))) : null,
+      dups ? el('small', { textContent:`같은 기록 ${dups}개를 하나로 합쳤어요. 되돌리면 두 기록으로 돌아가요.` }) : null,
+      opt().spine ? el('small', { textContent:'남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null].filter(Boolean));
+  };
+  [tBox, aBox, pBox].forEach((x) => x && x.addEventListener('change', draw));
+  dedupe.addEventListener('change', draw);
+  draw();
   const note = LOCAL ? '' : ' 공개 화면에는 다음 공개 반영 때 들어가요.';
-  showForm('두 칸을 한 권으로 합치기', [el('p', { className:'warn', textContent:'남길 칸을 골라 주세요. 다른 칸의 기록·메모·밑줄·서평 연결을 모두 옮기고, 비어 있는 저자·출판사도 채워요.' + note }), ...opts, el('p', { className:'warn', textContent:'잘못 합쳤으면 «겹치는 책 고치기»에서 되돌릴 수 있어요.' })], async () => {
-    const keepId = $('form-body').querySelector('input[name="keep"]:checked').value;
-    const keep = keepId === a.id ? a : b, drop = keep === a ? b : a;
-    await mergeWorks(keep, drop);
+  showForm('두 책을 한 권으로 합치기', [el('p', { className:'warn', textContent:`«${titleOf(keep)}»과 «${titleOf(drop)}»의 기록·메모·밑줄·서평 연결을 한 권으로 모아요. 비어 있는 저자·출판사·주제는 서로 채워요.${lock ? ' 한쪽은 «나만 보기» 칸이라 그 칸의 책 정보는 옮기지 않아요.' : ''}${note}` }),
+    tBox, aBox, pBox, dupBox, preview, el('p', { className:'warn', textContent:'잘못 합쳤으면 책 창 «⋯ 더 보기 → 합치기 되돌리기»나 «겹치는 책 고치기»에서 되돌릴 수 있어요.' })].filter(Boolean), async () => {
+    await mergeWorks(keep, drop, opt());
     if (backToList) { openDupTool(); return 'stay'; }
     S.cur = { id:keep.id };
     reshow();
     return undefined;
   }, '합치기');
 }
-const earliest = (x, y) => [x, y].filter(Boolean).sort()[0] || '';
-async function mergeWorks(keep, drop) {
-  // 옮긴 기록에 어디서 왔는지 표시한다. 되돌릴 때 이 표시로 찾으므로 합친 뒤 고친 내용도 함께 돌아간다
-  const tag = (x) => ({ ...x, from:[...(x.from || []), drop.id] });
-  const src = isOnlyMe(drop) && !drop.only && !isOnlyMe(keep) ? { ...drop, t:'', a:'', p:'', th:[], known:false, guess:false, y:'', fd:'' } : drop;
-  const recs = [...keep.recs, ...drop.recs.map(tag)].sort((x, y) => (x.d || '').localeCompare(y.d || ''));
-  const next = storedWork({ ...keep, t:keep.t || src.t || '', recs, notes:[...keep.notes, ...drop.notes.map(tag)], archived:[...keep.archived, ...drop.archived.map(tag)], marks:[...keep.marks, ...drop.marks.map(tag)], a:keep.a || src.a || '', p:keep.p || src.p || '', th:[...new Set([...keep.th, ...src.th])], known:!!(keep.known || src.known), y:earliest(keep.y, src.y), fd:earliest(keep.fd, src.fd) });
-  if (recs.length) { if (recs.every((r) => r.st === 'unread')) next.unread = true; else delete next.unread; }
-  else if (keep.unread || drop.unread) next.unread = true;
-  if (keep.guess && src.known && !src.guess) delete next.guess; // 확인된 책과 합쳤으면 더는 추정이 아니다
-  if (keep.only || drop.only) next.only = true; // 한쪽이라도 나만 보기로 잠갔으면 합친 뒤에도 잠근다
-  const was = { ...(keep.t ? {} : { t:'' }), a:keep.a || '', p:keep.p || '', th:keep.th, known:keep.known, unread:keep.unread, guess:keep.guess, only:keep.only, y:keep.y || '', fd:keep.fd || '' };
-  const gone = storedWork({ ...drop, recs:[], notes:[], archived:[], marks:[], del:true, into:keep.id, at:Date.now(), was });
+async function mergeWorks(keep, drop, opt = {}) {
+  const plan = mergePlan(keep, drop, { lock:mergeLock(keep, drop), spine:mergeSpine(keep, drop), ...opt, now:Date.now() });
+  const next = storedWork(plan.next), gone = storedWork(plan.gone);
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
   setPriv('works', drop.id, gone);
   refreshAll();
-  toast(`«${titleOf(keep)}» 한 권으로 합쳤어요`);
+  toast(`«${next.t || titleOf(keep)}» 한 권으로 합쳤어요${plan.dups ? ` · 같은 기록 ${plan.dups}개는 하나로` : ''}`);
 }
-const cameFrom = (x, id) => (x.from || []).slice(-1)[0] === id;
-const stepBack = ({ from, ...x }) => { const rest = (from || []).slice(0, -1); return rest.length ? { ...x, from:rest } : x; };
 // 나중에 합친 것부터 되돌린다. 그래야 합치기 전 값(was)으로 돌아가도 앞뒤가 맞는다
 async function undoMerge(id) {
   const stored = D.priv.works[id];
@@ -2723,11 +2760,7 @@ async function undoMerge(id) {
   if (keep.del && keep.into) throw fail(`«${keep.t || '제목 없음'}»의 합치기를 먼저 되돌려 주세요`);
   const later = Object.values(D.priv.works).find((w) => w.del && w.into === stored.into && (w.at || 0) > (stored.at || 0));
   if (later) throw fail(`나중에 합친 «${later.t || '제목 없음'}»을 먼저 되돌려 주세요`);
-  const { del, into, was, at, ...rest } = stored;
-  const recs = keep.recs || [], notes = keep.notes || [], archived = keep.archived || [], marks = keep.marks || [];
-  const back = JSON.parse(JSON.stringify({ ...rest, recs:recs.filter((x) => cameFrom(x, id)).map(stepBack), notes:notes.filter((x) => cameFrom(x, id)).map(stepBack), archived:archived.filter((x) => cameFrom(x, id)).map(stepBack), marks:marks.filter((x) => cameFrom(x, id)).map(stepBack) }));
-  const next = JSON.parse(JSON.stringify({ ...keep, ...(was || {}), th:(was && was.th) || [], recs:recs.filter((x) => !cameFrom(x, id)), notes:notes.filter((x) => !cameFrom(x, id)), archived:archived.filter((x) => !cameFrom(x, id)), marks:marks.filter((x) => !cameFrom(x, id)) }));
-  ['unread', 'guess', 'known', 'only'].forEach((k) => { if (!was || was[k] === undefined) delete next[k]; }); // 합치기 전에 없던 표시는 지운다
+  const { next, back } = undoPlan(stored, keep, id);
   await write('works', { [stored.into]:next, [id]:back }, 'update');
   setPriv('works', stored.into, next);
   setPriv('works', id, back);
@@ -2735,6 +2768,42 @@ async function undoMerge(id) {
   toast('합치기 전으로 되돌렸어요');
 }
 $('fixDups').onclick = openDupTool;
+// 글 하나를 다른 책으로 옮기기(2026-11-14): 기록·밑줄·메모가 엉뚱한 책에 붙었을 때 «합치기 되돌리기» 말고도 고칠 길. 각 고치기 창 아래 줄에 있다
+// find(cur): 최신 칸에서 그 글의 자리(창을 연 뒤 바뀌었을 수 있다)
+const MOVE_NAME = { recs:'기록', notes:'메모', marks:'밑줄' };
+const moveBtn = (w, group, find) => formBtn('다른 책으로 옮기기', async () => openMoveForm(w, group, find));
+const emptyWork = (w) => !w.pub && !w.notes.length && !w.archived.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length; // 메모를 지울 때(emptyAfter)와 같은 기준
+function openMoveForm(w, group, find) {
+  const name = MOVE_NAME[group];
+  const pick = bookPicker(true, w.id);
+  showForm(`${name}을 옮길 책 고르기`, [el('p', { className:'warn', textContent:`«${titleOf(w)}»의 ${name} 하나를 고른 책으로 옮겨요. 내용과 공개 여부는 그대로예요.` }), field('옮길 책', pick.input, '읽은 책에 있는 제목을 골라 주세요'), pick.dl], async () => {
+    const hit = pick.pick();
+    if (!hit) throw fail('아래 목록에서 책을 눌러 주세요');
+    const dest = D.works.get(hit.id);
+    if (!dest || !dest.id) throw fail('이 책으로는 옮길 수 없어요. 읽은 책에 있는 책을 골라 주세요.');
+    if (group === 'marks' && (dest.k || 'book') !== 'book') throw fail('밑줄은 책으로만 옮길 수 있어요');
+    const cur = D.works.get(w.id), at = cur ? find(cur) : -1;
+    if (at < 0) throw fail('그 사이 글이 바뀌었어요. 창을 닫고 다시 열어 주세요.');
+    const { from, mix, ...item } = cur[group][at]; // 옮긴 글은 합치기 표시를 뗀다(되돌리기 때 엉뚱한 칸으로 가지 않게)
+    const src = { ...cur, [group]:cur[group].filter((_, k) => k !== at) };
+    const to = { ...dest, [group]:[...dest[group], item] };
+    if (group === 'recs') {
+      to.recs.sort((x, y) => (x.d || '').localeCompare(y.d || ''));
+      [src, to].forEach((x) => { if (x.recs.length) x.unread = x.recs.every((r) => r.st === 'unread'); }); // 남은 기록으로 읽는 중인지 다시 정한다(delRec과 같은 기준)
+    }
+    const empty = emptyWork(src);
+    if (!await ask(`이 ${name}을 «${titleOf(dest)}»(으)로 옮길까요?${empty ? ` «${titleOf(cur)}»에는 남는 글이 없어서 책장에서 빠져요.` : ''}`, '옮기기', false)) return 'stay';
+    if (empty) src.del = true;
+    const a = storedWork(src), b = storedWork(to);
+    await write('works', { [cur.id]:a, [dest.id]:b }, 'update');
+    setPriv('works', cur.id, a); setPriv('works', dest.id, b);
+    refreshAll();
+    S.cur = { id:dest.id };
+    if ($('sheet').open) reshow();
+    toast(`«${titleOf(dest)}»(으)로 옮겼어요`);
+    return undefined;
+  }, '옮기기');
+}
 
 /* ---------- 빈 칸 채우기 (관리, 2026-11-14) ---------- */
 // tools/fill-info.js와 같은 규칙: 저자·출판사·주제 중 빈 칸만 채운다(이미 적힌 칸은 덮지 않음). 제목·저자가 맞는 첫 결과만 «확실»로 미리 고른다
@@ -2930,7 +2999,8 @@ function openRecForm(w, i) {
   const b = el('textarea', { rows:8, value:r.b || '' });
   const pub = pubBox(r);
   const del = i >= 0 ? formBtn('지우기', () => delRec(w, i, () => $('form').close()), true) : null;
-  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), field('기록', b), pub, formTools(del)].filter(Boolean);
+  const move = i >= 0 ? moveBtn(w, 'recs', (cur) => cur.recs.indexOf(r) >= 0 ? cur.recs.indexOf(r) : cur.recs.findIndex((x) => JSON.stringify(x) === JSON.stringify(r))) : null;
+  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), field('기록', b), pub, formTools(move, del)].filter(Boolean);
   const save = async () => {
     const body = b.value.trim() || l.value.trim(); // 공개되는 글: 본문, 비면 한 줄 평(tools/publish.js와 같음)
     await pubCheck(pub, r.pub === true, body, 'recs', w);

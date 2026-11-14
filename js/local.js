@@ -109,8 +109,16 @@ function cleanMarks(list) {
     return o;
   });
 }
+// 기록 하나. mix는 합치기에서 «같은 기록»으로 하나만 남긴 표시('빠진id.번호', 2026-11-14)
+function cleanRec(r) {
+  const o = { d:day(r.d), r:typeof r.r === 'number' && Number.isInteger(r.r * 2) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) };
+  if (r.st === 'unread') o.st = 'unread';
+  const from = Array.isArray(r.from) ? r.from.filter((x) => typeof x === 'string' && safeKey(x)) : []; if (from.length) o.from = from;
+  const mix = Array.isArray(r.mix) ? r.mix.filter((x) => typeof x === 'string' && /^[A-Za-z0-9_-]{1,80}\.\d{1,4}$/.test(x)) : []; if (mix.length) o.mix = mix;
+  return o;
+}
 function cleanWork(w) {
-  const recs = arr(w.recs).map((r) => { const o = { d:day(r.d), r:typeof r.r === 'number' && Number.isInteger(r.r * 2) && r.r >= 0 && r.r <= 5 ? r.r : null, l:str(r.l), b:str(r.b) }; if (r.st === 'unread') o.st = 'unread'; const from = Array.isArray(r.from) ? r.from.filter((x) => typeof x === 'string' && safeKey(x)) : []; if (from.length) o.from = from; return o; });
+  const recs = arr(w.recs).map(cleanRec);
   const o = { t:str(w.t), a:str(w.a), p:str(w.p), k:KINDS.has(w.k) ? w.k : 'book', th:Array.isArray(w.th) ? w.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.y).slice(0, 4), fd:day(w.fd) || str(w.fd).slice(0, 4), known:true, recs, notes:[] };
   const marks = cleanMarks(w.marks);
   if (marks.length) o.marks = marks;
@@ -126,8 +134,12 @@ function cleanWork(w) {
     if (isObj(w.was)) {
       o.was = { a:str(w.was.a), p:str(w.was.p), th:Array.isArray(w.was.th) ? w.was.th.filter((x) => typeof x === 'string').slice(0, 21) : [], y:str(w.was.y).slice(0, 4), fd:day(w.was.fd) || str(w.was.fd).slice(0, 4), known:true };
       if (w.was.unread === true) o.was.unread = true;
-      if (w.was.t === '') o.was.t = '';
+      if (typeof w.was.t === 'string') o.was.t = str(w.was.t); // 합치기에서 다른 칸 제목을 골랐으면 원래 제목(2026-11-14)
+      if (w.was.y24c === true) { o.was.y24c = true; o.was.y24 = w.was.y24 === 'none' || w.was.y24 === 0 || w.was.y24 === 1 ? w.was.y24 : Array.isArray(w.was.y24) && /^\d{4,12}$/.test(String(w.was.y24[0])) ? [String(w.was.y24[0]), +w.was.y24[1]] : 'none'; } // 이어 준 책등의 원래 값
     }
+    // 같은 기록으로 하나만 남긴 짝(되돌리면 두 기록으로 돌아간다)
+    const dup = arr(w.dupRecs).filter((x) => isObj(x) && isObj(x.k) && isObj(x.d)).map((x) => ({ k:cleanRec(x.k), d:cleanRec(x.d) }));
+    if (dup.length) o.dupRecs = dup;
   }
   return o;
 }
