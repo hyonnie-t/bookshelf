@@ -34,6 +34,7 @@ const REPO = path.join(__dirname, '..');
       assert(far / hs.length < 0.05, `${ed}: 벗어난 책 ${far}/${hs.length}`);
     }
   });
+  ok('이상한 색 값이 와도 멈추지 않는다', () => { for (const c of [['#fff'], [''], ['rgb(1,2,3)'], [], null, ['#123456', '', 'x']]) { const p = spineColor(c, 'base', false, 1); assert(/^#[0-9a-f]{6}$/.test(p.bg) && contrast(p.bg, p.ink) >= 4.5); } });
   ok('같은 책은 늘 같은 색', () => { const [id, c] = covers[0]; assert.deepStrictEqual(spineColor(c, 'sea', true, hash(id)), spineColor(c, 'sea', true, hash(id))); });
   ok('레포 파일이 서비스워커 목록에 있다', () => { assert(fs.readFileSync(path.join(REPO, 'sw.js'), 'utf8').includes("'js/spine.js'")); assert(fs.readFileSync(path.join(REPO, 'my/sw.js'), 'utf8').includes("'../js/spine.js'")); });
   console.log(fail ? `실패 ${fail}건` : '모두 통과'); process.exit(fail ? 1 : 0);

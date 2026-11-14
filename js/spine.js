@@ -54,6 +54,8 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // cover = [바탕, 글자, 강조], seed = 책마다 다른 정수(같은 색 표지끼리 조금씩 달라지게)
 export function spineColor(cover, edition, dark, seed = 0) {
   const ed = SPINE_EDITIONS[edition] || SPINE_EDITIONS.base;
+  const HEX = /^#[0-9a-f]{6}$/i; // 손으로 고친 값이 이상해도 책장이 멈추지 않게: 바탕이 6자리 색이 아니면 회색, 강조색이 아니면 없는 것으로
+  cover = [HEX.test(cover && cover[0]) ? cover[0] : '#888888', '', HEX.test(cover && cover[2]) ? cover[2] : ''];
   const [cl, cc, ch] = toLch(cover[0]);
   const [lo, hi] = ed.band || (dark ? BAND.dark : BAND.light);
   const j = ((Math.abs(seed) % 7) - 3) / 3; // -1~1
@@ -61,7 +63,7 @@ export function spineColor(cover, edition, dark, seed = 0) {
   let C, H;
   if (ed.own) {
     H = ch; C = Math.min(cc, ed.cap) * (dark ? 0.85 : 1);
-    if (cc < 0.025) { // 흰색·회색·검정 표지: 강조색(없으면 따뜻한 종이색) 쪽으로 아주 조금 물들인다
+    if (cc < 0.012) { // 흰색·회색·검정 표지: 강조색(없으면 따뜻한 종이색) 쪽으로 아주 조금 물들인다
       const a = cover[2] && toLch(cover[2]);
       if (a && a[1] > 0.04) { H = a[2]; C = ed.tint; } else { H = 85; C = ed.tint * 0.6; }
     }
@@ -75,7 +77,7 @@ export function spineColor(cover, edition, dark, seed = 0) {
   for (let i = 0; i < 40 && !ink; i++) {
     const lightInk = L < MID, k = inkOf(lightInk);
     bg = fromLch(L, C, H);
-    if (contrast(bg, k) >= 4.5) ink = k; else L += lightInk ? -0.012 : 0.012;
+    if (contrast(bg, k) >= TARGET) ink = k; else L += lightInk ? -0.012 : 0.012;
   }
   if (!ink) { bg = fromLch(L, C, H); ink = contrast(bg, '#000000') >= contrast(bg, '#ffffff') ? '#000000' : '#ffffff'; }
   // 금박 줄: 바탕과 구별될 때만 금색, 아니면 글자색
@@ -94,5 +96,6 @@ export function spineColor(cover, edition, dark, seed = 0) {
   return { bg, ink, ln, blk };
 }
 const GOLD = '#c8a45a';
+const TARGET = 4.75; // 4.5보다 넉넉히: 책등 위 종이 결(검정 2.5% 줄) 위에서도 4.5가 남는다(검토자 재현: 4.5에 딱 맞추면 결 위에서 4.29~4.34)
 // 색 에디션 고르는 창의 견본: 흔한 표지 색 열 가지를 그 에디션으로 칠해 보여 준다
 export const SAMPLE_COVERS = ['#f9f7f2', '#183363', '#e9cac0', '#0d0a03', '#c3cdd5', '#b3262e', '#f6f7f7', '#f9c0a4', '#3d6b4f', '#f2d24b'];

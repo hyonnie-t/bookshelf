@@ -460,13 +460,16 @@ function setEdition(id) {
 function openEditionForm() {
   const was = curEdition();
   let chosen = false;
-  const dark = isDark();
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches; // 견본은 지금 에디션이 아니라 기기 설정 기준(밤 서재에서 열어도 다른 에디션은 고르면 보일 판으로)
+  const THEME_SAMPLES = ['소설','에세이','역사','철학','사회·정치','여행','법','시','과학·환경','예술'];
   const opts = EDITIONS.map(([id, name, note]) => {
+    if (LOCAL && id === 'base') { name = '조용한 서가'; note = '지금까지 쓰던 차분한 색'; } // 범용판은 표지 색을 쓰지 않고 주제 색으로 칠한다
+    if (LOCAL && id === 'night') note = '늘 어두운 밤빛 배경';
     const r = el('input', { type:'radio', name:'edition', value:id, checked:id === was });
     r.onchange = () => setEdition(id);
     const sw = el('span', { className:'ed-swatch' }, SAMPLE_COVERS.map((c, i) => { // 견본은 실제 책등과 같은 규칙으로 칠한다
       const s = el('i');
-      s.style.background = id === 'eink' ? '#fff' : spineColor([c], id, id === 'night' || dark, i).bg; s.style.height = `${60 + (i * 37) % 40}%`;
+      s.style.background = LOCAL ? themeVar(THEME_SAMPLES[i]) : id === 'eink' ? '#fff' : spineColor([c], id, id === 'night' || dark, i).bg; s.style.height = `${60 + (i * 37) % 40}%`;
       return s;
     }));
     sw.dataset.edition = id;
@@ -2645,6 +2648,7 @@ function show(v, quiet) {
   VIEWS.forEach((x) => { $(`view-${x}`).hidden = x !== v; $(`tab-${x}`).setAttribute('aria-selected', x === v); });
   $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
+  if (v === 'shelf') balanceRacks(); // 숨은 동안 다시 그렸거나 창 폭이 바뀌었으면 폭을 못 쟀다. 보일 때 다시 잰다
   if (v === 'posts') watch('.rise');
   if (v === 'recap') { const c = document.querySelector('#wordMap[data-pending]'); if (c && !c.closest('.rfold-body[hidden]')) drawWordMap(c); else fitNet(); }
   renderJump();
