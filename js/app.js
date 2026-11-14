@@ -930,12 +930,12 @@ function batchRun({ todo, size, job, onEach, progress, done }) {
     busy = false; stop.hidden = true;
     const left = todo().length;
     if (alive()) { go.textContent = '이어서 찾기'; go.hidden = !left; }
-    done(!left); // 창을 닫아 멈췄어도 부른다(찾은 결과를 기억하게)
+    done(!left, alive()); // 창을 닫아 멈췄어도 부른다(찾은 결과를 기억하게). 둘째 값이 false면 화면은 그리지 않는다(닫힌 창이 새 창의 카드를 가져가지 않게, 검토자 재현)
   };
   stop.onclick = () => { run++; stop.disabled = true; };
   return { go, stop, busy:() => busy };
 }
-const SPINE = { res:new Map(), again:false, open:{} }; // 이 세션에서 찾은 결과(창을 닫아도 남아 다시 열면 이어서 보인다). again: «다시 찾아보기»를 눌렀음
+const SPINE = { res:new Map(), again:false, open:{}, flying:new Set() }; // 이 세션에서 찾은 결과(창을 닫아도 남아 다시 열면 이어서 보인다). again: «다시 찾아보기»를 눌렀음
 function openSpineTool() {
   const targets = spineTargets().sort((a, b) => KO.compare(titleOf(a), titleOf(b)));
   const ids = new Set(targets.map((w) => w.id));
@@ -943,7 +943,7 @@ function openSpineTool() {
   const tried = () => ((D.priv.meta || {}).y24tried || {});
   // 이 세션에서 이미 찾아본 책은 기억(y24tried)에 올라가도 결과 묶음에 남기고, 접힌 «확인된 책» 목록에는 겹쳐 넣지 않는다
   const split = () => { const s = splitTargets(targets, D.y24miss, tried(), SPINE.again), seen = (w) => SPINE.res.has(w.id); return { todo:[...s.todo, ...s.known.filter(seen)], known:s.known.filter((w) => !seen(w)) }; };
-  const todo = () => split().todo.filter((w) => { const r = SPINE.res.get(w.id); return !r || r.status === 'fail'; });
+  const todo = () => split().todo.filter((w) => { const r = SPINE.res.get(w.id); return (!r || r.status === 'fail') && !SPINE.flying.has(w.id); }); // 닫힌 창에서 아직 찾는 중인 책은 빼서 두 번 찾지 않는다
   const head = el('p', { className:'warn', role:'status' });
   const groups = el('div', { className:'spine-groups' });
   const count = el('small', { className:'pick-count', role:'status' });
@@ -975,7 +975,7 @@ function openSpineTool() {
   const missRow = (r) => {
     const row = el('div', { className:'dup-row spine-row' });
     const p = y24Picker(r.w, (g) => { r.manual = g; row.classList.toggle('picked', !!g); sum(); });
-    if (r.manual) { p.inp.value = r.manual[0]; p.inp.dispatchEvent(new Event('input')); } // 다시 연 창에서도 넣어 둔 주소가 보이게
+    if (r.manual) { p.inp.value = r.manual[0]; row.classList.add('picked'); } // 다시 연 창에서도 넣어 둔 주소가 보이게(다시 확인하지 않아 r.manual이 잠깐 비지 않는다)
     row.append(el('strong', { textContent:titleOf(r.w) }), el('div', { className:'when', textContent:[r.w.a || '저자 없음', r.status === 'fail' ? '찾다가 끊겼어요(«이어서 찾기»로 다시)' : Y24_MISS[r.why]].filter(Boolean).join(' · ') }),
       el('div', { className:'memo-foot' }, p.search), el('details', {}, el('summary', { textContent:'주소로 넣기' }), p.inp), p.msg, p.prev);
     return row;
@@ -1011,10 +1011,10 @@ function openSpineTool() {
     } catch (e) { console.error(e); }
   };
   const batch = batchRun({
-    todo, size:6, job:spineSearch,
+    todo, size:6, job:(w) => { SPINE.flying.add(w.id); return spineSearch(w).finally(() => SPINE.flying.delete(w.id)); },
     onEach:(r) => { const old = SPINE.res.get(r.w.id); if (old) delete old.el; SPINE.res.set(r.w.id, r); },
     progress:(i, n) => { const g = groupResults(results()); head.textContent = `찾는 중 ${Math.min(i + 6, n)}/${n} · 찾음 ${g.found.length + g.pick.length}`; draw(); sum(); },
-    done:() => { head.textContent = summary(); draw(); sum(); remember(); },
+    done:(full, live) => { remember(); if (!live) return; head.textContent = summary(); draw(); sum(); },
   });
   const ready = () => { const n = todo().length; batch.go.hidden = !n; batch.go.textContent = results().length && n ? '이어서 찾기' : '한꺼번에 찾기'; };
   const allOn = el('button', { className:'copy', type:'button', textContent:'찾은 책 모두 고르기' });
