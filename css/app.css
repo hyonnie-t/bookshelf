@@ -568,6 +568,8 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .read-filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap:var(--space-2) var(--space-3); }
 .read-filters select, .read-filters input { width:100%; min-width:0; }
 .fill-row.locked { opacity:.55; }
+.fill-row.just { animation:memo-edited 1.4s ease-out both; } /* 다시 찾기로 고른 줄이 옮겨 간 자리에서 한 번 물든다 */
+@media (prefers-reduced-motion: reduce) { .fill-row.just { animation:none; } }
 /* 줄에서 다시 찾기(2026-11-15): 찾는 말 칸 + 후보 최대 5개. 후보는 누르면 고른 표시 */
 .fill-group + .fill-group { margin-top:var(--space-4); }
 .row-search-wrap { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-1); margin-top:var(--space-1); }
