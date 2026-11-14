@@ -1766,27 +1766,90 @@ function openLibForm(it, { work } = {}) {
   }
   showForm(isNew ? '내 서재에 꽂기' : '서재 정보 고치기', kids, save);
 }
+// 여러 권 한꺼번에 꽂기(2026-11-14 주제 저절로): 책 찾기로 고른 책은 줄을 더하고, 책마다 주제를 하나 골라 둔다.
+// 읽은 책과 이어지면 그 주제, 아니면 같은 저자 책 → 도서관 분류(책 찾기로 고른 책만, ISBN으로 국립중앙도서관) 순. 고른 주제는 아래 목록에서 바꾼다
+const manySplit = (line) => { const [rawT, ...rest] = line.split(/\s+\/\s+/); return { title:rawT.trim(), author:rest.join(' / ').trim() }; }; // AC/DC처럼 제목 속 빗금은 자르지 않는다
+const manyLines = (v) => v.split('\n').map((s) => s.trim()).filter(Boolean);
 function openManyForm() {
   const x = el('textarea', { rows:10, placeholder:'한 줄에 한 권씩 적어 주세요\n이방인 / 알베르 카뮈\n코스모스' });
   const where = whereInput(S.lastWhere);
   const ids = new Map(); // 저장을 다시 눌러도 같은 줄은 같은 칸에 쓰인다
-  showForm('여러 권 한꺼번에 꽂기', [field('책 목록', x, '«제목 / 저자»로 적어요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), field('어느 칸에 꽂을까요', where, '비워도 돼요'), whereList()], async () => {
-    const lines = x.value.split('\n').map((s) => s.trim()).filter(Boolean);
+  const found = new Map(); // 책 찾기로 고른 책(제목 키 → 찾은 정보, 저장 안 함)
+  const picks = new Map(); // 제목 키 → { th, why, auto, busy, keep }. 손으로 고르면 auto:false라 다시 고르지 않는다
+  const box = el('ul', { className:'many-list', hidden:true });
+  // 같은 저자 책: 읽은 책 + 읽은 책과 안 이어진 서재 책
+  const shelf = () => [...themeShelf(''), ...D.lib.filter((b) => isActive(b) && !b.w && (b.th || []).length).map((b) => ({ id:b.id, a:b.a, th:b.th }))];
+  const works = () => new Map(list().filter((w) => w.t && w.k === 'book').map((w) => [norm(w.t), w]));
+  const lookup = bookLookup((b) => {
+    found.set(norm(b.t), b);
+    const lines = manyLines(x.value), line = b.a ? `${b.t} / ${b.a}` : b.t;
+    const at = lines.findIndex((l) => norm(manySplit(l).title) === norm(b.t));
+    if (at < 0) lines.push(line); else if (!manySplit(lines[at]).author) lines[at] = line; // 제목만 적어 둔 줄은 저자를 붙인다
+    x.value = lines.join('\n');
+    draw();
+  });
+  const pickSig = (k, author) => `${norm(author)}|${found.has(k) ? 1 : 0}`; // 저자를 나중에 붙이거나 책 찾기로 고르면 다시 고른다
+  const choose = async (k, author) => { // 주제가 정해지지 않은 줄 하나에 주제를 고른다
+    const f = found.get(k), info = f ? { ...f, a:author || f.a } : { a:author };
+    const pk = { th:'', why:'', auto:true, sig:pickSig(k, author), busy:!!(f && (f.kdc || f.isbn) && (f.kdc || relayOn())) };
+    picks.set(k, pk);
+    const sync = pickTheme({ a:info.a, th:[] }, shelf(), info.kdc || '', info.kid);
+    if (sync || !pk.busy) { Object.assign(pk, { th:sync ? sync.th : '', why:sync ? sync.why : '', busy:false, just:!!sync }); return; }
+    const got = await autoTheme(info, '');
+    if (picks.get(k) !== pk || !pk.auto) return; // 그사이 손으로 골랐거나 줄을 지웠다
+    Object.assign(pk, { th:got ? got.th : '', why:got ? got.why : '', busy:false, just:!!got });
+    const row = shown.get(k); // 목록을 통째로 다시 그리면 다른 줄에 열어 둔 고르기 칸이 닫혀 그 줄만 고친다
+    if (row) { row.sel.value = pk.th; row.note.textContent = noteText(pk); if (pk.just) { row.sel.classList.add('just'); pk.just = false; } }
+  };
+  const shown = new Map(); // 제목 키 → 지금 보이는 { sel, note }
+  const noteText = (pk) => pk.busy ? '주제 찾는 중이에요' : !pk.auto ? (pk.th ? '직접 고른 주제' : '주제 없이 꽂아요') : pk.th ? `골라 둔 주제 · ${pk.why} 기준` : '주제는 못 골랐어요. 골라 주세요';
+  let timer = 0;
+  function draw() {
+    const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t))), hits = works(), seen = new Set(), rows = [];
+    for (const line of manyLines(x.value)) {
+      const { title, author } = manySplit(line), k = norm(title);
+      if (!title || seen.has(k)) continue;
+      seen.add(k);
+      if (have.has(k)) { rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title })), el('small', { className:'auto-note', textContent:'이미 서재에 있어 빼요' }))); continue; }
+      const hit = hits.get(k);
+      if (!picks.has(k) && hit && hit.th.length) picks.set(k, { th:hit.th[0], why:'읽은 책의 주제', auto:true, keep:hit.th });
+      const old = picks.get(k);
+      if (!old || (old.auto && !old.keep && old.sig !== pickSig(k, author))) choose(k, author);
+      const pk = picks.get(k);
+      const sel = el('select', { ariaLabel:`«${title}» 주제` }, el('option', { value:'', textContent:'주제 없음' }), ...THEMES.map(([t]) => el('option', { value:t, textContent:t })));
+      sel.value = pk.th;
+      const note = el('small', { className:'auto-note', role:'status', textContent:noteText(pk) });
+      sel.onchange = () => { const next = { th:sel.value, why:'', auto:false }; picks.set(k, next); note.textContent = noteText(next); };
+      if (pk.just) { sel.classList.add('just'); pk.just = false; }
+      shown.set(k, { sel, note });
+      rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title }), author ? el('span', { textContent:author }) : null), sel, note));
+    }
+    [...picks.keys()].forEach((k) => { if (!seen.has(k)) picks.delete(k); }); // 지운 줄은 잊는다(다시 적으면 다시 고른다)
+    [...shown.keys()].forEach((k) => { if (!seen.has(k) || !picks.has(k)) shown.delete(k); });
+    box.replaceChildren(...rows);
+    box.hidden = !rows.length;
+  }
+  x.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 400); });
+  const themeField = el('div', { className:'field' }, el('span', { textContent:'책마다 주제' }), box, el('small', { textContent:'비어 있는 책만 하나 골라 둬요. 읽은 책 → 같은 저자 책 → 도서관 분류(위에서 찾아 고른 책) 순이에요. 틀리면 바꿔 주세요.' }));
+  showForm('여러 권 한꺼번에 꽂기', [lookup, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('어느 칸에 꽂을까요', where, '비워도 돼요'), whereList()], async () => {
+    clearTimeout(timer); draw();
+    const lines = manyLines(x.value);
     if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
+    if ([...picks.values()].some((p) => p.busy)) throw fail('주제를 찾는 중이에요. 잠깐 뒤에 다시 눌러 주세요');
     const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t)));
-    const works = new Map(list().filter((w) => w.t && w.k === 'book').map((w) => [norm(w.t), w]));
+    const hits = works();
     const add = {};
     let linked = 0, skipped = 0, n = 0;
     for (const line of lines) {
-      const [rawT, ...rest] = line.split(/\s+\/\s+/); // AC/DC처럼 제목 속 빗금은 자르지 않는다
-      const title = rawT.trim(), author = rest.join(' / ').trim();
+      const { title, author } = manySplit(line);
       if (!title || have.has(norm(title))) { skipped++; continue; }
       have.add(norm(title));
-      const hit = works.get(norm(title));
+      const hit = hits.get(norm(title)), f = found.get(norm(title)), pk = picks.get(norm(title));
       if (hit) linked++;
       if (!ids.has(norm(title))) ids.set(norm(title), await newLibId(ids.size));
       n++;
-      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : ''), p:hit ? hit.p || '' : '', w:hit ? hit.id : '', th:hit ? hit.th : [], st:'own', where:where.value.trim(), added:today(), loans:[] };
+      const th = pk && pk.auto && pk.keep ? pk.keep : pk && pk.th ? [pk.th] : []; // 읽은 책 주제를 그대로 두면 둘째 주제까지 그대로
+      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : f ? f.a || '' : ''), p:hit ? hit.p || '' : f ? f.p || '' : '', w:hit ? hit.id : '', th, st:'own', where:where.value.trim(), added:today(), loans:[] };
     }
     if (!n) throw fail('새로 꽂을 책이 없어요. 모두 이미 서재에 있어요.');
     await write('library', add, 'update');
