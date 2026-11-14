@@ -80,6 +80,11 @@ const REPO = path.join(__dirname, '..');
     roundTrip(keep, drop, { spine:['12345', 0.1] });
     const keep1 = book('k', { t:'A', y24:1 });
     assert.equal(J(M.undoPlan(J(M.mergePlan(keep1, drop, { spine:['9', 0.2] }).gone), J(M.mergePlan(keep1, drop, { spine:['9', 0.2] }).next), 'd').next).y24, 1);
+    // 빠지는 칸의 다른 제목을 남기고 그 칸에 책등이 없으면 색 책등 0(2026-11-15), 되돌리면 원래 판
+    const keep2 = book('k', { t:'옛 책', y24:['111', 0.1] }), drop2 = book('d', { t:'새 책' });
+    const m2 = M.mergePlan(keep2, drop2, { t:'drop', spine:0 });
+    assert.strictEqual(m2.next.y24, 0); assert.equal(m2.next.t, '새 책');
+    roundTrip(keep2, drop2, { t:'drop', spine:0 });
   });
 
   ok('나만 보기·읽는 중·추정', () => {

@@ -2820,8 +2820,10 @@ function openMergePick(w) {
 // 어느 칸(id)을 남길지는 앱이 정한다(효니는 id를 모른다): 공개본에 있는 칸 → 서평·서재 연결이 있는 칸 → 글이 많은 칸
 const keepScore = (w) => (w.pub ? 4 : 0) + (reviewsOf(w).length || D.lib.some((x) => x.w && movedTo(x.w) === w.id) ? 2 : 0);
 const mergeLock = (keep, drop) => isOnlyMe(drop) && !drop.only && !isOnlyMe(keep); // 기본값으로 잠긴 칸을 공개될 수 있는 책에 합치면 책 정보는 안 옮긴다
-function mergeSpine(keep, drop) { // 남는 칸에 책등이 없고(색 책등으로 고른 것도 아님) 빠지는 칸에 있으면 그 판을 이어 준다
+function mergeSpine(keep, drop, tPick) { // 남는 칸에 책등이 없고(색 책등으로 고른 것도 아님) 빠지는 칸에 있으면 그 판을 이어 준다
   const rk = realOf(keep), rd = realOf(drop);
+  // 빠지는 칸의 다른 제목을 남기면(2026-11-15, 써 보며 찾음: 제목은 바뀌는데 책등·표지는 옛 책 판이 남았다) 그 책 판을, 없으면 색 책등(책 고치기의 «다른 책으로 바꾸기»와 같은 규칙)
+  if (tPick === 'drop' && tidy(drop.t) && tidy(drop.t) !== tidy(keep.t)) return rd ? [rd.no, rd.r] : rk ? 0 : null;
   return !rk && keep.y24 !== 0 && rd ? [rd.no, rd.r] : null;
 }
 function openMergeForm(a, b, backToList) {
@@ -2841,7 +2843,7 @@ function openMergeForm(a, b, backToList) {
   const dedupe = el('input', { type:'checkbox', checked:true });
   const dupBox = nDup ? el('label', { className:'check' }, dedupe, ` 같은 기록으로 보여 하나만 남겨요(${nDup}개). 날짜·미완독이 같고 별점이 같거나 한쪽이 비어 있는 기록이에요. 글이 긴 쪽을 남기고 빈 칸은 다른 쪽에서 채워요.`) : null;
   const preview = el('div', { className:'merge-preview', role:'status' });
-  const opt = () => ({ t:tBox ? tBox.value() : 'keep', a:aBox ? aBox.value() : 'keep', p:pBox ? pBox.value() : 'keep', dedupe:!!nDup && dedupe.checked, lock, spine:mergeSpine(keep, drop) });
+  const opt = () => ({ t:tBox ? tBox.value() : 'keep', a:aBox ? aBox.value() : 'keep', p:pBox ? pBox.value() : 'keep', dedupe:!!nDup && dedupe.checked, lock, spine:mergeSpine(keep, drop, tBox ? tBox.value() : 'keep') });
   const draw = () => {
     const { next, dups } = mergePlan(keep, drop, opt());
     const wasPub = !LOCAL && !!(keep.pub || drop.pub), dark = !LOCAL && isOnlyMe(next);
@@ -2853,7 +2855,8 @@ function openMergeForm(a, b, backToList) {
       el('p', { className:'dup-book' }, el('strong', { textContent:next.t || '제목 없음' }), el('span', { textContent:[next.a || '저자 없음', next.p, `기록 ${next.recs.length} · 메모 ${next.notes.length} · 밑줄 ${next.marks.length} · 서평 ${rv}`].filter(Boolean).join(' · ') })),
       next.recs.length ? el('ul', { className:'merge-recs' }, next.recs.map((r) => el('li', { textContent:[r.d || '날짜 없음', r.r == null ? '' : starText(r.r), r.st === 'unread' ? '읽는 중·미완독' : '', (r.mix || []).length ? '하나로 합침' : ''].filter(Boolean).join(' · ') }))) : null,
       dups ? el('small', { textContent:`같은 기록 ${dups}개를 하나로 합쳤어요. 되돌리면 두 기록으로 돌아가요.` }) : null,
-      opt().spine ? el('small', { textContent:'남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null,
+      opt().spine === 0 ? el('small', { textContent:'다른 칸의 제목을 남겨서, 남는 책의 옛 책등 사진은 빼고 색 책등으로 꽂아요(표지도 새 제목으로 다시 찾아요).' })
+        : opt().spine ? el('small', { textContent:opt().t === 'drop' ? '다른 칸의 제목을 남겨서 그 칸의 예스24 책등·표지를 써요.' : '남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null,
       // 공개에 걸리는 것(2026-11-14 연결 점검): 공개로 해 둔 글이 공개 책으로 오는지, 합친 책이 나만 보기로 잠겨 공개본에서 내려가는지, 서재 책 두 권이 이어지는지
       pubMoving ? el('small', { className:'warn-line', textContent:`공개로 해 둔 글 ${pubMoving}개가 이 책 공개 화면에 올라가요(다음 공개 반영 때).` }) : null,
       goesDark ? el('small', { className:'warn-line', textContent:'합친 책은 «나만 보기»라 지금 공개된 책이 다음 공개 반영 때 공개 페이지에서 내려가요.' }) : null,
@@ -2873,7 +2876,7 @@ function openMergeForm(a, b, backToList) {
   }, '합치기');
 }
 async function mergeWorks(keep, drop, opt = {}) {
-  const plan = mergePlan(keep, drop, { lock:mergeLock(keep, drop), spine:mergeSpine(keep, drop), ...opt, now:Date.now() });
+  const plan = mergePlan(keep, drop, { lock:mergeLock(keep, drop), spine:mergeSpine(keep, drop, opt.t), ...opt, now:Date.now() });
   const next = storedWork(plan.next), gone = storedWork(plan.gone);
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
