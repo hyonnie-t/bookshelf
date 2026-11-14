@@ -146,9 +146,11 @@ function tintSpine(b, id, c, dark = isDark()) {
   b.dataset.cid = id;
   b.style.backgroundColor = p.bg; b.style.color = p.ink;
   b.style.setProperty('--ln', p.ln);
-  // 색 덩어리: 책마다 자리 둘 중 하나. 종이 결(가로 줄무늬)은 css 규칙이 인라인에 덮이므로 여기서 함께 깐다. 이북리더기는 css가 !important로 지운다
-  const at = Math.abs(hash('blk' + id)) % 2 ? [58, 74] : [70, 84];
-  b.style.backgroundImage = b.classList.contains('lie') ? '' : `${p.blk ? `linear-gradient(to bottom,transparent 0 ${at[0]}%,${p.blk} ${at[0]}% ${at[1]}%,transparent ${at[1]}%),` : ''}repeating-linear-gradient(to bottom,rgba(0,0,0,.025) 0 1px,transparent 1px 3px)`;
+  // 표지 색 조각: 표지를 위에서 아래로 훑은 색을 책등 전체에 깐다(칸 사이만 살짝 번지게). 눕힌 책은 왼쪽에서 오른쪽으로.
+  // 종이 결(가로 줄무늬)은 css 규칙이 인라인에 덮이므로 여기서 함께 깐다. 이북리더기는 css가 !important로 지운다
+  const n = p.stops.length, lie = b.classList.contains('lie');
+  const strip = n ? `linear-gradient(to ${lie ? 'right' : 'bottom'},${p.stops.map((c, i) => `${c} ${(i / n * 100 + (i ? 2.5 : 0)).toFixed(1)}% ${((i + 1) / n * 100 - (i < n - 1 ? 2.5 : 0)).toFixed(1)}%`).join(',')})` : '';
+  b.style.backgroundImage = [lie ? '' : 'repeating-linear-gradient(to bottom,rgba(0,0,0,.025) 0 1px,transparent 1px 3px)', strip].filter(Boolean).join(',');
 }
 function repaintSpines() {
   const dark = isDark();

@@ -55,6 +55,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export function spineColor(cover, edition, dark, seed = 0) {
   const ed = SPINE_EDITIONS[edition] || SPINE_EDITIONS.base;
   const HEX = /^#[0-9a-f]{6}$/i; // 손으로 고친 값이 이상해도 책장이 멈추지 않게: 바탕이 6자리 색이 아니면 회색, 강조색이 아니면 없는 것으로
+  const strips = (/^([0-9a-f]{6})+$/i.test((cover && cover[3]) || '') ? cover[3].match(/.{6}/g) : []).slice(0, 12);
   cover = [HEX.test(cover && cover[0]) ? cover[0] : '#888888', '', HEX.test(cover && cover[2]) ? cover[2] : ''];
   const [cl, cc, ch] = toLch(cover[0]);
   const [lo, hi] = ed.band || (dark ? BAND.dark : BAND.light);
@@ -82,18 +83,25 @@ export function spineColor(cover, edition, dark, seed = 0) {
   if (!ink) { bg = fromLch(L, C, H); ink = contrast(bg, '#000000') >= contrast(bg, '#ffffff') ? '#000000' : '#ffffff'; }
   // 금박 줄: 바탕과 구별될 때만 금색, 아니면 글자색
   const ln = contrast(bg, GOLD) >= 1.7 ? GOLD : ink;
-  // 색 덩어리(표지의 두 번째 색 느낌): 강조색의 색상을 빌리되 밝기는 바탕에서 한 단만 옮겨 글자 대비 4.5를 지킨다. 못 지키면 넣지 않는다
-  let blk = '';
-  const a = cover[2] && toLch(cover[2]);
-  if (a && a[1] > 0.04) {
-    const bh = ed.own ? a[2] : (ed.h + ed.spread * (Math.cos((a[2] - 30) * Math.PI / 180) * 0.7 - j * 0.3) + 360) % 360;
-    const bc = ed.own ? Math.min(a[1], ed.cap + 0.03) : Math.min(ed.c[1] * 1.2, C + 0.03);
-    for (const step of [0.1, 0.07, 0.045]) {
-      const cand = fromLch(L + (L < MID ? -step : step), bc, bh);
-      if (cand !== bg && contrast(cand, ink) >= 4.5) { blk = cand; break; }
+  // 표지 색 조각(2단계): 표지를 위에서 아래로 훑은 색 7개를 같은 규칙으로 옮긴다. 색상·진하기는 살리고,
+  // 밝기는 글자색과 같은 쪽(어두운 글자면 밝은 쪽)에만 두어 조각마다 글자 대비를 지킨다. 조각이 없으면 빈 배열(바탕 한 색)
+  const lightInk = contrast(bg, '#ffffff') > contrast(bg, '#000000');
+  const stops = [];
+  for (const s of strips) {
+    const [sl, sc, sh] = toLch('#' + s);
+    let h = H, c = C;
+    if (ed.own) { if (sc >= 0.012) { h = sh; c = Math.min(sc, ed.cap) * (dark ? 0.85 : 1); } }
+    else {
+      h = (ed.h + ed.spread * (Math.cos((sh - 30) * Math.PI / 180) * 0.7 + j * 0.3) + 360) % 360;
+      c = (ed.c[0] + (ed.c[1] - ed.c[0]) * clamp(sc / 0.14, 0, 1)) * (dark ? 0.85 : 1);
     }
+    let l = lo + (hi - lo) * clamp(sl, 0, 1) ** 1.25;
+    l = lightInk ? Math.min(l, MID - 0.04) : Math.max(l, MID + 0.04);
+    let v = '';
+    for (let i = 0; i < 40 && !v; i++) { const t = fromLch(l, c, h); if (contrast(t, ink) >= TARGET) v = t; else l += lightInk ? -0.012 : 0.012; }
+    stops.push(v || bg);
   }
-  return { bg, ink, ln, blk };
+  return { bg, ink, ln, stops };
 }
 const GOLD = '#c8a45a';
 const TARGET = 4.75; // 4.5보다 넉넉히: 책등 위 종이 결(검정 2.5% 줄) 위에서도 4.5가 남는다(검토자 재현: 4.5에 딱 맞추면 결 위에서 4.29~4.34)

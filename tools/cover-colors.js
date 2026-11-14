@@ -8,7 +8,7 @@
 //   이미 색이 있는 책은 건너뛴다(--all이면 다시). 중계 하루 상한(3,000건)에 걸리면(error: limit) 거기까지 저장하고 멈춘다.
 const fs = require('fs'), path = require('path');
 const jpeg = require('jpeg-js'), { PNG } = require('pngjs');
-const { pickColors, fixText } = require('./spine-color.js');
+const { pickColors, fixText, stripes } = require('./spine-color.js');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'data', 'spines.json');
@@ -57,28 +57,32 @@ async function image(url) {
   const only = val('--only'); if (only) { const s = new Set(only.split(',')); books = books.filter((b) => s.has(b.id)); }
   const out = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
   out.c = out.c || {}; out.miss = out.miss || [];
-  const todo = books.filter((b) => flag('--all') || only || !(b.id in out.c) && !out.miss.includes(b.id));
+  // --stripes: 색은 있는데 세로 색 조각이 아직 없는 책만 다시(끊겨도 이어서 돌릴 수 있다)
+  const todo = books.filter((b) => (flag('--stripes') ? (b.id in out.c) && !out.c[b.id][3] : flag('--all') || only || !(b.id in out.c) && !out.miss.includes(b.id)));
   const limit = Number(val('--limit')) || Infinity;
   let done = 0, miss = 0, calls = 0, stop = '';
   const save = () => {
     out.v = 1; out.at = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // 한국 날짜
-    out.note = '카카오 책 검색 표지에서 계산한 책등 색 [바탕, 글자, 강조]. 표지 주소는 저장하지 않는다(tools/cover-colors.js)';
+    out.note = '카카오 책 검색 표지에서 계산한 책등 색 [바탕, 글자, 강조, 세로 색 조각 7개(6자리씩 이어 붙임)]. 표지 주소·그림은 저장하지 않는다(tools/cover-colors.js)';
     out.miss = [...new Set(out.miss)].filter((id) => !(id in out.c));
     for (const id in out.c) out.c[id][1] = fixText(out.c[id][0], out.c[id][1]); // 저장할 때마다 모든 책의 글자 대비 4.5 이상을 다시 확인한다
     const ordered = { v: out.v, at: out.at, note: out.note, c: out.c, miss: out.miss };
     fs.writeFileSync(OUT, JSON.stringify(ordered).replace(/,"(w\d+|[A-Za-z0-9_-]+)":\[/g, ',\n"$1":[') + '\n');
   };
-  for (const b of todo.slice(0, limit)) {
+  // 중계(앱스크립트)가 한 번에 몇 초씩 걸려 여섯 권씩 같이 받는다
+  const queue = todo.slice(0, limit);
+  const one = async (b) => {
     let r = await relay(`${mainTitle(b.t)} ${firstAuthor(b.a)}`.trim()); calls++;
-    if (!r.ok && r.error === 'limit') { stop = '중계 하루 상한'; break; }
+    if (!r.ok && r.error === 'limit') { stop = '중계 하루 상한'; return; }
     let m = r.ok ? best(r.books || [], b) : null;
-    if (!m && r.ok) { r = await relay(mainTitle(b.t)); calls++; if (!r.ok && r.error === 'limit') { stop = '중계 하루 상한'; break; } m = r.ok ? best(r.books || [], b) : null; }
+    if (!m && r.ok) { r = await relay(mainTitle(b.t)); calls++; if (!r.ok && r.error === 'limit') { stop = '중계 하루 상한'; return; } m = r.ok ? best(r.books || [], b) : null; }
     const im = m && await image(m.cover);
     const c = im && pickColors(im.data, im.width, im.height);
-    if (c) { out.c[b.id] = [c.base, c.text, c.accent || '']; out.miss = out.miss.filter((x) => x !== b.id); done++; }
-    else { if (!out.miss.includes(b.id)) out.miss.push(b.id); miss++; }
+    if (c) { out.c[b.id] = [c.base, c.text, c.accent || '', stripes(im.data, im.width, im.height)]; out.miss = out.miss.filter((x) => x !== b.id); done++; }
+    else { if (!(b.id in out.c) && !out.miss.includes(b.id)) out.miss.push(b.id); miss++; } // 색이 이미 있는 책은 이번에 못 찾아도 옛 색을 둔다
     if ((done + miss) % 25 === 0) { save(); process.stdout.write(`${done + miss}/${todo.length} `); }
-  }
+  };
+  await Promise.all(Array.from({ length: 6 }, async () => { while (queue.length && !stop) await one(queue.shift()); }));
   save();
   console.log(`\n색 ${done}권, 못 찾음 ${miss}권, 중계 호출 ${calls}회${stop ? ', 멈춤: ' + stop : ''} / 전체 색 ${Object.keys(out.c).length}권`);
 })();
