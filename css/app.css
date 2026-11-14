@@ -770,3 +770,16 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 .spine-pick a { font-size:.85rem; }
 .y24-prev { display:flex; justify-content:center; min-height:0; }
 .y24-prev img { height:160px; width:auto; border:1px solid var(--line); border-radius:2px; }
+/* 실물 책등 보기의 얇은 색 책등(2026-11-14): 사진 책등과 같은 두께(18~24px)라 제목을 한 줄로, 글자를 조금 작게 */
+.spine.thin { padding:var(--space-2) 0; font-size:.74rem; line-height:1.1; }
+.spine.thin > span { white-space:nowrap; }
+.spine.thin.multi { padding-top:var(--space-4); }
+.spine.thin.guess { padding-bottom:var(--space-4); }
+.spine.thin .times { font-size:.62rem; }
+.spine.thin .est { writing-mode:vertical-rl; font-size:.62rem; line-height:1; }
+/* 책등 다시 찾기(관리): 줄마다 제목·까닭·찾기 링크·주소 칸, 사진이 맞으면 줄이 물든다 */
+.spine-row { display:grid; gap:var(--space-2); }
+.spine-row input { width:100%; min-height:40px; }
+.spine-row .y24-prev img { height:120px; }
+.spine-row.picked { background:color-mix(in srgb, var(--accent) 10%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .spine-row { transition:background-color .3s ease; } }
