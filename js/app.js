@@ -781,7 +781,7 @@ function guessBox(w) {
     try {
       const books = list().filter((x) => x.k === 'book');
       const shelf = books.filter((x) => x.known && x.t).map((x) => ({ id:x.id, t:x.t, a:x.a, p:x.p }));
-      const { top } = await suggest(w, { stats:wordStats(books), posts:D.posts.filter((p) => !p.blog), shelf, search:fromRelay });
+      const { top } = await suggest(w, { stats:wordStats(books), posts:D.posts.filter((p) => !p.blog), shelf, search:(q) => fromRelay(q) });
       msg.textContent = top.length ? '맞는 책을 누르면 제목과 저자가 채워져요. 단서가 약해 틀릴 수 있어요.' : '단서로는 후보를 찾지 못했어요. «책 고치기»에서 직접 찾아 주세요.';
       out.replaceChildren(...top.map((c) => {
         const pick = el('button', { type:'button' }, el('strong', { textContent:c.t }), el('span', { textContent:[c.a, c.p, c.y].filter(Boolean).join(' · ') }), el('span', { className:'why', textContent:c.why }));
@@ -2654,7 +2654,7 @@ async function relayBooks(q, src) {
 // only: 한 출처만(책등 다시 찾기의 예스24 판 찾기)
 async function fromRelay(q, only) {
   const tries = [];
-  for (const src of only != null ? [only] : relayChain(LOCAL)) {
+  for (const src of typeof only === 'string' && only in SRC_NAME ? [only] : relayChain(LOCAL)) { // only가 문자열 출처가 아니면(배열 map의 번호 등) 출처 순서대로
     try { tries.push({ src, rows:await relayBooks(q, src) }); } catch (e) { console.warn(`${SRC_NAME[src]} 실패`, e.message); tries.push({ src, err:e }); }
     if (!needNext(tries[tries.length - 1])) break;
   }
@@ -2672,7 +2672,8 @@ async function searchBooks(q) {
       // 카카오·국립중앙도서관은 낱말 단위로 찾아 잘린 제목(«레슨 인 케미»)이나 띄엄띄엄 적은 말(«코끼리 장례식»)을 놓친다. 낱말을 줄여 다시 찾고 찾는 말이 다 들어 있는 책만 남긴다
       const words = q.split(/\s+/);
       const tries = words.length < 2 ? [] : [...new Set([words.slice(0, -1).join(' '), ...words.filter((x) => x.length >= 2)])].filter((x) => x !== q).slice(0, 3);
-      const more = (await Promise.allSettled(tries.map(fromRelay))).flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).filter(fits);
+      // (x) => fromRelay(x): map의 둘째 인자(번호)가 출처(only)로 들어가 범용판이 카카오를 부르던 것을 막는다(2026-11-15 검토자 재현). 한 번 찾기에 중계는 많아야 3 + 3×3번
+      const more = (await Promise.allSettled(tries.map((x) => fromRelay(x)))).flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).filter(fits);
       return more.length ? uniqueBooks(more).slice(0, 8) : rows;
     }),
     async () => ((await getJson(`https://www.googleapis.com/books/v1/volumes?maxResults=6&printType=books&q=${enc}`)).items || []).map(({ volumeInfo:v }) => ({ t:v.title || '', a:(v.authors || []).join(', '), p:v.publisher || '', y:(v.publishedDate || '').slice(0, 4) })),
