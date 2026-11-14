@@ -2451,6 +2451,15 @@ function openMemoBin(onlyId) {
   });
   showForm(onlyId ? '이 책의 보관한 메모' : '보관한 메모', rows.length ? rows : [el('p', { className:'warn', textContent:'보관한 메모가 없어요.' })]);
 }
+// 관리 도구 공통(2026-11-14 연결 점검): 저장 단추 옆에 «고른 ○○ n»을 붙인다(책등 다시 찾기·빈 칸 채우기·겹치는 메모). 돌려준 함수를 부르면 숫자를 다시 센다
+function footCount(label, count) {
+  const c = el('small', { className:'pick-count', role:'status' });
+  const set = () => { c.textContent = `${label} ${count()}`; };
+  set();
+  const foot = $('form-body').querySelector('.form-foot');
+  if (foot) foot.prepend(el('div', { className:'pick-sum' }, c));
+  return set;
+}
 /* ---------- 인스타 글과 겹치는 메모 ---------- */
 // 메모와 인스타 글이 다섯 글자 묶음을 얼마나 함께 갖는지 짧은 쪽 기준으로 잰다. 실제 메모 389개에서 비율 0.3~0.8 사이 건수가 거의 안 변했다(2026-11-05)
 // 짧은 인용 메모는 긴 서평에 다 들어 있어도 같은 글이 아니므로, 미리 고르는 «거의 같음»은 긴 쪽 기준으로도 절반 넘게 겹칠 때만 준다
@@ -2517,6 +2526,8 @@ function showMemoOverlap() {
     if (!picked.length) throw fail('보관할 메모를 골라 주세요');
     await archiveOverlaps(picked);
   }, '고른 메모 보관');
+  const upd = footCount('고른 메모', () => boxes.filter((b) => b.checked).length);
+  boxes.forEach((b) => b.addEventListener('change', upd));
 }
 function syncMemoBin() {
   const b = $('memoBin');
@@ -2876,6 +2887,7 @@ function openFillTool() {
   const head = el('p', { className:'warn', role:'status', textContent:targets.length ? `저자·출판사·주제 중 빈 칸이 있는 책이 ${targets.length}권이에요. 이미 적힌 칸은 그대로 두고 빈 칸만 채워요. 찾는 동안 제목·저자만 ${RELAY_NAME}으로 가요.` : '빈 칸이 있는 책이 없어요.' });
   const list_ = el('div', { className:'fill-list' });
   const found = [];
+  let upd = () => {}; // 저장 단추 옆 «고른 책 n»(창을 연 뒤 붙임)
   const rowEl = (r) => {
     const box = el('input', { type:'checkbox', checked:r.status === 'sure', disabled:!Object.keys(r.fill).length });
     r.box = box;
@@ -2888,7 +2900,7 @@ function openFillTool() {
   const n = (st) => found.filter((r) => r.status === st).length;
   const batch = batchRun({ // 책등 다시 찾기와 같은 뼈대(2026-11-14): «한꺼번에 찾기»·«멈추기»·«이어서 찾기», 세 권씩
     todo:() => targets.filter((w) => !found.some((r) => r.w.id === w.id && r.status !== 'fail')), size:3, job:fillRow, // 찾다 실패한 책은 «이어서 찾기»로 다시(책등 다시 찾기와 같게)
-    onEach:(r) => { const i = found.findIndex((x) => x.w.id === r.w.id); if (i >= 0) { found[i].el.remove(); found.splice(i, 1); } r.el = rowEl(r); found.push(r); list_.append(r.el); },
+    onEach:(r) => { const i = found.findIndex((x) => x.w.id === r.w.id); if (i >= 0) { found[i].el.remove(); found.splice(i, 1); } r.el = rowEl(r); found.push(r); list_.append(r.el); upd(); },
     progress:() => { head.textContent = `찾는 중 ${found.length}/${targets.length} · 채울 것 찾음 ${n('sure') + n('check')}`; },
     done:() => { head.textContent = `${found.length}/${targets.length}권을 찾았어요. 확실 ${n('sure')} · 확인 필요 ${n('check')} · 못 찾음 ${n('none') + n('fail')}. 확실한 줄만 골라 뒀어요.`; },
   });
@@ -2911,6 +2923,8 @@ function openFillTool() {
     refreshAll();
     toast(`${picked.length}권의 빈 칸 ${n}개를 채웠어요`);
   }, '고른 책 저장');
+  upd = footCount('고른 책', () => found.filter((r) => r.box && r.box.checked).length);
+  list_.addEventListener('change', upd);
 }
 if ($('fillBlanks')) $('fillBlanks').onclick = openFillTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
@@ -2971,11 +2985,11 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   k.value = w ? w.k : 'book';
   const th = themeChecks(seed.th || []);
   const thNote = el('small', { className:'auto-note', role:'status', hidden:true });
-  let pickRun = 0, spinePick = null, spineRun = 0;
+  let pickRun = 0, spinePick = null, spineRun = 0, foundTitle = '';
   const applyFound = async (f) => {
     t.value = f.t; a.value = f.a || a.value; p.value = f.p || p.value;
     // 실물 책등(2026-11-14): 예스24에서 고른 책은 그 판의 책등 사진을 재 두었다가 저장 때 works/{id}.y24로(사진이 없는 판이면 비움)
-    spinePick = null; const sp = ++spineRun;
+    spinePick = null; foundTitle = f.t; const sp = ++spineRun;
     if (f.y24) measureSpine(f.y24).then((g) => { if (sp === spineRun && g) spinePick = { got:g, t:f.t }; });
     if (th.values().length || k.value !== 'book') return; // 이미 고른 주제는 건드리지 않는다
     const mine = ++pickRun;
@@ -3011,7 +3025,10 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     // 찾은 판의 책등: 제목을 찾은 그대로 두었고, 아직 고른 판이 없고(효니 책장은 y24.json에도 없는 책만) 책일 때만
     // 제목을 다른 책으로 바꿨으면(연결 점검 2026-11-14) y24.json의 옛 자동 책등이 있어도 고른 판으로
     const retitled = !isNew && title !== (w.t || '');
-    if (spinePick && spinePick.t === title && k.value === 'book' && !Array.isArray(base.y24) && base.y24 !== 0 && (retitled || !D.y24[base.id])) base.y24 = spinePick.got;
+    // 책 찾기로 다른 책을 골라 제목이 바뀌었으면(검토자 재현: 옛 자동·직접 고른 책등이 새 제목에 남음) 고른 판의 책등, 그 판에 사진이 없으면 색 책등. 오타만 고친 제목은 그대로
+    const swapped = retitled && foundTitle === title && k.value === 'book';
+    if (swapped && (D.y24[base.id] || Array.isArray(base.y24) || spinePick)) base.y24 = spinePick && spinePick.t === title ? spinePick.got : 0;
+    else if (spinePick && spinePick.t === title && k.value === 'book' && !Array.isArray(base.y24) && base.y24 !== 0 && !D.y24[base.id]) base.y24 = spinePick.got;
     if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
     if (only && only.checked !== isOnlyMe(w)) { // 예전 책 창 칸과 같은 규칙: 책·영화는 풀면 only를 지워 원래 기준으로
       base.only = only.checked;
