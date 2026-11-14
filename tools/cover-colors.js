@@ -94,8 +94,13 @@ async function image(url) {
     const im = m && await image(m.cover);
     const c = im && pickColors(im.data, im.width, im.height);
     if (c) { out.c[b.id] = [c.base, c.text, c.accent || '', stripes(im.data, im.width, im.height)]; out.miss = out.miss.filter((x) => x !== b.id); done++; }
-    else { if (again) delete out.c[b.id]; if (!(b.id in out.c) && !out.miss.includes(b.id)) out.miss.push(b.id); miss++; }
-    if (again) out.rc[b.id] = recolor[b.id]; // 색이 이미 있는 책은 이번에 못 찾아도 옛 색을 둔다
+    else {
+      // 중계 오류·그림 받기 실패는 잠깐 끊긴 것일 수 있어(2026-11-15 검토자 지적) 다시 뽑을 책을 «못 찾음»으로 확정하지 않는다(옛 색·표시 그대로, 다음에 다시)
+      const flaky = !r.ok || (m && !im);
+      if (again && flaky) { miss++; return; }
+      if (again) delete out.c[b.id]; if (!(b.id in out.c) && !out.miss.includes(b.id)) out.miss.push(b.id); miss++;
+    }
+    if (again) out.rc[b.id] = recolor[b.id]; // 색이 이미 있는 책(표시 없음)은 이번에 못 찾아도 옛 색을 둔다
     if ((done + miss) % 25 === 0) { save(); process.stdout.write(`${done + miss}/${todo.length} `); }
   };
   await Promise.all(Array.from({ length: 6 }, async () => { while (queue.length && !stop) await one(queue.shift()); }));

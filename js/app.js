@@ -822,14 +822,16 @@ function findCover(w) {
 
     const pick = (list) => { const ok = list.filter((x) => /^https:\/\//.test(x.cover || '')); const au = (x) => !a || coverNorm((x.authors || []).join()).includes(a);
       return ok.find((x) => coverNorm(x.title) === t && au(x)) || ok.find((x) => coverNorm(x.title).startsWith(t) && au(x)) || ok.find((x) => coverNorm(x.title) === t) || null; };
-    COVER_ASK.set(w.id, (async () => {
+    const job = (async () => {
       let m = pick(await ask(`${title} ${author}`.trim()));
       if (!m && author) m = pick(await ask(title));
       const url = m ? m.cover : ''; // 예스24 표지 L 또는(예스24가 안 될 때) 카카오 미리보기 120×174를 받은 그대로 쓴다
+      if (COVER_ASK.get(w.id) !== job) return url; // 그사이 책 정보를 고쳐 forgetCover로 지워졌으면 옛 제목 결과를 메모리에 남기지 않는다(2026-11-15 검토자 지적)
       if (m && m.y24) COVER_Y24.set(w.id, m.y24); // 출처 링크용(메모리에만)
       COVER_URL.set(w.id, url); COVER_ASK.delete(w.id);
       return url;
-    })());
+    })();
+    COVER_ASK.set(w.id, job);
   }
   return COVER_ASK.get(w.id);
 }
@@ -868,9 +870,9 @@ function spineState(w) {
 }
 const canPickSpine = (w) => !!(w.id && (w.k || 'book') === 'book' && w.known);
 // 다른 책·다른 판으로 바뀐 책은 책등 색(data/spines.json)을 다시 뽑게 비공개 meta/recolor/{id}에 «제목|판»을 적는다(2026-11-15).
-// 색은 앱이 못 만든다. tools/cover-colors.js가 공개 반영 때 읽어 그 책만 다시 뽑고, spines.json rc에 같은 값을 적어 다음엔 건너뛴다. 범용판·색이 없는 책은 안 적는다
+// 색은 앱이 못 만든다. tools/cover-colors.js가 공개 반영 때 읽어 그 책만 다시 뽑고, spines.json rc에 같은 값을 적어 다음엔 건너뛴다. 범용판·책이 아닌 칸은 안 적는다
 async function markRecolor(w, t, y24) {
-  if (LOCAL || !w.id || !coverColors(w)) return;
+  if (LOCAL || !w.id || (w.k || 'book') !== 'book') return; // 색이 없는(못 찾은) 책도 적는다: 고친 제목으로 다시 찾아 색이 생기면 책 창 표지도 생긴다(검토자 재현)
   const v = `${t || ''}|${Array.isArray(y24) ? y24[0] : y24 === 0 ? 0 : ''}`;
   try { await write(`meta/recolor/${w.id}`, v); const m = D.priv.meta = D.priv.meta || {}; m.recolor = { ...(m.recolor || {}), [w.id]:v }; } catch (e) { console.warn('책등 색 표시 저장 실패', e.message); }
 }
@@ -2876,6 +2878,8 @@ async function mergeWorks(keep, drop, opt = {}) {
   await write('works', { [keep.id]:next, [drop.id]:gone }, 'update');
   setPriv('works', keep.id, next);
   setPriv('works', drop.id, gone);
+  // 남는 책의 제목·판이 바뀌면 표지·책등 색도 다시(2026-11-15 검토자 재현: 합친 뒤 옛 표지가 남았다)
+  if (next.t !== keep.t || JSON.stringify(next.y24) !== JSON.stringify(keep.y24)) { forgetCover(keep.id); markRecolor({ ...keep, ...next, id:keep.id }, next.t, next.y24); }
   refreshAll();
   toast(`«${next.t || titleOf(keep)}» 한 권으로 합쳤어요${plan.dups ? ` · 같은 기록 ${plan.dups}개는 하나로` : ''}`);
 }
@@ -2891,6 +2895,8 @@ async function undoMerge(id) {
   await write('works', { [stored.into]:next, [id]:back }, 'update');
   setPriv('works', stored.into, next);
   setPriv('works', id, back);
+  forgetCover(stored.into); forgetCover(id); // 되돌린 두 책 표지를 다시 찾는다(2026-11-15)
+  if (next.t !== keep.t || JSON.stringify(next.y24) !== JSON.stringify(keep.y24)) markRecolor({ ...next, id:stored.into }, next.t, next.y24);
   refreshAll();
   toast('합치기 전으로 되돌렸어요');
 }
@@ -3237,7 +3243,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     if (!isNew && (retitled || a.value.trim() !== (w.a || '') || y24Moved)) forgetCover(base.id);
     await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
     if (retitled) { const tr = (D.priv.meta || {}).y24tried; if (tr && tr[base.id]) { await write(`meta/y24tried/${base.id}`, null).catch(() => {}); delete tr[base.id]; } SPINE.res.delete(base.id); }
-    if (swapped || y24Moved) await markRecolor(w, title, base.y24);
+    if (swapped || y24Moved || (retitled && !coverColors(w))) await markRecolor(w, title, base.y24); // 색을 못 찾은 책은 제목 오타를 고쳐도 다시 찾게
     if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
     else { // 다른 종류를 보고 있어도 꽂힌 걸 바로 보여 준다. 양식의 기록이 먼저 빠진 뒤 연다
