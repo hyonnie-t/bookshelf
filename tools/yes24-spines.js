@@ -2,7 +2,7 @@
 // 그림은 저장하지 않는다. 앱이 볼 때 https://image.yes24.com/goods/<번호>/SIDE/XL 을 불러온다(못 받으면 색 책등).
 // 짝 맞추기: 예스24 모바일 검색(m.yes24.com/Search, PC 검색은 결과가 스크립트로 붙어 안 읽힘) → 제목·저자 점수 → eBook·중고·세트 빼기
 //   → 책등 그림이 있는지(«이미지 없음» 그림은 420x600·4,975바이트) → 상품 쪽의 var realBHeight(mm)로 키.
-// 사용: node tools/yes24-spines.js [private.local.json] [--all] [--limit N] [--only id,id]
+// 사용: node tools/yes24-spines.js [private.local.json] [--all] [--vol] [--limit N] [--only id,id]   (--vol: 권 번호가 있는 책만 다시)
 //   private.local.json을 주면 나만 보기 책도 넣는다. 이미 찾은 책·못 찾은 책은 건너뛴다(--all이면 다시). 제목·저자는 출력하지 않는다.
 const fs = require('fs'), path = require('path');
 
@@ -21,6 +21,8 @@ const norm = (s) => strip(s).replace(/\([^)]*\)|\[[^\]]*\]/g, '').replace(/[^0-9
 const mainTitle = (t) => String(t || '').split(/\s+[-:]\s+|\s*:\s*/)[0].trim();
 const firstAuthor = (a) => String(a || '').split('/')[0].split(/[,·]/)[0].replace(/\s*(외|지음|저|글|옮김|엮음)$/, '').replace(/\s*(지음|저|글|옮김|엮음).*$/, '').trim();
 
+// 권 번호: «(1)», «1권», «1부 1권»의 마지막 «n권», 끝의 «상·하»는 1·2. 없으면 ''
+const volOf = (t) => { const s = strip(t).trim(); const m = s.match(/(\d+)\s*권(?!.*\d+\s*권)/) || s.match(/\((\d+)\)\s*$/) || s.match(/\s(\d{1,2})\s*$/); if (m) return m[1]; const h = s.match(/[\s(]([상중하])\)?\s*$/); return h ? { 상:'1', 중:'2', 하:'3' }[h[1]] : ''; };
 async function get(url, headers, type = 'text') {
   for (let i = 0; i < 3; i++) {
     try {
@@ -59,7 +61,7 @@ async function height(no) {
   return mh >= 150 && mh <= 320 ? mh : 0; // 이상한 값은 버림(앱이 기본 키를 쓴다)
 }
 async function find(b) {
-  const T = norm(mainTitle(b.t)), A = norm(firstAuthor(b.a));
+  const T = norm(mainTitle(b.t)), A = norm(firstAuthor(b.a)), V = volOf(b.t);
   if (!T) return { why: 'title' };
   const tries = [`${mainTitle(b.t)} ${firstAuthor(b.a)}`.trim(), mainTitle(b.t)];
   let sawBook = false;
@@ -71,6 +73,7 @@ async function find(b) {
       let s = 0;
       if (at === T) s += 3; else if (at.startsWith(T) || T.startsWith(at)) s += 2; else if (T.length >= 4 && at.includes(T.slice(0, 4))) s += 1;
       if (A && norm(x.text).includes(A)) s += 2;
+      if (V) { const cv = volOf(x.alt); if (cv === V) s += 1; else if (cv) s -= 3; } // 권 번호가 다르면 다른 책(레퓨테이션 (1)이 2권에 붙었던 일)
       if (/eBook|전자책|\[중고\]|세트|오디오북|큰글자|리커버|양장 ?특별/.test(x.text.slice(0, 400) + x.alt)) s -= 3;
       return { ...x, s };
     }).filter((x) => x.s >= 3).sort((p, q) => q.s - p.s);
@@ -99,7 +102,8 @@ async function find(b) {
   const only = val('--only'); if (only) { const s = new Set(only.split(',')); books = books.filter((b) => s.has(b.id)); }
   const out = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
   out.y = out.y || {}; out.miss = out.miss || {};
-  const todo = books.filter((b) => flag('--all') || only || (!(b.id in out.y) && !(b.id in out.miss))).slice(0, Number(val('--limit')) || Infinity);
+  if (flag('--vol')) books = books.filter((b) => volOf(b.t)); // 권 번호가 있는 책만 다시(짝 규칙을 고친 뒤)
+  const todo = books.filter((b) => flag('--all') || flag('--vol') || only || (!(b.id in out.y) && !(b.id in out.miss))).slice(0, Number(val('--limit')) || Infinity);
   const save = () => {
     for (const id in out.y) delete out.miss[id];
     const ordered = {
