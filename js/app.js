@@ -23,7 +23,7 @@ const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
 const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0 };
-const D = { pub:null, blog:[], spines:{}, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
+const D = { pub:null, blog:[], spines:{}, y24:{},works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
 const squeeze = (s) => (s || '').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
@@ -165,6 +165,40 @@ function paintSpine(b, w) {
   if (w.th[0]) { const band = el('b', { className:'band' }); band.style.background = themeVar(w.th[0]); b.append(band); }
   return c;
 }
+// 실물 책등(2026-11-14, 효니 결정): data/y24.json의 y[id]=[예스24 상품 번호, 책등 그림 가로/세로, 실물 키 mm(모르면 0)].
+// 그림은 저장하지 않고 볼 때 예스24에서 불러온다. 받는 동안·못 받으면 아래에 깐 색 책등이 보인다.
+// 주인이 책 창에서 고른 판은 works/{id}.y24: [번호, 비율] = 이 판, 0 = 색 책등, 1 = 자동(y24.json). publish.js가 배열·0만 공개본에 옮긴다
+const SPINE_VIEW_KEY = 'shelf-spineview';
+let spineView = 'real';
+try { if (localStorage.getItem(SPINE_VIEW_KEY) === 'color') spineView = 'color'; } catch (e) {}
+// L은 세로 400px·약 3KB, XL은 1200px·약 20KB(2026-11-14 실측). 책등은 198px까지라 화면 배율 2 이하는 L로 충분하다
+const Y24_IMG = (no) => `https://image.yes24.com/goods/${no}/SIDE/${(window.devicePixelRatio || 1) > 2 ? 'XL' : 'L'}`;
+// «이미지 없음» 그림은 L 280x400·XL 420x600이라 비율로 거른다(책등은 0.02~0.35)
+const notSpine = (img) => { const r = img.naturalWidth / img.naturalHeight; return !(r >= 0.02 && r <= 0.35); };
+function realOf(w) {
+  if (LOCAL || !w || !w.id || (w.k || 'book') !== 'book') return null;
+  const base = D.y24[w.id];
+  if (Array.isArray(w.y24)) { const [no, r] = w.y24; return /^\d+$/.test(String(no)) && r > 0 ? { no:String(no), r:+r, mh:base && String(base[0]) === String(no) ? base[2] : 0, own:true } : null; }
+  if (w.y24 === 0) return null;
+  return base ? { no:String(base[0]), r:+base[1], mh:+base[2] || 0 } : null;
+}
+const useReal = (w) => (spineView === 'real' && document.documentElement.dataset.edition !== 'eink' ? realOf(w) : null);
+// 키: 실물 265mm 이상이면 선반 끝(198px), 모르면 210mm로. 폭은 그림 비율 그대로라 두께가 저절로 들어간다
+const realH = (mh) => Math.max(120, Math.min(198, Math.round((mh || 210) * 198 / 265)));
+let rebalanceTimer;
+function addRealImg(b, real, colorW, colorH) {
+  b.classList.add('real');
+  const img = el('img', { className:'real-img', alt:'', decoding:'async', loading:'lazy' });
+  img.referrerPolicy = 'no-referrer';
+  const back = () => { // 못 받으면 원래 키·폭의 색 책등으로 돌리고 줄을 다시 고른다
+    img.remove(); b.classList.remove('real', 'real-on'); b.style.width = colorW + 'px'; b.style.height = colorH + 'px';
+    clearTimeout(rebalanceTimer); rebalanceTimer = setTimeout(() => { if (S.view === 'shelf') balanceRacks(); }, 300);
+  };
+  img.onload = () => { if (notSpine(img)) back(); else b.classList.add('real-on'); };
+  img.onerror = back;
+  img.src = Y24_IMG(real.no);
+  b.append(img);
+}
 // 출판사: 책등 아래쪽에 작게(실제 책처럼). 괄호·«출판사» 꼬리를 떼고 다섯 글자까지
 const pubShort = (p) => { const s = String(p || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/\s*(출판사|출판|주식회사|㈜|\(주\))\s*/g, '').trim(); return s.length > 5 ? s.slice(0, 5) : s; };
 // 눕혀 쌓은 책: 가로 제목 22px, 폭은 제목 길이로만 정한다. 서평 막대는 오른쪽 끝, ×n은 제목 오른쪽
@@ -198,9 +232,12 @@ function spine(w, pose) {
   const pub = coverColors(w) && !mark ? pubShort(w.p) : '';
   const pubH = pub ? pub.length * 10.5 + 18 : 0;
   const need = Math.ceil(Math.ceil(label.length / cols) * 13.5 + 16 + (multi ? 16 : 0) + pubH + 6);
-  const showPub = pub && need <= 198;
+  const real = useReal(w);
+  const showPub = !real && pub && need <= 198;
   if (showPub) h = Math.max(h, need);
-  const wd = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9);
+  const colorW = 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9), colorH = h;
+  if (real) h = realH(real.mh);
+  const wd = real ? Math.max(14, Math.round(h * real.r)) : colorW;
   const b = el('button', { type:'button', className:'spine' + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose === 'lean' ? ' lean' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
   let gap = 0;
@@ -214,6 +251,7 @@ function spine(w, pose) {
   if (showPub) { b.classList.add('has-pub'); b.style.paddingBottom = Math.ceil(pubH) + 'px'; b.append(el('small', { className:'pub', textContent:pub })); }
   if (mark) b.append(el('i', { className:'est', textContent:mark }));
   if (multi) b.append(el('i', { className:'times', textContent:`×${items}` }));
+  if (real) addRealImg(b, real, colorW, colorH);
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
   b.onclick = () => pullOut(b, () => openBook(w.id, b));
   const slot = el('div', { className:'slot' + (pose === 'lean' ? ' lean' : '') }, b);
@@ -456,9 +494,16 @@ function syncBarColor() {
   if (c && m) m.content = c;
 }
 function setEdition(id) {
+  const wasEink = curEdition() === 'eink';
   if (id === 'base') delete document.documentElement.dataset.edition; else document.documentElement.dataset.edition = id;
   syncBarColor();
   repaintSpines();
+  if (!LOCAL && spineView === 'real' && wasEink !== (id === 'eink') && D.works.size) renderShelf(); // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
+}
+function setSpineView(v) {
+  if (spineView === v) return;
+  spineView = v;
+  if (D.works.size) renderShelf();
 }
 function openEditionForm() {
   const was = curEdition();
@@ -480,10 +525,19 @@ function openEditionForm() {
     return el('label', { className:'ed-opt' }, r, el('b', { textContent:name }), sw, el('p', { className:'ed-note', style:'grid-column:1 / -1', textContent:note }));
   });
   const box = el('div', { className:'ed-list', role:'radiogroup', ariaLabel:'색 에디션' }, opts);
-  $('form').addEventListener('close', () => { if (!chosen) setEdition(was); }, { once:true });
-  showForm('색 에디션', [box, el('p', { className:'ed-note', textContent:'고르면 뒤의 책장이 바로 바뀌어요. 이 기기에서만 바뀌고, 어두운 화면에서는 같은 색의 어두운 판으로 보여요.' })], async () => {
+  // 책등 보기(효니 본판만): 실물 책등(예스24 그림, 못 찾은 책은 색 책등) / 색 책등(모든 책을 아래 에디션 색으로)
+  const wasView = spineView;
+  const views = LOCAL ? null : el('fieldset', { className:'field reading-pick' }, el('legend', { textContent:'책등' }),
+    el('div', { className:'segs' }, [['real', '실물 책등'], ['color', '색 책등']].map(([v, l]) => {
+      const r = el('input', { type:'radio', name:'spineview', value:v, checked:v === wasView });
+      r.onchange = () => setSpineView(v);
+      return el('label', { className:'seg' }, r, el('span', { textContent:l }));
+    })),
+    el('small', { textContent:'실물 책등은 예스24 책등 사진이에요. 못 찾은 책과 이북리더기 에디션은 아래 색으로 칠해요.' }));
+  $('form').addEventListener('close', () => { if (!chosen) { setEdition(was); setSpineView(wasView); } }, { once:true });
+  showForm('색 에디션', [views, box, el('p', { className:'ed-note', textContent:'고르면 뒤의 책장이 바로 바뀌어요. 이 기기에서만 바뀌고, 어두운 화면에서는 같은 색의 어두운 판으로 보여요.' })].filter(Boolean), async () => {
     chosen = true;
-    try { localStorage.setItem(ED_KEY, curEdition()); } catch (e) {}
+    try { localStorage.setItem(ED_KEY, curEdition()); localStorage.setItem(SPINE_VIEW_KEY, spineView); } catch (e) {}
     toast('이 색으로 쓸게요');
   }, '이 색으로 쓰기');
 }
@@ -720,6 +774,64 @@ function coverImage(w) {
   findCover(w).then((url) => { if (url) img.src = url; else box.remove(); });
   return box;
 }
+// 책등 고르기(주인): 지금 책등 상태와 «다른 판으로»(예스24 주소 붙여넣기)·«색 책등으로/실물 책등으로». 방문자에게는 «공개 반영» 뒤에 바뀐다
+function spineBox(w) {
+  const real = realOf(w), auto = D.y24[w.id];
+  const state = w.y24 === 0 ? '색 책등으로 꽂아 둠' : real ? (real.own ? '직접 고른 예스24 판' : '예스24 책등') : '예스24에서 못 찾아 색 책등';
+  const kids = [el('span', { className:'only-tag', textContent:'책등' }), el('small', { textContent:state })];
+  if (real) { const a = el('a', { href:`https://www.yes24.com/Product/Goods/${real.no}`, target:'_blank', rel:'noopener', textContent:'예스24에서 보기' }); kids.push(a); }
+  const other = el('button', { className:'copy', type:'button', textContent:'다른 판으로' });
+  other.onclick = () => openY24Form(w);
+  kids.push(other);
+  if (w.y24 === 0 || Array.isArray(w.y24)) {
+    const back = el('button', { className:'copy', type:'button', textContent:auto ? '찾은 판으로 되돌리기' : '자동으로 되돌리기' });
+    back.onclick = () => setY24(w, 1, '책등을 처음 찾은 판으로 되돌렸어요');
+    kids.push(back);
+  }
+  if (w.y24 !== 0 && real) {
+    const off = el('button', { className:'copy', type:'button', textContent:'색 책등으로' });
+    off.onclick = () => setY24(w, 0, '이 책은 색 책등으로 꽂을게요');
+    kids.push(off);
+  }
+  return el('div', { className:'spine-pick' }, kids);
+}
+async function setY24(w, v, msg, raise) {
+  try { await saveWork({ ...w, y24:v }, msg); } catch (e) { console.error(e); if (raise) throw e; toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); return; }
+  if ($('sheet').open) reshow();
+}
+// 예스24 상품 주소(또는 번호)를 붙여 넣으면 책등 그림을 받아 보고 비율을 재서 저장한다. 그림은 저장하지 않는다
+function openY24Form(w) {
+  const inp = el('input', { type:'text', inputMode:'url', placeholder:'https://www.yes24.com/Product/Goods/…', autocomplete:'off' });
+  const prev = el('div', { className:'y24-prev' });
+  const msg = el('small', { textContent:'' });
+  const q = `${String(w.t || '').split(/\s*:\s*/)[0]} ${String(w.a || '').split(/[,·/]/)[0]}`.trim();
+  const search = el('a', { href:'https://m.yes24.com/Search?query=' + encodeURIComponent(q), target:'_blank', rel:'noopener', textContent:'예스24에서 이 책 찾기' });
+  let got = null, seq = 0;
+  const check = () => {
+    const no = (inp.value.match(/(?:Goods\/(?:Detail\/)?|goods\/|^\s*)(\d{4,})/) || [])[1];
+    got = null; prev.replaceChildren();
+    if (!no) { msg.textContent = inp.value.trim() ? '주소에서 상품 번호를 못 찾았어요' : ''; return; }
+    const me = ++seq;
+    msg.textContent = '책등 사진을 받는 중…';
+    const img = el('img', { alt:'', decoding:'async' });
+    img.referrerPolicy = 'no-referrer';
+    img.onload = () => {
+      if (me !== seq) return;
+      const r = img.naturalWidth / img.naturalHeight;
+      if (notSpine(img)) { msg.textContent = '이 상품에는 책등 사진이 없어요. 다른 판을 골라 주세요.'; return; }
+      got = [no, +r.toFixed(4)];
+      msg.textContent = '이 책등으로 바꿀까요?';
+      prev.replaceChildren(img);
+    };
+    img.onerror = () => { if (me === seq) msg.textContent = '책등 사진을 받지 못했어요. 번호를 확인해 주세요.'; };
+    img.src = Y24_IMG(no);
+  };
+  inp.addEventListener('input', check);
+  showForm('다른 판의 책등', [field('예스24 상품 주소', inp, '예스24에서 맞는 판을 열고 주소를 붙여 넣어요'), search, msg, prev], async () => {
+    if (!got) throw fail('책등 사진이 있는 상품 주소를 넣어 주세요');
+    await setY24(w, got, '책등을 바꿨어요. 방문자 화면은 공개 반영 뒤에 바뀌어요', true);
+  }, '이 책등으로');
+}
 // 왼쪽 면은 책 정보, 오른쪽 면은 글. 폰에서는 한 면으로 이어진다
 function renderTome(w, item, from) {
   const close = el('button', { className:'close', type:'button', textContent:'×', ariaLabel:'닫기' });
@@ -746,6 +858,7 @@ function renderTome(w, item, from) {
   if (S.owner) {
     lib = libBox(item, w);
     if (lib.box) left.push(lib.box);
+    if (!LOCAL && w.id && (w.k || 'book') === 'book' && w.known) left.push(spineBox(w));
     if (!LOCAL && w.id && isOnlyMe(w)) left.push(el('p', { className:'only-state' }, el('span', { className:'only-tag', textContent:'이 책 전체 나만 보기' }), el('small', { textContent:onlyMeText(w) })));
     if (!rv.length && !w.recs.length && !w.notes.length && !w.marks.length) {
       const kids = [el('p', { className:'warn', textContent:w.id ? '아직 남긴 글이 없어요.' : '아직 읽은 기록이 없어요.' })];
@@ -2947,11 +3060,12 @@ async function start() {
     if (!r.ok) throw new Error(String(r.status));
     D.pub = await r.json();
     // 블로그 글·책등 색은 없어도 책장은 열린다(색이 없으면 주제 색)
-    const [blog, spines] = await Promise.all([
+    const [blog, spines, y24] = await Promise.all([
       fetch('data/blog.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.posts || []).catch(() => []),
       fetch('data/spines.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.c || {}).catch(() => ({})),
+      fetch('data/y24.json', { cache:'no-cache' }).then((x) => (x.ok ? x.json() : {})).then((x) => x.y || {}).catch(() => ({})),
     ]);
-    D.blog = blog; D.spines = spines;
+    D.blog = blog; D.spines = spines; D.y24 = y24;
   } catch (e) {
     console.error(e);
     const retry = el('button', { className:'btn', type:'button', textContent:'다시 불러오기' });
