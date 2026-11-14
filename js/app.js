@@ -2,6 +2,7 @@
 import * as remote from './fb.js';
 import * as local from './local.js';
 import { hasText, suggest, wordStats } from './guess.js';
+import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
@@ -138,12 +139,26 @@ const spineMark = (w) => (w.guess ? '추정' : isReading(w) ? '미완' : showsOn
 // 책등 색(2026-11-14): data/spines.json의 [바탕, 글자, 강조]는 tools/cover-colors.js가 표지에서 뽑았다. 글자는 바탕과 대비 4.5 이상.
 // 색이 없는 책(표지를 못 찾음·범용판)은 예전처럼 주제 색 바탕이고, 색이 있는 책은 주제 색을 아래 작은 띠로 남긴다
 const coverColors = (w) => (!LOCAL && w && (w.k || 'book') === 'book' && D.spines[w.id]) || null;
+// 칠하는 색은 표지 색 그대로가 아니라 고른 색 에디션의 범위로 옮긴 색이다(js/spine.js). 에디션이나 밝은·어두운 화면이 바뀌면 repaintSpines가 다시 칠한다
+const isDark = () => { const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(getComputedStyle(document.body).backgroundColor); return !!m && (+m[1] * 0.299 + +m[2] * 0.587 + +m[3] * 0.114) < 110; };
+function tintSpine(b, id, c, dark = isDark()) {
+  const p = spineColor(c, document.documentElement.dataset.edition || 'base', dark, hash('tone' + id));
+  b.dataset.cid = id;
+  b.style.backgroundColor = p.bg; b.style.color = p.ink;
+  b.style.setProperty('--ln', p.ln);
+  // 색 덩어리: 책마다 자리 둘 중 하나. 종이 결(가로 줄무늬)은 css 규칙이 인라인에 덮이므로 여기서 함께 깐다. 이북리더기는 css가 !important로 지운다
+  const at = Math.abs(hash('blk' + id)) % 2 ? [58, 74] : [70, 84];
+  b.style.backgroundImage = b.classList.contains('lie') ? '' : `${p.blk ? `linear-gradient(to bottom,transparent 0 ${at[0]}%,${p.blk} ${at[0]}% ${at[1]}%,transparent ${at[1]}%),` : ''}repeating-linear-gradient(to bottom,rgba(0,0,0,.025) 0 1px,transparent 1px 3px)`;
+}
+function repaintSpines() {
+  const dark = isDark();
+  document.querySelectorAll('.spine.cov[data-cid]').forEach((b) => { const c = D.spines[b.dataset.cid]; if (c) tintSpine(b, b.dataset.cid, c, dark); });
+}
 function paintSpine(b, w) {
   const c = coverColors(w);
   if (!c) { b.style.backgroundColor = themeVar(w.th[0]); return null; } // background 대신 색만(css의 결·그늘 background-image가 덧입혀진다)
   b.classList.add('cov');
-  b.style.backgroundColor = c[0]; b.style.color = c[1];
-  b.style.setProperty('--ln', c[2] || c[1]);
+  tintSpine(b, w.id, c);
   if (w.th[0]) { const band = el('b', { className:'band' }); band.style.background = themeVar(w.th[0]); b.append(band); }
   return c;
 }
@@ -159,7 +174,7 @@ function lyingSpine(w) {
   const b = el('button', { type:'button', className:'spine lie' + (w.known ? '' : ' unknown') + (rv.length ? ' has-ig' : '') });
   b.style.width = wd + 'px';
   b.append(el('span', { textContent:label }));
-  if (coverColors(w)) { const c = coverColors(w); b.classList.add('cov'); b.style.backgroundColor = c[0]; b.style.color = c[1]; b.style.setProperty('--ln', c[2] || c[1]); }
+  if (coverColors(w)) { b.classList.add('cov'); tintSpine(b, w.id, coverColors(w)); }
   else b.style.backgroundColor = themeVar(w.th[0]);
   if (mark) b.append(el('i', { textContent:mark }));
   if (items > 1) b.append(el('i', { textContent:'×' + items }));
@@ -309,8 +324,29 @@ function renderShelf() {
   $('shelves').replaceChildren(...ys.map((y) => jumpMark(el('section', { className:'shelf' },
     el('div', { className:'shelf-head' }, el('h2', { textContent:y }), el('span', { textContent:`${byYear[y].length}${unit}` })),
     yearBody(y, byYear[y], unit)), y)));
+  balanceRacks();
   watch('.shelf');
 }
+// 두 줄 넘게 꽂히는 칸: 아랫줄에 한두 권만 남지 않게, 줄 수는 그대로 두고 칸 폭을 줄여 줄마다 비슷하게 꽂는다(글의 줄 고르기와 같은 생각)
+function balanceRacks() {
+  const racks = [...$('shelves').querySelectorAll('.rack')];
+  racks.forEach((r) => { r.style.maxWidth = ''; });
+  const plan = racks.map((r) => {
+    const ws = [...r.children].map((k) => k.getBoundingClientRect().width);
+    if (ws.length < 3) return 0;
+    const cs = getComputedStyle(r), side = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+    const inner = r.getBoundingClientRect().width - side;
+    const rows = (W) => { let n = 1, x = 0; ws.forEach((w) => { if (x && x + w > W + 0.5) { n++; x = 0; } x += w; }); return n; };
+    const R = rows(inner);
+    if (R < 2) return 0;
+    let lo = Math.max(...ws), hi = inner;
+    while (hi - lo > 1) { const mid = (lo + hi) / 2; if (rows(mid) <= R) hi = mid; else lo = mid; }
+    return hi + 2 < inner ? Math.ceil(hi) + side + 1 : 0;
+  });
+  racks.forEach((r, i) => { if (plan[i]) r.style.maxWidth = plan[i] + 'px'; });
+}
+let rackTimer = 0, rackW = innerWidth;
+window.addEventListener('resize', () => { if (innerWidth === rackW) return; rackW = innerWidth; clearTimeout(rackTimer); rackTimer = setTimeout(() => { if (S.view === 'shelf') balanceRacks(); }, 120); });
 
 /* ---------- 바로 가기·맨 위로 ---------- */
 const jumpMark = (n, label) => { n.dataset.jump = label; n.tabIndex = -1; return n; };
@@ -408,7 +444,7 @@ syncNavH();
 if ('ResizeObserver' in window) new ResizeObserver(syncNavH).observe($('topnav'));
 
 /* ---------- 색 에디션: 기기마다 저장한다 ---------- */
-const EDITIONS = [['base','조용한 서가','지금까지 쓰던 차분한 색'],['paper','오래된 종이','크림색 종이와 나무 선반'],['forest','숲속 서재','이끼색과 풀색'],['sea','새벽 바다','맑고 서늘한 푸른색'],['blossom','봄 벚꽃','연한 분홍빛'],['ink','먹과 한지','거의 무채색인 묵직한 서가'],['eink','이북리더기','흑백·큰 글자·움직임 없음. 전자잉크 화면용']];
+const EDITIONS = [['base','표지 색','책마다 표지에서 뽑은 색'],['paper','오래된 종이','크림색 종이와 나무 선반'],['forest','숲속 서재','이끼색과 풀색'],['sea','새벽 바다','맑고 서늘한 푸른색'],['blossom','봄 벚꽃','연한 분홍빛'],['ink','먹과 한지','거의 무채색인 묵직한 서가'],['night','밤 서재','늘 어두운 밤빛 배경에 표지 색 그대로'],['eink','이북리더기','흑백·큰 글자·움직임 없음. 전자잉크 화면용']];
 const ED_KEY = LOCAL ? 'myshelf-edition' : 'shelf-edition';
 const curEdition = () => document.documentElement.dataset.edition || 'base';
 function syncBarColor() {
@@ -419,16 +455,21 @@ function syncBarColor() {
 function setEdition(id) {
   if (id === 'base') delete document.documentElement.dataset.edition; else document.documentElement.dataset.edition = id;
   syncBarColor();
+  repaintSpines();
 }
 function openEditionForm() {
   const was = curEdition();
   let chosen = false;
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches; // 견본은 지금 에디션이 아니라 기기 설정 기준(밤 서재에서 열어도 다른 에디션은 고르면 보일 판으로)
+  const THEME_SAMPLES = ['소설','에세이','역사','철학','사회·정치','여행','법','시','과학·환경','예술'];
   const opts = EDITIONS.map(([id, name, note]) => {
+    if (LOCAL && id === 'base') { name = '조용한 서가'; note = '지금까지 쓰던 차분한 색'; } // 범용판은 표지 색을 쓰지 않고 주제 색으로 칠한다
+    if (LOCAL && id === 'night') note = '늘 어두운 밤빛 배경';
     const r = el('input', { type:'radio', name:'edition', value:id, checked:id === was });
     r.onchange = () => setEdition(id);
-    const sw = el('span', { className:'ed-swatch' }, ['소설','에세이','역사','철학','사회·정치','여행','법','시','과학·환경','예술'].map((t, i) => {
+    const sw = el('span', { className:'ed-swatch' }, SAMPLE_COVERS.map((c, i) => { // 견본은 실제 책등과 같은 규칙으로 칠한다
       const s = el('i');
-      s.style.background = themeVar(t); s.style.height = `${60 + (i * 37) % 40}%`;
+      s.style.background = LOCAL ? themeVar(THEME_SAMPLES[i]) : id === 'eink' ? '#fff' : spineColor([c], id, id === 'night' || dark, i).bg; s.style.height = `${60 + (i * 37) % 40}%`;
       return s;
     }));
     sw.dataset.edition = id;
@@ -468,7 +509,7 @@ async function refreshApp() {
 }
 $('refreshBtn').onclick = refreshApp;
 syncBarColor();
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncBarColor);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { syncBarColor(); repaintSpines(); });
 
 /* ---------- 책 자세히 ---------- */
 // 앞머리: 첫 문장(12~70자)이 글의 일부일 때만. 문장이 전부이거나 너무 길면 나누지 않는다
@@ -2607,6 +2648,7 @@ function show(v, quiet) {
   VIEWS.forEach((x) => { $(`view-${x}`).hidden = x !== v; $(`tab-${x}`).setAttribute('aria-selected', x === v); });
   $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
+  if (v === 'shelf') balanceRacks(); // 숨은 동안 다시 그렸거나 창 폭이 바뀌었으면 폭을 못 쟀다. 보일 때 다시 잰다
   if (v === 'posts') watch('.rise');
   if (v === 'recap') { const c = document.querySelector('#wordMap[data-pending]'); if (c && !c.closest('.rfold-body[hidden]')) drawWordMap(c); else fitNet(); }
   renderJump();
