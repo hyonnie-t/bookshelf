@@ -6,6 +6,7 @@ import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
 import { pickTheme, authorTheme, firstAuthorOf } from './kdc.js';
 import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.js';
+import { seriesGroups, seriesIndex, keepTogether, seriesKey } from './series.js';
 import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillGroup, FILL_GROUPS, titleDiffers } from './fill-tool.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
@@ -46,6 +47,7 @@ function rebuild() {
   if (S.owner) Object.entries(D.priv.works || {}).forEach(([id, w]) => {
     const pub = works.get(id) || {};
     const m = { recs:[], notes:[], ...pub, ...w, id, th:w.th || (DEMO ? pub.th : []) || [], y:w.y || pub.y || '', fd:w.fd || pub.fd || '' };
+    if (w.ser === undefined) delete m.ser; // 시리즈 손으로 고치기도 비공개 칸이 정한다(지운 값을 공개본이 되살리지 않게, 2026-11-15 검토자 재현)
     if (w.st === undefined) delete m.st; // 읽기 상태는 비공개 칸이 정한다. 공개본의 st('reading'·'not', tools/publish.js가 만듦)가 주인이 바꾼 상태를 덮지 않게(2026-11-15)
     works.set(id, m);
   });
@@ -68,7 +70,7 @@ function rebuild() {
     const rv = D.byWork.get(w.id) || [];
     if (!w.pub && !w.notes.length && w.archived.length && !w.marks.length && !w.recs.length && !rv.length) { works.delete(w.id); return; } // 메모를 다 보관해 글이 없는 칸은 책장에서 뺀다. 되돌리면 다시 꽂힌다(tools/publish.js와 같은 기준)
     w.nameHay = squeeze([w.t, w.a, w.p].filter(Boolean).join(' '));
-    w.hay = squeeze([w.t, w.a, w.p, ...w.notes.flatMap((n) => [n.l, n.b]), ...w.recs.flatMap((r) => [r.l, r.b]), ...w.marks.flatMap((m) => [m.q, m.why]), ...rv.map((p) => p.x)].filter(Boolean).join(' '));
+    w.hay = squeeze([w.t, w.a, w.p, typeof w.ser === 'string' ? w.ser : '', ...w.notes.flatMap((n) => [n.l, n.b]), ...w.recs.flatMap((r) => [r.l, r.b]), ...w.marks.flatMap((m) => [m.q, m.why]), ...rv.map((p) => p.x)].filter(Boolean).join(' '));
     if (!w.y) { const d = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0]; if (d) w.y = d.slice(0, 4); }
     if (!w.fd) w.fd = [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...rv.map((p) => p.d)].filter(Boolean).sort()[0] || '';
     // 책장의 달 묶음에 쓰는 날짜: 그해의 읽은 기록 → 처음 날짜 → 메모 → 서평 → 읽다 멈춘 기록 순으로 먼저 있는 것
@@ -78,6 +80,7 @@ function rebuild() {
   D.posts.forEach((p) => { p.hay = squeeze([p.x, p.t, ...p.w.map((id) => { const w = works.get(id); return w ? titleOf(w) : ''; })].filter(Boolean).join(' ')); });
   // 내 서재는 비공개 칸(library)에만 있다. 읽은 책과는 w로 이어질 뿐 섞지 않는다
   D.lib = S.owner ? Object.entries(D.priv.library || {}).map(([id, v]) => ({ ...v, id, w:v.w ? movedTo(v.w) : '', st:v.st || 'own', loans:v.loans || [], th:v.th || [] })) : [];
+  D.series = seriesIndex(seriesGroups([...works.values()])); // 시리즈 묶음(2026-11-15, js/series.js). 권마다 따로인 책을 이어 주는 표시일 뿐
 }
 const titleOf = (w) => w.t || { book:'제목 미확인 책', film:'제목 미확인 영화', show:'제목 미확인 공연', trip:'여행 기록', other:'제목 없는 글', wishlist:'읽을 목록' }[w.k] || '제목 없음';
 const reviewsOf = (w) => D.byWork.get(w.id) || [];
@@ -344,7 +347,8 @@ syncOrder();
 // 그해 책을 달마다 나눈다. 달을 아는 책이 하나도 없는 해(공개 화면의 옛 책들)는 예전처럼 한 선반에 꽂는다
 function yearBody(y, rows, unit) {
   const dir = S.order === 'old' ? 1 : -1;
-  const rack = (items) => el('div', { className:'rack' }, shelfBooks(items.sort((a, b) => dir * (a.md || a.fd).localeCompare(b.md || b.fd))));
+  // 같은 선반(같은 달) 안의 같은 시리즈 권은 권 순서로 붙여 꽂는다(2026-11-15). 다른 달에 읽은 권은 읽은 달 그대로
+  const rack = (items) => el('div', { className:'rack' }, shelfBooks(keepTogether(items.sort((a, b) => dir * (a.md || a.fd).localeCompare(b.md || b.fd)), D.series)));
   const months = {}, unknown = [];
   rows.forEach((w) => { const m = /^\d{4}$/.test(y) ? w.md.slice(0, 7) : ''; if (m) (months[m] = months[m] || []).push(w); else unknown.push(w); });
   const keys = Object.keys(months).sort((a, b) => dir * a.localeCompare(b));
@@ -1106,6 +1110,19 @@ function openSpineTool() {
   $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count, allOn, allOff)); // 저장 단추 옆에 붙어 스크롤해도 보인다
 }
 if ($('refindSpines')) $('refindSpines').onclick = openSpineTool;
+// 책 창 제목 아래 «시리즈 토지 · 1 2 3»(2026-11-15). 지금 권은 진하게, 책장에 있는 권만. 누르면 창을 겹치지 않고 그 권으로 바꿔 연다(방문자에게도)
+function seriesChips(w) {
+  const g = w.id && D.series && D.series.get(w.id);
+  if (!g) return null;
+  const chips = g.ids.filter((id) => D.works.has(id)).map((id) => {
+    const x = D.works.get(id), v = g.vol[id];
+    const b = el('button', { type:'button', className:'series-vol', textContent:v != null ? String(v) : titleOf(x), title:titleOf(x) });
+    if (id === w.id) { b.setAttribute('aria-current', 'true'); b.disabled = true; }
+    else b.onclick = () => { S.cur = { id }; openBook(id, $('sheet').returnEl); };
+    return b;
+  });
+  return el('nav', { className:'series-row', ariaLabel:`시리즈 ${g.name}` }, el('span', { textContent:`시리즈 ${g.name}` }), chips);
+}
 // 왼쪽 면은 책 정보, 오른쪽 면은 글. 폰에서는 한 면으로 이어진다
 function renderTome(w, item, from) {
   const close = el('button', { className:'close', type:'button', textContent:'×', ariaLabel:'닫기' });
@@ -1115,7 +1132,7 @@ function renderTome(w, item, from) {
   const byline = [w.a, w.p, kindName === '책' ? '' : kindName].filter(Boolean).join(' · ');
   const cq = coverQuote(w);
   const cover = coverImage(w);
-  const left = [el('div', { className:'title-page' }, cover, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }),
+  const left = [el('div', { className:'title-page' }, cover, el('h2', { id:'sheet-title', textContent:titleOf(w) }), seriesChips(w), el('p', { className:'by', textContent:byline }),
     cq ? el('figure', { className:'cover-q' }, el('blockquote', { textContent:cq.q }), cq.where ? el('figcaption', { textContent:cq.where }) : null) : null)];
   // 읽기 상태(2026-11-15, 효니 쪽지 «읽는 중 완독은 온오프 버튼»): 주인에게는 예전 «읽는 중» 글자 자리에 세 칸 단추, 방문자에게는 글자만
   if (S.owner && w.id && w.k === 'book' && !hasDoneRec(w)) left.push(readingSegs(w));
@@ -2750,6 +2767,8 @@ function dupPairs() {
       const [b, y] = named[j];
       // 왓챠 작품은 코드가 다르면 다른 작품이고(리메이크 등), 같은 제목의 책·공연과도 다른 작품이다
       if (a.wc && b.wc) continue;
+      // 같은 시리즈의 다른 권(«토지 1»↔«토지 1부 4권», 2026-11-15 검토자 재현)은 겹치는 책 후보로 내지 않는다
+      { const sa = seriesKey(a.t), sb = seriesKey(b.t); if (sa && sb && squeeze(sa.head) === squeeze(sb.head) && sa.vol !== sb.vol) continue; }
       if ((a.wc || b.wc) && a.k !== b.k) continue;
       if (!(x === y || (Math.min(x.length, y.length) >= 3 && (x.startsWith(y) || y.startsWith(x)))) || skip[pairKey(a.id, b.id)]) continue;
       const adiff = !!(fa(a) && fa(b) && fa(a) !== fa(b)); // 첫 저자가 둘 다 있고 다르면 «제목이 같아요»에서 «비슷해요»로 내린다
@@ -2855,6 +2874,8 @@ function openMergeForm(a, b, backToList) {
       el('p', { className:'dup-book' }, el('strong', { textContent:next.t || '제목 없음' }), el('span', { textContent:[next.a || '저자 없음', next.p, `기록 ${next.recs.length} · 메모 ${next.notes.length} · 밑줄 ${next.marks.length} · 서평 ${rv}`].filter(Boolean).join(' · ') })),
       next.recs.length ? el('ul', { className:'merge-recs' }, next.recs.map((r) => el('li', { textContent:[r.d || '날짜 없음', r.r == null ? '' : starText(r.r), r.st === 'unread' ? '읽는 중·미완독' : '', (r.mix || []).length ? '하나로 합침' : ''].filter(Boolean).join(' · ') }))) : null,
       dups ? el('small', { textContent:`같은 기록 ${dups}개를 하나로 합쳤어요. 되돌리면 두 기록으로 돌아가요.` }) : null,
+      // 같은 시리즈의 다른 권(2026-11-15): 막지는 않고 권마다 따로 두기를 권한다
+      ((g) => g && g === D.series.get(drop.id) && !(g.vol[keep.id] != null && g.vol[keep.id] === g.vol[drop.id]))(D.series && D.series.get(keep.id)) ? el('p', { className:'warn', textContent:'같은 시리즈의 다른 권이에요. 권마다 따로 두는 걸 권해요(책 창의 «시리즈» 칩으로 이어져 있어요).' }) : null,
       opt().spine === 0 ? el('small', { textContent:'다른 칸의 제목을 남겨서, 남는 책의 옛 책등 사진은 빼고 색 책등으로 꽂아요(표지도 새 제목으로 다시 찾아요).' })
         : opt().spine ? el('small', { textContent:opt().t === 'drop' ? '다른 칸의 제목을 남겨서 그 칸의 예스24 책등·표지를 써요.' : '남는 책에 책등 사진이 없어 다른 칸의 예스24 책등을 이어 줘요.' }) : null,
       // 공개에 걸리는 것(2026-11-14 연결 점검): 공개로 해 둔 글이 공개 책으로 오는지, 합친 책이 나만 보기로 잠겨 공개본에서 내려가는지, 서재 책 두 권이 이어지는지
@@ -3208,13 +3229,20 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   };
   th.addEventListener('change', () => { pickRun++; thNote.hidden = true; });
   const kids = [bookLookup(applyFound), field('제목', t), field('저자', a), field('출판사', p), field('종류', k), el('div', { className:'field' }, el('span', { textContent:'주제' }), th, thNote)];
-  let d, r, l, b, unfinished, reading = null, only = null;
+  let d, r, l, b, unfinished, reading = null, only = null, ser = null;
   if (isNew) {
     unfinished = el('label', { className:'check' }, el('input', { type:'checkbox' }), ' 아직 읽는 중이에요');
     d = el('input', { type:'date', value:today() }); r = ratingSelect(null); l = el('input', { type:'text' }); b = el('textarea', { rows:6 });
     kids.push(field('읽은 날', d), unfinished, field('별점', r), field('한 줄 평', l), field('기록', b));
   } else {
     if (w.k === 'book') { reading = readingPicker(w); kids.push(reading.box); k.addEventListener('change', () => { reading.box.hidden = k.value !== 'book'; }); }
+    { // 시리즈 손으로 고치기(2026-11-15, works/{id}.ser): 이름을 적으면 그 시리즈, «시리즈 아님»이면 빼기, 비우면 제목으로 저절로
+      const g = D.series && D.series.get(w.id), auto = seriesKey(w.t);
+      const inp = el('input', { type:'text', value:typeof w.ser === 'string' ? w.ser : '', placeholder:g ? `지금: ${g.name}` : auto ? `저절로: ${auto.head}` : '없으면 비워 둬요' });
+      const no = el('input', { type:'checkbox', checked:w.ser === false });
+      ser = { inp, no };
+      kids.push(field('시리즈', inp, '제목이 달라 저절로 안 묶이는 권은 시리즈 이름을 적어요. 권마다 기록은 따로예요'), el('label', { className:'check' }, no, ' 시리즈 아님(제목 끝 숫자가 권 번호가 아니에요)'));
+    }
     if (!LOCAL) { // «이 책 전체 나만 보기»(전에는 책 창에 따로 있던 칸)
       only = el('input', { type:'checkbox', checked:isOnlyMe(w) });
       kids.push(el('div', { className:'only-box' + (isOnlyMe(w) ? ' on' : '') }, el('label', { className:'check' }, only, ' 이 책 전체 나만 보기'), el('small', { textContent:onlyMeText(w) })));
@@ -3236,6 +3264,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     if (swapped && (D.y24[base.id] || Array.isArray(base.y24) || spinePick)) base.y24 = spinePick && spinePick.t === title ? spinePick.got : 0;
     else if (spinePick && spinePick.t === title && k.value === 'book' && !Array.isArray(base.y24) && base.y24 !== 0 && !D.y24[base.id]) base.y24 = spinePick.got;
     if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
+    if (ser) { if (ser.no.checked) base.ser = false; else if (tidy(ser.inp.value)) base.ser = tidy(ser.inp.value); else delete base.ser; }
     if (only && only.checked !== isOnlyMe(w)) { // 예전 책 창 칸과 같은 규칙: 책·영화는 풀면 only를 지워 원래 기준으로
       base.only = only.checked;
       if (!only.checked && ['book', 'film'].includes(base.k || 'book')) delete base.only;

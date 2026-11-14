@@ -582,6 +582,13 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 /* 한 줄 평 옆 공개/숨김 단추(2026-11-15). 표(only-tag) 모양이지만 누르는 단추라 높이 32 */
 .only-tag.line-vis { display:inline-flex; align-items:center; min-height:32px; padding:0 var(--space-2); background:none; cursor:pointer; transition:background-color .2s ease-out, color .2s ease-out; }
 @media (prefers-reduced-motion: reduce) { .only-tag.line-vis { transition:none; } }
+/* 시리즈 칩(2026-11-15): 책 창 제목 아래 «시리즈 토지 · 1 2 3». 지금 권은 진하게 */
+.series-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-2); margin:var(--space-1) 0 0; font-size:.85rem; color:var(--muted); }
+.series-row > span { margin-right:var(--space-1); }
+.series-vol { min-width:32px; min-height:32px; padding:0 var(--space-2); border:1px solid var(--line); border-radius:16px; background:none; color:var(--ink); font:inherit; cursor:pointer; transition:background-color .2s ease-out; }
+.series-vol:hover:not(:disabled) { background:var(--line); }
+.series-vol[aria-current="true"] { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:700; cursor:default; opacity:1; }
+@media (prefers-reduced-motion: reduce) { .series-vol { transition:none; } }
 .toast-undo { background:none; border:0; padding:0 var(--space-1); color:inherit; font:inherit; font-weight:700; text-decoration:underline; cursor:pointer; min-height:32px; }
 @media (prefers-reduced-motion: reduce) { .seg input:checked + span { transition:none; } }
 .reading-more { display:grid; gap:var(--space-2); margin-top:var(--space-2); }
