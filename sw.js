@@ -1,7 +1,7 @@
 // 앱 파일과 공개 책장만 캐시한다(비공개 기록은 캐시하지 않음). 네트워크 먼저, 끊기면 캐시.
-const VERSION = 'v56';
+const VERSION = 'v57';
 const CACHE = 'bookshelf-' + VERSION;
-const FILES = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/fb.js', 'js/local.js', 'js/words.js', 'js/spine.js', 'js/guess.js', 'js/kdc.js', 'js/reading.js', 'data/public.json', 'data/blog.json', 'data/spines.json', 'data/y24.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const FILES = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/fb.js', 'js/local.js', 'js/words.js', 'js/spine.js', 'js/guess.js', 'js/kdc.js', 'js/reading.js', 'js/spine-tool.js', 'data/public.json', 'data/blog.json', 'data/spines.json', 'data/y24.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith('bookshelf-') && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', (e) => {
