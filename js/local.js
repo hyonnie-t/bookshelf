@@ -124,6 +124,7 @@ function cleanWork(w) {
   if (marks.length) o.marks = marks;
   if (w.unread === true) o.unread = true;
   if (w.st === 'done' || w.st === 'not') o.st = w.st; // 'not': 안 읽음(2026-11-15)
+  if (w.ser === false || typeof w.ser === 'string' && w.ser.trim()) o.ser = w.ser === false ? false : str(w.ser).trim().slice(0, 60); // 시리즈 손으로 고치기(2026-11-15)
   if (w.del === true) o.del = true;
   // 실물 책등(2026-11-14): [예스24 상품 번호, 책등 그림 가로/세로] 또는 0(색 책등으로)
   if (Array.isArray(w.y24) && /^\d{4,12}$/.test(String(w.y24[0])) && w.y24[1] > 0 && w.y24[1] < 1) o.y24 = [String(w.y24[0]), +w.y24[1]];
