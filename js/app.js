@@ -685,6 +685,54 @@ async function pubCheck(box, was, body, group, w) {
   if (!await ask(`이 글을 방문자에게 공개할까요? 다음 공개 반영 때 «${titleOf(w) || '이 책'}» 페이지에 올라가요. ${group === 'recs' ? '별점은 안 올라가요(본문이 비어 있으면 한 줄 평이 올라가요). ' : ''}(책이 공개 상태일 때만 보여요)`, '공개하기', false)) throw fail('공개하지 않았어요. 저장하려면 공개 칸을 끄고 다시 눌러 주세요.');
 }
 const setPub = (x, box) => { if (!box) return x; const z = { ...x }; if (box.input.checked) z.pub = true; else delete z.pub; return z; };
+/* 한 줄 평 공개(2026-11-15, 효니 쪽지 «한 줄평은 다 공개해도 됨 이것도 온오프 되도록 버튼으로»): 관리의 스위치 meta/linePub(전체)와 기록마다 끄기 recs[].lp=false.
+   공개 반영(tools/publish.js)이 공개 책의 한 줄 평만 books[].ls로 옮긴다. 별점·긴 글(b)·메모는 그대로 나만 보기. 범용판에는 없다 */
+const linePubOn = () => !LOCAL && !!(D.priv.meta || {}).linePub;
+const linePubShows = (w) => linePubOn() && w.k === 'book' && !isOnlyMe(w);
+// 지금 켜면 올라갈 한 줄 평 수(대략: 이미 공개된 책만 센다. 실제 수는 공개 반영 때 정해진다)
+const lineCount = () => { let n = 0, b = 0; list().forEach((w) => { if (!w.pub || w.k !== 'book' || isOnlyMe(w)) return; const k = w.recs.filter((r) => tidy(r.l) && r.lp !== false && tidy(r.l).length <= 200).length; if (k) { n += k; b++; } }); return { n, b }; };
+// 기록 카드의 한 줄 평 옆 작은 단추: 스위치가 켜져 있을 때만 보이고, 누르면 그 한 줄만 공개/숨김으로 바로 저장한다
+function lineToggle(w, i) {
+  if (!S.owner || !linePubShows(w)) return null;
+  const open = w.recs[i].lp !== false;
+  const b = el('button', { className:'only-tag vis line-vis' + (open ? ' open' : ''), type:'button', textContent:open ? '공개' : '숨김', title:open ? '누르면 이 한 줄 평만 숨겨요' : '누르면 이 한 줄 평도 공개해요' });
+  b.setAttribute('aria-pressed', open);
+  b.onclick = async () => {
+    const cur = D.works.get(w.id) || w, r = cur.recs[i];
+    if (!r) return;
+    const z = { ...r };
+    if (z.lp === false) delete z.lp; else z.lp = false;
+    const recs = [...cur.recs]; recs[i] = z;
+    await keepScroll(() => memoSave({ ...cur, recs }, z.lp === false ? '이 한 줄 평은 숨겨요' : '이 한 줄 평도 다음 공개 반영 때 올라가요'));
+  };
+  return b;
+}
+// 기록 고치기 창의 같은 칸(스위치가 켜져 있을 때만)
+function lineBox(w, r) {
+  if (!linePubShows(w)) return null;
+  const input = el('input', { type:'checkbox', checked:!r || r.lp !== false });
+  const box = el('label', { className:'check' }, input, ' 한 줄 평 공개 (관리의 «한 줄 평 공개»가 켜져 있어 다음 공개 반영 때 올라가요. 별점·기록 본문은 안 올라가요)');
+  box.input = input;
+  return box;
+}
+function syncLinePub() {
+  const b = $('linePub');
+  if (!b) return;
+  b.hidden = LOCAL;
+  b.textContent = `한 줄 평 공개: ${linePubOn() ? '켬' : '끔'}`;
+  b.setAttribute('aria-pressed', linePubOn());
+}
+if ($('linePub')) $('linePub').onclick = async () => {
+  const on = !linePubOn();
+  if (on) { const { n, b } = lineCount(); if (!await ask(`한 줄 평 공개를 켤까요? 공개된 책 ${b}권의 한 줄 평 ${n}개가 다음 공개 반영 때 방문자에게 보여요. 별점·기록 본문·메모는 그대로 나만 보기예요. 기록마다 책 창에서 숨길 수 있어요.`, '켜기', false)) return; }
+  try {
+    await write('meta/linePub', on ? true : null);
+    const m = D.priv.meta = D.priv.meta || {};
+    if (on) m.linePub = true; else delete m.linePub;
+    refreshAll();
+    toast(on ? '한 줄 평 공개를 켰어요. 다음 공개 반영 때 올라가요' : '한 줄 평 공개를 껐어요. 다음 공개 반영 때 내려가요');
+  } catch (e) { toast(e.userMsg || '저장하지 못했어요'); }
+};
 // 고치기 창 아래의 (보관) ··· 지우기 줄. 누르면 창을 닫고 일을 한다(지우기는 확인 창을 거친다)
 function formTools(...btns) {
   btns = btns.filter(Boolean);
@@ -1063,7 +1111,9 @@ function renderTome(w, item, from) {
   if (rvIg.length) body.push(el('h3', { className:'sec', textContent:`인스타 서평 ${rvIg.length}` }), rvIg.map((p) => postBlock(p, { ownerTools:true, inWork:w.id })));
   // 방문자에게는 공개본(public.json의 ms=[[본문, 날짜]])에 올라간 글만 보인다. 주인은 아래에서 자기 기록·메모를 그대로 본다
   if (!S.owner && (w.ms || []).length) body.push(el('h3', { className:'sec', textContent:`남긴 글 ${w.ms.length}` }), w.ms.map((x) => el('div', { className:'memo' }, x[1] ? el('div', { className:'when', textContent:x[1] }) : null, el('p', { className:'post-text', textContent:x[0] }))));
-  if (!S.owner && !rvIg.length && !(w.ms || []).length) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
+  // 공개 한 줄 평(2026-11-15): public.json의 ls=[[한 줄 평, 날짜]]. 주인이 «한 줄 평 공개»를 켰을 때 tools/publish.js가 넣는다
+  if (!S.owner && (w.ls || []).length) body.push(el('h3', { className:'sec', textContent:`한 줄 평 ${w.ls.length}` }), w.ls.map((x) => el('div', { className:'memo' }, x[1] ? el('div', { className:'when', textContent:x[1] }) : null, el('p', { className:'line', textContent:x[0] }))));
+  if (!S.owner && !rvIg.length && !(w.ms || []).length && !(w.ls || []).length) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
   let lib = null;
   if (S.owner) {
     lib = libBox(item, w);
@@ -1080,7 +1130,7 @@ function renderTome(w, item, from) {
         const score = r.r == null ? '' : starText(r.r);
         body.push(el('div', { className:'memo' },
           el('div', { className:'when' }, [r.d || '날짜 없음', r.st === 'unread' ? '읽는 중·미완독' : '', score].filter(Boolean).join(' · '), visTag(r.pub === true)),
-          r.l ? el('p', { className:'line', textContent:r.l }) : null,
+          r.l ? el('p', { className:'line' }, r.l, lineToggle(w, i)) : null,
           r.b ? el('p', { className:'post-text', textContent:r.b }) : null,
           itemTools(w, { edit:() => openRecForm(w, i) })));
       });
@@ -2234,10 +2284,10 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
-  const { hay, nameHay, pub, qs, ms, md, id, ...rest } = w; // qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다. md(달 묶음)·id는 rebuild가 늘 다시 만든다(2026-11-14)
+  const { hay, nameHay, pub, qs, ms, ls, md, id, ...rest } = w; // ls(공개 한 줄 평, 2026-11-15)도 공개본에서 온 칸. qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다. md(달 묶음)·id는 rebuild가 늘 다시 만든다(2026-11-14)
   if (rest.st === 'reading') delete rest.st; // 공개본의 «읽는 중» 표시(tools/publish.js가 만듦). 비공개 칸에 굳히지 않는다. 다 읽음 표시 st:'done'은 그대로
   return JSON.parse(JSON.stringify(rest));
 }
@@ -3138,15 +3188,16 @@ function openRecForm(w, i) {
   const st = el('label', { className:'check' }, el('input', { type:'checkbox', checked:i >= 0 ? r.st === 'unread' : isReading(w) }), ' 아직 다 못 읽음'); // 읽는 중인 책에 새 기록을 더하면 읽는 중 그대로 둔다
   const l = el('input', { type:'text', value:r.l || '' });
   const b = el('textarea', { rows:8, value:r.b || '' });
-  const pub = pubBox(r);
+  const pub = pubBox(r), lp = lineBox(w, i >= 0 ? r : null);
   const del = i >= 0 ? formBtn('지우기', () => delRec(w, i, () => $('form').close()), true) : null;
   const move = i >= 0 ? moveBtn(w, 'recs', (cur) => cur.recs.indexOf(r) >= 0 ? cur.recs.indexOf(r) : cur.recs.findIndex((x) => JSON.stringify(x) === JSON.stringify(r))) : null;
-  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), field('기록', b), pub, formTools(move, del)].filter(Boolean);
+  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), lp, field('기록', b), pub, formTools(move, del)].filter(Boolean);
   const save = async () => {
     const body = b.value.trim() || l.value.trim(); // 공개되는 글: 본문, 비면 한 줄 평(tools/publish.js와 같음)
     await pubCheck(pub, r.pub === true, body, 'recs', w);
     const next = setPub({ ...r, d:d.value, r:rt.value === '' ? null : +rt.value, l:l.value.trim(), b:b.value.trim() }, pub);
     if (st.querySelector('input').checked) next.st = 'unread'; else delete next.st;
+    if (lp) { if (lp.input.checked) delete next.lp; else next.lp = false; } // 한 줄 평 공개(2026-11-15): 끈 것만 lp:false로 남긴다
     const recs = [...w.recs];
     if (i >= 0) recs[i] = next; else recs.push(next);
     await saveWork(settleRecs({ ...w, recs }), '기록을 저장했어요'); // 기록을 더하면 «안 읽음» 표시는 풀린다(다 읽은 기록 → 다 읽음, 미완독 → 읽는 중)

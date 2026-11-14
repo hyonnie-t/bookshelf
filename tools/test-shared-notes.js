@@ -28,5 +28,22 @@ ok('공개한 글만 ms로 올라가고 날짜순이다', () => assert.deepStric
 ok('나만 보기 글·별점·한 줄 평·1000자 넘는 글은 안 올라간다', () => { assert(!out.includes(HIDE) && !out.includes(STAR) && !out.includes(long)); });
 ok('공개 안 된 책·나만 보기 책은 글이 있어도 공개본에 없다', () => assert(!pub.books.some((b) => b.id === 'b2' || b.id === 'b3')));
 ok('공개본에 notes·recs 칸이 없다', () => assert(!/"notes"|"recs"|"pub"/.test(out)));
+// 한 줄 평 공개(2026-11-15): 스위치 끔 = 0건, 켬 = 공개 책의 한 줄 평만(lp:false·나만 보기 책·영화 왓챠 표시 제외, 별점·본문 안 나감)
+ok('스위치가 꺼져 있으면 한 줄 평은 안 나간다', () => assert(!/"ls"/.test(out)));
+const LINE = '공개될한줄평ZQX', OFF = '끈한줄평ZQX', ONLYL = '나만책한줄평ZQX', LONGL = '줄'.repeat(201);
+fs.writeFileSync(path.join(tmp, 'data/public.json'), JSON.stringify({ at:'2026-01-01', books:[{ id:'b1', t:'공개 책', a:'저자', k:'book', th:[], y:'2026', fd:'2026-01-01' }, { id:'f1', t:'영화', a:'', k:'film', th:[], y:'2026', fd:'' }], posts:[] }));
+const priv2 = { meta:{ linePub:true }, works:{
+  b1:{ t:'공개 책', a:'저자', k:'book', known:true, th:[], y:'2026', recs:[{ d:'2026-02-01', r:4.5, l:LINE, b:HIDE }, { d:'2026-01-01', r:1, l:OFF, lp:false }, { d:'2026-03-01', l:LONGL }, { d:'2026-04-01', l:'공개한 기록 본문', b:'', pub:true }, { d:'2026-05-01', l:'', b:'본문만' }] },
+  b3:{ t:'나만 보기 책', a:'저자', k:'book', known:true, th:[], only:true, y:'2026', recs:[{ d:'2026-01-01', l:ONLYL }] },
+  f1:{ t:'영화', k:'film', wc:'abc', known:true, th:[], recs:[{ d:'2026-01-01', r:3, l:'왓챠' }] },
+} };
+fs.writeFileSync(path.join(tmp, 'priv2.json'), JSON.stringify(priv2));
+const log2 = execFileSync(process.execPath, [path.join(tmp, 'tools/publish.js'), path.join(tmp, 'priv2.json')], { cwd:tmp, encoding:'utf8' });
+const out2 = fs.readFileSync(path.join(tmp, 'data/public.json'), 'utf8'), pub2 = JSON.parse(out2);
+const c1 = pub2.books.find((b) => b.id === 'b1');
+ok('스위치를 켜면 공개 책의 한 줄 평만 날짜순으로', () => assert.deepStrictEqual(c1.ls, [[LINE, '2026-02-01']]));
+ok('끈 한 줄 평·200자 넘는 것·ms로 이미 나간 글은 빠진다', () => { assert(!out2.includes(OFF) && !out2.includes(LONGL)); assert.deepStrictEqual(c1.ms, [['공개한 기록 본문', '2026-04-01']]); });
+ok('나만 보기 책·영화 왓챠 표시·별점·본문은 안 나간다', () => { assert(!out2.includes(ONLYL) && !out2.includes(HIDE) && !out2.includes('"r"')); assert(!(pub2.books.find((b) => b.id === 'f1') || {}).ls); });
+ok('공개 반영 출력에 한 줄 평 건수가 나온다', () => assert(/한줄평'?: 1/.test(log2) && /한줄평책'?: 1/.test(log2)));
 console.log(`\n${passed}개 통과`);
 fs.rmSync(tmp, { recursive:true, force:true });

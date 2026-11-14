@@ -25,6 +25,7 @@ function combine(k, d, tag) {
   const o = { ...main };
   ['r', 'l', 'b', 'cd', 'rd'].forEach((f) => { if (blank(o[f]) && !blank(other[f])) o[f] = other[f]; });
   delete o.pub; if (k.pub) o.pub = k.pub;
+  delete o.lp; if (k.lp === false) o.lp = false; // 한 줄 평 공개 끄기(2026-11-15)도 남는 칸 기록을 따른다
   delete o.from; if (k.from) o.from = k.from;
   o.mix = [...(k.mix || []), tag];
   return o;
