@@ -4,6 +4,8 @@ import * as local from './local.js';
 import { hasText, suggest, wordStats } from './guess.js';
 import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
+import { pickTheme, authorTheme } from './kdc.js';
+import { isReading, canMarkReading, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -79,7 +81,6 @@ const isOnlyMe = (w) => w.only === undefined ? !['book','film'].includes(w.k || 
 const showsOnlyMe = (w) => S.owner && !LOCAL && isOnlyMe(w);
 const list = () => [...D.works.values()];
 // 다 읽은 기록이 없고 미완독·읽는 중 표시가 있는 책. 공개 화면은 public.json의 st로 안다
-const isReading = (w) => w.k === 'book' && !w.recs.some((r) => r.st !== 'unread') && (w.st === 'reading' || !!w.unread || w.recs.some((r) => r.st === 'unread') || w.notes.some((n) => n.s === 'reading'));
 const inShelfKind = (w, k) => k === 'all' || (k === 'reading' ? isReading(w) : w.k === k && !(k === 'book' && isReading(w)));
 
 /* ---------- 책장 ---------- */
@@ -599,42 +600,42 @@ function keepScroll(job) {
   const at = ['.pages', '.leaf.r'].map((c) => { const n = document.querySelector(`#sheet-body ${c}`); return [c, n ? n.scrollTop : 0]; });
   return job().then(() => at.forEach(([c, top]) => { const n = document.querySelector(`#sheet-body ${c}`); if (n) n.scrollTop = top; })).catch(() => {});
 }
-// group: 'notes'|'recs'|'marks', key: notes·recs는 순번, marks는 id. 단추는 «눌렀을 때 일어날 일»을 적고, 지금 상태는 옆의 표(visTag)가 보인다
-function visToggle(w, group, key) {
+// 글(기록·메모)의 «방문자에게 공개» 칸. 고치기 창 아래에 둔다(2026-11-14 효니 선택: 카드에는 «고치기»만). 밑줄은 openMarkForm에 따로 있다(기본 공개)
+function pubBox(x) {
   if (LOCAL) return null;
-  const find = (c) => group === 'marks' ? c.marks.find((m) => m.id === key) : c[group][key];
-  const x = find(w);
-  if (!x) return null;
-  const open = group === 'marks' ? x.pub !== false : x.pub === true;
-  const b = el('button', { className:'copy', type:'button', textContent:open ? '나만 보기로' : '공개하기' });
-  b.title = open ? '방문자에게 보이지 않게 해요(이미 올라간 글은 다음 공개 반영 때 내려가요)' : '방문자가 이 책 페이지에서 볼 수 있게 해요(다음 공개 반영 때 올라가요)';
-  b.onclick = async () => {
-    const cur = D.works.get(w.id) || w, now = find(cur);
-    if (!now || (group !== 'marks' && itemBody(now) !== itemBody(x))) { toast('그 사이 글이 바뀌었어요. 창을 닫고 다시 열어 주세요'); return; }
-    if (!open) {
-      if (group !== 'marks') {
-        if (!itemBody(now)) { toast('본문이 없는 글은 공개할 수 없어요'); return; }
-        if (itemBody(now).length > MS_MAX) { toast(`${MS_MAX}자가 넘어서 공개할 수 없어요. 줄이거나 나눠 주세요`); return; }
-        if (!await ask(`이 글을 방문자에게 공개할까요? 다음 공개 반영 때 «${titleOf(cur) || '이 책'}» 페이지에 올라가요. ${group === 'recs' ? '별점은 안 올라가요(본문이 비어 있으면 한 줄 평이 올라가요). ' : ''}(책이 공개 상태일 때만 보여요)`, '공개하기', false)) return;
-      }
-    }
-    const flip = (y) => { const z = { ...y }; if (group === 'marks') { if (open) z.pub = false; else delete z.pub; } else if (open) delete z.pub; else z.pub = true; return z; };
-    const list = group === 'marks' ? cur.marks.map((m) => (m === now ? flip(m) : m)) : cur[group].map((m, k) => (k === key ? flip(m) : m));
-    await keepScroll(() => memoSave({ ...cur, [group]:list }, open ? '나만 보기로 바꿨어요. 이미 올라간 글은 다음 공개 반영 때 내려가요' : '공개로 바꿨어요. 다음 공개 반영 때 방문자에게 보여요'));
-  };
+  const input = el('input', { type:'checkbox', checked:!!(x && x.pub === true) });
+  const box = el('label', { className:'check' }, input, ' 방문자에게 공개 (다음 공개 반영 때 이 책 페이지에 올라가요. 책이 공개 상태일 때만 보여요)');
+  box.input = input;
+  return box;
+}
+// 공개를 새로 켤 때만 막을 것을 보고 확인 창을 한 번 띄운다. 거절하면 저장하지 않는다
+async function pubCheck(box, was, body, group, w) {
+  if (!box || !box.input.checked || was) return;
+  if (!body) throw fail('본문이 없는 글은 공개할 수 없어요. 공개 칸을 끄거나 본문을 적어 주세요.');
+  if (body.length > MS_MAX) throw fail(`${MS_MAX}자가 넘어서 공개할 수 없어요. 줄이거나 나눠 주세요.`);
+  if (!await ask(`이 글을 방문자에게 공개할까요? 다음 공개 반영 때 «${titleOf(w) || '이 책'}» 페이지에 올라가요. ${group === 'recs' ? '별점은 안 올라가요(본문이 비어 있으면 한 줄 평이 올라가요). ' : ''}(책이 공개 상태일 때만 보여요)`, '공개하기', false)) throw fail('공개하지 않았어요. 저장하려면 공개 칸을 끄고 다시 눌러 주세요.');
+}
+const setPub = (x, box) => { if (!box) return x; const z = { ...x }; if (box.input.checked) z.pub = true; else delete z.pub; return z; };
+// 고치기 창 아래의 (보관) ··· 지우기 줄. 누르면 창을 닫고 일을 한다(지우기는 확인 창을 거친다)
+function formTools(...btns) {
+  btns = btns.filter(Boolean);
+  return btns.length ? el('div', { className:'memo-foot form-tools' }, btns) : null;
+}
+function formBtn(label, job, danger) {
+  const b = el('button', { className:'copy' + (danger ? ' danger' : ''), type:'button', textContent:label });
+  b.onclick = async () => { b.disabled = true; try { await job(); } finally { b.disabled = false; } };
   return b;
 }
-// 모든 글(기록·밑줄·메모)의 단추 줄: 고치기 · (공개하기/나만 보기로) · (보관) ··· 지우기. 지우기는 항상 오른쪽 끝
-function itemTools(w, { edit, vis, keep, del }) {
+// 모든 글(기록·밑줄·메모)의 카드: «고치기»만(2026-11-14). 공개 여부는 옆의 표(visTag)가 보이고, 공개·보관·지우기는 고치기 창 안에 있다
+function itemTools(w, { edit }) {
   const e = el('button', { className:'copy', type:'button', textContent:'고치기' });
   e.onclick = edit;
-  const d = el('button', { className:'copy danger', type:'button', textContent:'지우기' });
-  d.onclick = del;
-  return el('div', { className:'memo-foot' }, e, vis, keep, d);
+  return el('div', { className:'memo-foot' }, e);
 }
-async function delRec(w, i) {
+async function delRec(w, i, onYes) {
   const cur = D.works.get(w.id) || w;
   if (!await ask('이 기록을 지울까요? 되돌릴 수 없어요.')) return;
+  if (onYes) onYes();
   const recs = cur.recs.filter((_, x) => x !== i);
   const next = { ...cur, recs };
   if (recs.length) next.unread = recs.every((x) => x.st === 'unread'); // 남은 기록으로 읽는 중인지 다시 정한다(기록을 더할 때와 같은 기준)
@@ -663,7 +664,7 @@ function guessBox(w) {
       const books = list().filter((x) => x.k === 'book');
       const shelf = books.filter((x) => x.known && x.t).map((x) => ({ id:x.id, t:x.t, a:x.a, p:x.p }));
       const { top } = await suggest(w, { stats:wordStats(books), posts:D.posts.filter((p) => !p.blog), shelf, search:fromRelay });
-      msg.textContent = top.length ? '맞는 책을 누르면 제목과 저자가 채워져요. 단서가 약해 틀릴 수 있어요.' : '단서로는 후보를 찾지 못했어요. «책 정보 고치기»에서 직접 찾아 주세요.';
+      msg.textContent = top.length ? '맞는 책을 누르면 제목과 저자가 채워져요. 단서가 약해 틀릴 수 있어요.' : '단서로는 후보를 찾지 못했어요. «책 고치기»에서 직접 찾아 주세요.';
       out.replaceChildren(...top.map((c) => {
         const pick = el('button', { type:'button' }, el('strong', { textContent:c.t }), el('span', { textContent:[c.a, c.p, c.y].filter(Boolean).join(' · ') }), el('span', { className:'why', textContent:c.why }));
         pick.onclick = async () => {
@@ -677,19 +678,6 @@ function guessBox(w) {
     go.disabled = false;
   };
   return el('div', { className:'guess-box' }, go, hasText(w) ? null : el('small', { textContent:'메모 글이 없어 날짜와 저자 단서만 써요.' }), msg, out, el('small', { textContent:'누르면 메모의 낱말 몇 개와 저자만 앱스크립트를 거쳐 카카오 책 검색으로 가요.' }));
-}
-function onlyMeBox(w) {
-  const input = el('input', { type:'checkbox', checked:isOnlyMe(w) });
-  input.onchange = async () => {
-    input.disabled = true;
-    const next = { ...w, only:input.checked };
-    if (!input.checked && ['book','film'].includes(w.k || 'book')) delete next.only;
-    try { await saveWork(next, input.checked ? '나만 보기로 바꿨어요' : '나만 보기를 풀었어요'); reshow(); }
-    catch (e) { console.error(e); input.checked = !input.checked; input.disabled = false; toast('바꾸지 못했어요'); }
-  };
-  return el('div', { className:'only-box' + (isOnlyMe(w) ? ' on' : '') },
-    el('label', { className:'check' }, input, ' 이 책 전체 나만 보기'),
-    el('small', { textContent:onlyMeText(w) }));
 }
 function reshow() {
   if (!$('sheet').open || !S.cur) return;
@@ -754,8 +742,11 @@ function renderTome(w, item, from) {
   // 방문자에게는 공개본(public.json의 ms=[[본문, 날짜]])에 올라간 글만 보인다. 주인은 아래에서 자기 기록·메모를 그대로 본다
   if (!S.owner && (w.ms || []).length) body.push(el('h3', { className:'sec', textContent:`남긴 글 ${w.ms.length}` }), w.ms.map((x) => el('div', { className:'memo' }, x[1] ? el('div', { className:'when', textContent:x[1] }) : null, el('p', { className:'post-text', textContent:x[0] }))));
   if (!S.owner && !rvIg.length && !(w.ms || []).length) body.push(el('p', { className:'warn', textContent:w.k === 'film' ? '아직 쓴 감상이 없는 작품이에요.' : '아직 쓴 서평이 없는 책이에요.' }));
+  let lib = null;
   if (S.owner) {
-    left.push(libBox(item, w));
+    lib = libBox(item, w);
+    if (lib.box) left.push(lib.box);
+    if (!LOCAL && w.id && isOnlyMe(w)) left.push(el('p', { className:'only-state' }, el('span', { className:'only-tag', textContent:'이 책 전체 나만 보기' }), el('small', { textContent:onlyMeText(w) })));
     if (!rv.length && !w.recs.length && !w.notes.length && !w.marks.length) {
       const kids = [el('p', { className:'warn', textContent:w.id ? '아직 남긴 글이 없어요.' : '아직 읽은 기록이 없어요.' })];
       if (!w.id) { const go = el('button', { className:'btn', type:'button', textContent:'읽고 기록 남기기' }); go.onclick = () => openBookForm(null, { pre:item }); kids.push(go); }
@@ -769,7 +760,7 @@ function renderTome(w, item, from) {
           el('div', { className:'when' }, [r.d || '날짜 없음', r.st === 'unread' ? '읽는 중·미완독' : '', score].filter(Boolean).join(' · '), visTag(r.pub === true)),
           r.l ? el('p', { className:'line', textContent:r.l }) : null,
           r.b ? el('p', { className:'post-text', textContent:r.b }) : null,
-          itemTools(w, { edit:() => openRecForm(w, i), vis:visToggle(w, 'recs', i), del:() => delRec(w, i) })));
+          itemTools(w, { edit:() => openRecForm(w, i) })));
       });
     }
     if (w.marks.length) {
@@ -781,29 +772,28 @@ function renderTome(w, item, from) {
       w.notes.forEach((n, i) => body.push(el('div', { className:'memo' + (S.justMemo === `${w.id}:${i}` ? ' just' : '') },
         el('div', { className:'when' }, [n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음', visTag(n.pub === true)),
         n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }),
-        memoTools(w, i))));
+        itemTools(w, { edit:() => openMemoForm(w, i) }))));
     }
     if (w.archived && w.archived.length) {
       const open = el('button', { className:'copy', type:'button', textContent:`보관한 메모 ${w.archived.length}` });
       open.onclick = () => openMemoBin(w.id);
       body.push(el('div', { className:'memo-foot' }, open));
     }
-    if (w.id) {
-      const addRec = el('button', { className:'btn', type:'button', textContent:'기록 더하기' });
-      addRec.onclick = () => openRecForm(w, -1);
-      const editBook = el('button', { className:'btn ghost', type:'button', textContent:'책 정보 고치기' });
-      editBook.onclick = () => openBookForm(w);
-      const merge = el('button', { className:'copy', type:'button', textContent:'같은 책과 합치기' });
-      merge.onclick = () => openMergePick(w);
-      if (!LOCAL) left.push(onlyMeBox(w));
-      let addMark = null;
-      if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
-      left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, merge)); // 위: 글 더하기(진한 단추), 아래: 책 자체를 다루는 일
-    }
   }
   const share = el('button', { className:'copy', type:'button', textContent:w.k === 'film' ? '이 작품 링크 복사' : '이 책 링크 복사' });
   share.onclick = () => copy(`${location.origin}${location.pathname}#book/${encodeURIComponent(w.id)}`);
-  if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
+  if (S.owner && w.id) { // 위: 글 더하기(진한 단추), 아래: 책 고치기 · 더 보기(합치기·링크·서재). 2026-11-14 단추 정리(효니 선택)
+    const addRec = el('button', { className:'btn', type:'button', textContent:'기록 더하기' });
+    addRec.onclick = () => openRecForm(w, -1);
+    const editBook = el('button', { className:'btn ghost', type:'button', textContent:'책 고치기' });
+    editBook.onclick = () => openBookForm(w);
+    const merge = el('button', { className:'copy', type:'button', textContent:'같은 책과 합치기' });
+    merge.onclick = () => openMergePick(w);
+    let addMark = null;
+    if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
+    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, w.pub ? share : null, ...lib.tools])));
+  } else if (S.owner && lib.tools.length) left.push(el('div', { className:'actions sub' }, lib.tools)); // 서재에만 있는 책: 서재 단추는 그대로
+  else if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
   const flip = el('div', { className:'flip' },
     el('div', { className:'flip-front' }, el('strong', { textContent:titleOf(w) }), w.a ? el('span', { textContent:w.a }) : null, cq ? el('em', { className:'flip-q', textContent:cq.q }) : null),
@@ -1644,11 +1634,12 @@ function libSections(rows, sort) {
   if (inn.length) out.push({ name:LIB_IN, books:inn.sort(byTitle) });
   return out;
 }
+// 책 창 왼쪽의 서재 상태(글)와, «더 보기» 메뉴로 가는 서재 단추들(2026-11-14 단추 정리)
 function libBox(it, w) {
   if (!it) {
-    const add = el('button', { className:'btn ghost', type:'button', textContent:'내 서재에 꽂기' });
+    const add = el('button', { className:'copy', type:'button', textContent:'내 서재에 꽂기' });
     add.onclick = () => openLibForm(null, { work:w });
-    return el('div', { className:'libbox' }, add);
+    return { box:null, tools:[add] };
   }
   const l = openLoan(it);
   const state = it.st === 'in' ? (l ? `빌려 온 책 · ${fromWho(l.who)}` : '빌렸다가 돌려준 책') : l ? `소장 · 지금 ${l.who}에게 빌려줌` : `소장 · ${it.where || DEFAULT_WHERE}`;
@@ -1659,22 +1650,41 @@ function libBox(it, w) {
     const text = [x.dir === 'out' ? `${x.who}에게` : fromWho(x.who), x.d, x.due ? `${x.due}까지` : '', x.back ? `${x.back} 돌아옴` : ''].filter(Boolean).join(' · ');
     kids.push(el('div', { className:'loanline' + (isLate(x) ? ' late' : '') }, el('span', { textContent:text }), fix));
   });
-  const tools = el('div', { className:'actions' });
-  if (l) tools.append(backButton(it, it.loans.indexOf(l)));
-  else if (it.st === 'own') { const lend = el('button', { className:'copy', type:'button', textContent:'빌려주기' }); lend.onclick = () => openLoanForm(it, -1); tools.append(lend); }
+  const tools = [];
+  if (l) tools.push(backButton(it, it.loans.indexOf(l)));
+  else if (it.st === 'own') { const lend = el('button', { className:'copy', type:'button', textContent:'빌려주기' }); lend.onclick = () => openLoanForm(it, -1); tools.push(lend); }
   if (it.st === 'in') {
     const mine = el('button', { className:'copy', type:'button', textContent:'내 책이 됐어요' });
     mine.onclick = () => {
       const loans = it.loans.map((x) => (x.back ? x : { ...x, back:today() }));
       saveLib({ ...it, st:'own', loans }, '내 책으로 옮겼어요').then(reshow).catch(saveFailed);
     };
-    tools.append(mine);
+    tools.push(mine);
   }
   const edit = el('button', { className:'copy', type:'button', textContent:'서재 정보 고치기' });
   edit.onclick = () => openLibForm(it);
-  tools.append(edit);
-  kids.push(tools);
-  return el('div', { className:'libbox' }, kids);
+  tools.push(edit);
+  return { box:el('div', { className:'libbox' }, kids), tools };
+}
+// «⋯ 더 보기»: 자주 안 쓰는 단추를 접어 둔다. 책 창 안에서 펼쳐지는 목록이라 화면 밖으로 나가지 않는다. Esc·바깥 누르기·항목 누르기로 닫힌다
+function moreMenu(items) {
+  items = items.filter(Boolean);
+  if (!items.length) return null;
+  const btn = el('button', { className:'btn ghost', type:'button', textContent:'⋯ 더 보기' });
+  const menu = el('div', { className:'more-menu', hidden:true, id:`more${Date.now().toString(36)}` }, items);
+  btn.setAttribute('aria-expanded', 'false'); btn.setAttribute('aria-controls', menu.id);
+  const wrap = el('div', { className:'more-wrap' }, btn, menu);
+  const outside = (e) => { if (!wrap.contains(e.target)) set(false); };
+  const esc = (e) => { if (e.key === 'Escape' && !menu.hidden) { e.stopPropagation(); e.preventDefault(); set(false); btn.focus(); } };
+  const set = (open) => {
+    menu.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+    if (open) { document.addEventListener('pointerdown', outside, true); menu.querySelector('button, a')?.focus({ preventScroll:true }); menu.scrollIntoView({ block:'nearest', behavior:calm() ? 'auto' : 'smooth' }); }
+    else document.removeEventListener('pointerdown', outside, true);
+  };
+  btn.onclick = () => set(menu.hidden);
+  wrap.addEventListener('keydown', esc);
+  menu.addEventListener('click', (e) => { if (e.target.closest('button, a')) set(false); });
+  return wrap;
 }
 async function saveLib(it, msg) {
   const data = JSON.parse(JSON.stringify(it));
@@ -1872,16 +1882,11 @@ const pageLabel = (p) => (/^\d/.test(p || '') ? `p.${p}` : p || '');
 const pageNum = (p) => { const m = /\d+/.exec(p || ''); return m ? +m[0] : Infinity; };
 const marksInOrder = (w) => [...w.marks].sort((a, b) => pageNum(a.p) - pageNum(b.p) || (a.d || '').localeCompare(b.d || '') || (a.id || '').localeCompare(b.id || ''));
 function markRow(w, m) {
-  const del = async () => {
-    if (!await ask('이 밑줄을 지울까요? 되돌릴 수 없어요.')) return;
-    const cur = D.works.get(w.id) || w;
-    await keepScroll(() => memoSave({ ...cur, marks:cur.marks.filter((x) => x.id !== m.id) }, '밑줄을 지웠어요'));
-  };
   return el('div', { className:`memo mark${S.justMark === m.id ? ' just' : ''}` },
     el('div', { className:'when' }, [pageLabel(m.p), m.d].filter(Boolean).join(' · ') || '쪽 없음', visTag(m.pub !== false)),
     el('blockquote', { className:'mark-q', textContent:m.q }),
     m.why ? el('p', { className:'mark-why', textContent:m.why }) : null,
-    itemTools(w, { edit:() => openMarkForm(w, m.id), vis:visToggle(w, 'marks', m.id), del }));
+    itemTools(w, { edit:() => openMarkForm(w, m.id) }));
 }
 function openMarkForm(w, id) {
   const m = id ? w.marks.find((x) => x.id === id) || {} : {};
@@ -1891,7 +1896,13 @@ function openMarkForm(w, id) {
   const d = el('input', { type:'date', value:m.d || today() });
   const open = el('input', { type:'checkbox', checked:m.pub !== false });
   const openBox = LOCAL ? null : el('label', { className:'check' }, open, ' 문장·쪽을 방문자에게 공개 (12~160자 문장만 책 표지에, 내 생각·날짜는 나만)');
-  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d), openBox].filter(Boolean), async () => {
+  const del = id ? formBtn('지우기', async () => {
+    if (!await ask('이 밑줄을 지울까요? 되돌릴 수 없어요.')) return;
+    $('form').close();
+    const cur = D.works.get(w.id) || w;
+    await keepScroll(() => memoSave({ ...cur, marks:cur.marks.filter((x) => x.id !== id) }, '밑줄을 지웠어요'));
+  }, true) : null;
+  showForm(id ? '밑줄 고치기' : '밑줄 더하기', [field('문장', q, '책에서 옮긴 문장을 붙여 넣어요'), field('쪽', p, '129–130처럼 적어요. 없으면 비워 둬요'), field('내 생각', why, '왜 남겼는지 적어요. 비워 둬도 돼요'), field('날짜', d), openBox, formTools(del)].filter(Boolean), async () => {
     const text = q.value.replace(/\r\n?/g, '\n').trim();
     if (!text) throw fail('문장을 붙여 넣어 주세요.');
     const next = { ...m, id:m.id || markId(), d:d.value, p:pageText(p.value), q:text, why:why.value.replace(/\r\n?/g, '\n').trim() };
@@ -1966,19 +1977,30 @@ async function memoSave(next, msg) {
   finally { memoBusy = false; }
   afterMemo();
 }
-function memoTools(w, i) {
-  const keep = el('button', { className:'copy', type:'button', textContent:'보관' });
-  keep.onclick = () => {
-    const notes = w.notes.filter((_, x) => x !== i), gone = !w.pub && !notes.length && !w.marks.length && !w.recs.length && !reviewsOf(w).length;
-    memoSave({ ...w, notes, archived:[...w.archived, { ...w.notes[i], arcAt:today() }] }, gone ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
-  };
+// 메모 고치기 창 아래의 «보관 ··· 지우기». 창을 연 뒤 바뀌었을 수 있어 최신 칸에서 같은 메모를 찾는다
+function memoTools(w, n0) {
+  const fresh = () => { const cur = D.works.get(w.id) || w; const i = cur.notes.findIndex((x) => x === n0 || (n0.id != null && x.id === n0.id)); return [cur, i]; };
+  const gone = () => { toast('그 사이 메모가 바뀌었어요. 창을 닫고 다시 열어 주세요'); };
+  const keep = formBtn('보관', async () => {
+    const [cur, i] = fresh();
+    if (i < 0) return gone();
+    $('form').close();
+    const notes = cur.notes.filter((_, x) => x !== i), out = !cur.pub && !notes.length && !cur.marks.length && !cur.recs.length && !reviewsOf(cur).length;
+    await memoSave({ ...cur, notes, archived:[...cur.archived, { ...cur.notes[i], arcAt:today() }] }, out ? '보관하고 책장에서 뺐어요. «보관한 메모»에서 되돌릴 수 있어요' : '보관했어요').catch(() => {});
+  });
   keep.title = '지우지 않고 «보관한 메모»로 옮겨 둬요. 언제든 되돌릴 수 있어요';
-  const del = async () => {
-    const notes = w.notes.filter((_, x) => x !== i), empty = emptyAfter(w, notes, w.archived);
+  const del = formBtn('지우기', async () => {
+    let [cur, i] = fresh();
+    if (i < 0) return gone();
+    const empty = emptyAfter(cur, cur.notes.filter((_, x) => x !== i), cur.archived);
     if (!await ask(empty ? '이 메모를 완전히 지울까요? 되돌릴 수 없어요. 이 칸에 남는 글이 없어서 책장에서도 빠져요.' : '이 메모를 완전히 지울까요? 되돌릴 수 없어요.')) return;
-    memoSave({ ...w, notes, ...(empty ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
-  };
-  return itemTools(w, { edit:() => openMemoForm(w, i), vis:visToggle(w, 'notes', i), keep, del });
+    [cur, i] = fresh();
+    if (i < 0) return gone();
+    $('form').close();
+    const notes = cur.notes.filter((_, x) => x !== i);
+    await memoSave({ ...cur, notes, ...(emptyAfter(cur, notes, cur.archived) ? { del:true } : {}) }, '메모를 지웠어요').catch(() => {});
+  }, true);
+  return formTools(keep, del);
 }
 // 메모 고치기: 본문(b)과 날짜(d)만 고친다. 첫 줄(l)과 글자 수(len)는 본문에서 다시 만들어 책등 높이·찾기·돌아보기·낱말·겹침 판정이 새 글을 따른다. 보관한 메모는 «되돌리기» 뒤에 고친다
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -1986,15 +2008,17 @@ function openMemoForm(w, i) {
   const n0 = w.notes[i] || {};
   const b = el('textarea', { rows:10, value:n0.b || n0.l || '' });
   const d = el('input', { type:'date', value:ISO_DAY.test(n0.d || '') ? n0.d : '' });
-  showForm('메모 고치기', [field('본문', b, '없애려면 메모의 «지우기»를 눌러요'), field('날짜', d, n0.d && !ISO_DAY.test(n0.d) ? `지금은 «${n0.d}»로 적혀 있어요. 비워 두면 그대로 둬요` : '')], async () => {
+  const pub = pubBox(n0);
+  showForm('메모 고치기', [field('본문', b, '없애려면 아래 «지우기»를 눌러요'), field('날짜', d, n0.d && !ISO_DAY.test(n0.d) ? `지금은 «${n0.d}»로 적혀 있어요. 비워 두면 그대로 둬요` : ''), pub, memoTools(w, n0)].filter(Boolean), async () => {
     const text = b.value.replace(/\r\n?/g, '\n').trim();
     if (!text) throw fail('본문을 적어 주세요. 메모를 없애려면 «지우기»를 눌러요.');
     if (memoBusy) throw fail('저장하는 중이에요. 잠시 뒤 다시 눌러 주세요.');
     const cur = D.works.get(w.id); // 창을 연 뒤에 바뀌었을 수 있어 최신 칸에서 같은 메모를 찾는다
     const at = cur ? cur.notes.findIndex((x) => x === n0 || (n0.id != null && x.id === n0.id)) : -1;
     if (at < 0) throw fail('그 사이 메모가 바뀌었어요. 창을 닫고 다시 열어 주세요.');
+    await pubCheck(pub, n0.pub === true, text, 'notes', cur);
     const same = text === (n0.b || n0.l || '').replace(/\r\n?/g, '\n').trim(); // 본문을 안 고쳤으면 b·l·len은 그대로 둔다(날짜만 고칠 때 본문이 새로 생기지 않게)
-    const next = { ...cur.notes[at], ...(same ? {} : { b:text, l:text.split('\n')[0].trim().slice(0, 60), len:text.length }), d:d.value || cur.notes[at].d || '' };
+    const next = setPub({ ...cur.notes[at], ...(same ? {} : { b:text, l:text.split('\n')[0].trim().slice(0, 60), len:text.length }), d:d.value || cur.notes[at].d || '' }, pub);
     S.justMemo = `${w.id}:${at}`;
     try { await memoSave({ ...cur, notes:cur.notes.map((x, k) => (k === at ? next : x)) }, '메모를 고쳤어요'); }
     finally { setTimeout(() => { S.justMemo = ''; }, 0); }
@@ -2144,10 +2168,11 @@ async function getJson(url, ms = 5000) {
   try { const r = await fetch(url, { signal:c.signal }); if (!r.ok) throw new Error(String(r.status)); return await r.json(); } finally { clearTimeout(t); }
 }
 const uniqueBooks = (rows) => { const seen = new Set(); return rows.filter((b) => { const k = dupNorm(b.t + b.a + b.p); if (seen.has(k)) return false; seen.add(k); return true; }); };
+const isbnOf = (s) => { const xs = String(s || '').split(/\s+/).filter(Boolean); return xs.find((x) => x.length === 13) || xs[0] || ''; }; // 카카오는 «10자리 13자리»로 준다
 async function fromRelay(q) {
   const r = await getJson(`${BOOK_RELAY}?q=${encodeURIComponent(q)}${RELAY_SRC ? `&src=${RELAY_SRC}` : ''}`, 12000); // 앱스크립트는 오래 쉬면 깨어나는 데 몇 초 걸린다
   if (!r.ok) throw new Error(r.error || 'relay');
-  return uniqueBooks((r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '' })));
+  return uniqueBooks((r.books || []).map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '', isbn:isbnOf(b.isbn), kdc:b.kdc || '', kid:!!b.kid }))); // isbn·kdc는 주제 저절로 고르기에만 쓰고 저장하지 않는다
 }
 async function searchBooks(q) {
   const enc = encodeURIComponent(q);
@@ -2321,12 +2346,96 @@ async function undoMerge(id) {
   toast('합치기 전으로 되돌렸어요');
 }
 $('fixDups').onclick = openDupTool;
+
+/* ---------- 빈 칸 채우기 (관리, 2026-11-14) ---------- */
+// tools/fill-info.js와 같은 규칙: 저자·출판사·주제 중 빈 칸만 채운다(이미 적힌 칸은 덮지 않음). 제목·저자가 맞는 첫 결과만 «확실»로 미리 고른다
+const blankOf = (w) => ['a', 'p', 'th'].filter((k) => (k === 'th' ? !w.th.length : !tidy(w[k])));
+const fillTargets = () => list().filter((w) => w.id && w.k === 'book' && w.known && !w.guess && blankOf(w).length);
+const bareTitle = (s) => squeeze(String(s || '').replace(/\(([^)]*)\)|\[([^\]]*)\]/g, (m, a, b) => (/\d|^\s*[상중하]\s*$/.test(a || b || '') ? m : ''))); // 권 표시 괄호는 남긴다(tools/fill-info.js와 같음)
+async function fillRow(w) {
+  const fa = firstAuthor(w);
+  let rows = await fromRelay(tidy(`${w.t} ${fa}`).slice(0, 100)).catch(() => null);
+  if (rows && !rows.length && fa) rows = await fromRelay(tidy(w.t).slice(0, 100)).catch(() => null);
+  if (rows == null) return { w, status:'fail', fill:{}, why:{} };
+  const tOk = (b) => bareTitle(b.t) === bareTitle(w.t);
+  const aOk = (b) => !fa || (squeeze(b.a).includes(squeeze(fa)) || squeeze(fa).includes(squeeze(b.a.split(',')[0])));
+  const fits = rows.filter((b) => tOk(b) && aOk(b));
+  const pre = (b) => { const x = bareTitle(b.t), y = bareTitle(w.t); return Math.min(x.length, y.length) >= 3 && x !== y && (x.startsWith(y) || y.startsWith(x)); };
+  const loose = fits.length ? [] : rows.filter((b) => (tOk(b) && !aOk(b)) || (pre(b) && aOk(b)));
+  const c = fits[0] || loose[0];
+  let status = !c ? 'none' : fits.length && rows[0] === c ? 'sure' : 'check';
+  if (c && !fa && new Set(fits.map((b) => squeeze(b.a.split(',')[0]))).size > 1) status = 'check';
+  if (status === 'sure' && new Set(fits.map((b) => squeeze(b.p))).size > 1) status = 'check'; // 판이 여러 출판사에서 나온 책(고전·번역서)은 효니 판인지 모른다
+  const fill = {}, why = {};
+  if (c && !tidy(w.a) && c.a) { fill.a = c.a; why.a = RELAY_NAME; }
+  if (c && !tidy(w.p) && c.p) { fill.p = c.p; why.p = RELAY_NAME; }
+  if (!w.th.length) { const t = await autoTheme({ a:w.a || fill.a || '', isbn:c ? c.isbn : '', kdc:c ? c.kdc : '', kid:c ? c.kid : false }, w.id); if (t) { fill.th = [t.th]; why.th = t.why; } }
+  if (status === 'sure' && !Object.keys(fill).length) status = 'none';
+  return { w, c, status, fill, why };
+}
+function openFillTool() {
+  const targets = fillTargets();
+  const LABEL = { a:'저자', p:'출판사', th:'주제' }, STATE = { sure:'확실', check:'확인 필요', none:'못 찾음', fail:'찾기 실패' };
+  const head = el('p', { className:'warn', role:'status', textContent:targets.length ? `저자·출판사·주제 중 빈 칸이 있는 책이 ${targets.length}권이에요. 이미 적힌 칸은 그대로 두고 빈 칸만 채워요. 찾는 동안 제목·저자만 ${RELAY_NAME}으로 가요.` : '빈 칸이 있는 책이 없어요.' });
+  const list_ = el('div', { className:'fill-list' });
+  const go = el('button', { className:'btn', type:'button', textContent:'찾기 시작' });
+  const stop = el('button', { className:'btn ghost', type:'button', textContent:'멈추기', hidden:true });
+  const found = [];
+  let run = 0, busy = false;
+  const rowEl = (r) => {
+    const box = el('input', { type:'checkbox', checked:r.status === 'sure', disabled:!Object.keys(r.fill).length });
+    r.box = box;
+    const fills = Object.keys(r.fill).map((k) => el('span', { className:'fill-what' }, `${LABEL[k]}: `, el('strong', { textContent:[].concat(r.fill[k]).join(', ') }), el('small', { textContent:` ${r.why[k]}` })));
+    return el('div', { className:'dup-row fill-row ' + r.status },
+      el('label', { className:'check overlap-pick' }, box, el('strong', { textContent:titleOf(r.w) })),
+      el('div', { className:'when', textContent:[STATE[r.status], r.w.a || '저자 없음', r.c ? `찾은 책: ${[r.c.t, r.c.a, r.c.p].filter(Boolean).join(' · ')}` : ''].filter(Boolean).join(' · ') }),
+      fills.length ? el('div', { className:'fill-whats' }, fills) : el('small', { textContent:'채울 것을 찾지 못했어요' }));
+  };
+  go.onclick = async () => {
+    const mine = ++run;
+    busy = true; go.hidden = true; stop.hidden = false;
+    const todo = targets.filter((w) => !found.some((r) => r.w.id === w.id));
+    for (let i = 0; i < todo.length && mine === run; i += 3) {
+      head.textContent = `찾는 중이에요 ${found.length}/${targets.length}`;
+      const got = await Promise.all(todo.slice(i, i + 3).map(fillRow));
+      if (mine !== run) break;
+      got.forEach((r) => { found.push(r); list_.append(rowEl(r)); });
+    }
+    busy = false; stop.hidden = true;
+    const n = (s) => found.filter((r) => r.status === s).length;
+    head.textContent = `${found.length}/${targets.length}권을 찾았어요. 확실 ${n('sure')} · 확인 필요 ${n('check')} · 못 찾음 ${n('none') + n('fail')}. 확실한 줄만 골라 뒀어요.`;
+    if (found.length < targets.length) { go.textContent = '이어서 찾기'; go.hidden = false; }
+  };
+  stop.onclick = () => { run++; };
+  showForm('빈 칸 채우기', [head, el('div', { className:'actions' }, go, stop), list_], async () => {
+    if (busy) throw fail('찾는 중이에요. 다 찾거나 «멈추기»를 누른 뒤 저장해 주세요.');
+    const picked = found.filter((r) => r.box && r.box.checked);
+    if (!picked.length) throw fail('채울 책을 골라 주세요');
+    const out = {};
+    let n = 0;
+    picked.forEach((r) => {
+      const cur = D.works.get(r.w.id);
+      if (!cur) return;
+      const next = { ...cur };
+      Object.keys(r.fill).forEach((k) => { if (blankOf(cur).includes(k)) { next[k] = r.fill[k]; n++; } }); // 그사이 채운 칸은 덮지 않는다
+      out[r.w.id] = storedWork(next);
+    });
+    await write('works', out, 'update');
+    Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
+    refreshAll();
+    toast(`${picked.length}권의 빈 칸 ${n}개를 채웠어요`);
+  }, '고른 책 저장');
+}
+if ($('fillBlanks')) $('fillBlanks').onclick = openFillTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
 if ($('memoOverlap')) $('memoOverlap').onclick = openMemoOverlap;
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };
 function themeChecks(selected) {
   const box = el('div', { className:'checks' }, THEMES.map(([t]) => el('label', { className:'check' }, el('input', { type:'checkbox', value:t, checked:selected.includes(t) }), t)));
   box.values = () => [...box.querySelectorAll('input:checked')].map((i) => i.value);
+  box.set = (vals) => box.querySelectorAll('input').forEach((i) => { i.checked = vals.includes(i.value); });
+  // 저절로 켠 칩이 한 번 물든다(.just, 움직임 끔·이북리더기에서는 css가 끈다)
+  box.flash = (v) => { const i = [...box.querySelectorAll('input')].find((x) => x.value === v); if (!i) return; const lab = i.closest('label'); lab.classList.remove('just'); void lab.offsetWidth; lab.classList.add('just'); };
   return box;
 }
 // 별점은 0.5 단위(효니 결정 2026-11-05). 0은 «최하», 0.5는 ½
@@ -2337,18 +2446,34 @@ function ratingSelect(v) {
   s.value = v == null ? '' : String(v);
   return s;
 }
-// 다 읽은 기록이 없는 책만 읽는 중 표시를 켜고 끌 수 있다. 다 읽은 기록이 있으면 그 기록이 먼저다(isReading)
-const canMarkReading = (w) => w && (w.k || 'book') === 'book' && !w.recs.some((r) => r.st !== 'unread');
-// 미완독 기록이 있는 책은 여기서 끄지 않는다(그 기록의 별점이 다 읽은 별점으로 바뀌므로). 기록을 고쳐 «아직 다 못 읽음»을 끈다
-const readingCheck = (w, label = ' 아직 읽는 중이에요') => {
-  const locked = !!(w && w.recs.some((r) => r.st === 'unread'));
-  return el('label', { className:'check' }, el('input', { type:'checkbox', checked:!!(w && isReading(w)), disabled:locked }), label, locked ? ' (다 읽었으면 독서 기록을 고쳐 «아직 다 못 읽음»을 꺼 주세요)' : '');
-};
-function setReading(w, on) {
-  if (on) { w.unread = true; if (w.st === 'done') delete w.st; return; }
-  delete w.unread;
-  w.st = 'done'; // 다 읽음 표시. 공개본의 st:'reading'은 지워도 rebuild에서 다시 섞이므로 값으로 덮고, tools/publish.js는 이 값을 다 읽은 책으로 친다
-  w.notes = w.notes.map((n) => (n.s === 'reading' ? (({ s, ...rest }) => rest)(n) : n));
+// 인스타 글 추가의 «아직 읽는 중» 칸. 미완독 기록이 있는 책에서는 칸이 숨는다(«책 고치기»에서 다 읽음으로 바꾼다)
+const readingCheck = (w, label = ' 아직 읽는 중이에요') => el('label', { className:'check' }, el('input', { type:'checkbox', checked:!!(w && isReading(w)) }), label);
+// 주제 저절로 고르기(2026-11-14): 책 찾기로 책을 고르면 주제 칩이 하나도 안 켜져 있을 때만 하나를 켠다. 같은 저자 책 → 도서관 분류(ISBN으로 국립중앙도서관) 순(js/kdc.js)
+const themeShelf = (exceptId) => list().filter((x) => x.k === 'book' && x.known && x.th.length && x.id !== exceptId).map((x) => ({ id:x.id, a:x.a, th:x.th }));
+async function autoTheme(found, id) {
+  const me = { id, a:found.a || '', th:[] }, shelf = themeShelf(id);
+  if (authorTheme(me, shelf) || found.kdc || !found.isbn || !relayOn()) return pickTheme(me, shelf, found.kdc, found.kid);
+  try { // 카카오에는 분류가 없어 ISBN으로 국립중앙도서관에 한 번 더 묻는다(제목으로 찾으면 다른 판이 먼저 나온다)
+    const r = await getJson(`${BOOK_RELAY}?src=nl&q=${encodeURIComponent(found.isbn)}`, 12000), b = r.ok && (r.books || [])[0];
+    return pickTheme(me, shelf, b ? b.kdc : '', b ? b.kid : false);
+  } catch (e) { return null; }
+}
+// 읽기 상태 고르기(«책 고치기»): 읽는 중 / 다 읽음 두 칸. 다 읽음을 새로 고를 때만 다 읽은 날·별점이 보인다
+function readingPicker(w) {
+  const done = hasDoneRec(w), now = isReading(w) ? 'reading' : 'done', at = lastUnreadAt(w);
+  const box = el('fieldset', { className:'field reading-pick' }, el('legend', { textContent:'읽기 상태' }));
+  if (done) {
+    box.append(el('p', { className:'seg-fixed', textContent:'다 읽음' }), el('small', { textContent:'다 읽은 기록이 있어요. 다시 읽는 중이면 책 창의 «기록 더하기»에서 «아직 다 못 읽음»을 켜요.' }));
+    return { box, value:() => 'done', extra:() => ({}) };
+  }
+  const opts = [['reading', '읽는 중'], ['done', '다 읽음']].map(([v, l]) => el('label', { className:'seg' }, el('input', { type:'radio', name:'readstate', value:v, checked:v === now }), el('span', { textContent:l })));
+  const d = el('input', { type:'date', value:at >= 0 ? today() : '' });
+  const r = ratingSelect(at >= 0 ? w.recs[at].r : null);
+  const more = el('div', { className:'reading-more', hidden:true }, field('다 읽은 날', d, at >= 0 ? '읽는 중이던 기록(가장 최근 것)이 이 날짜의 다 읽은 기록으로 바뀌어요' : '비워 두면 기록은 더하지 않고 다 읽음으로만 바꿔요'), field('별점', r));
+  const value = () => (box.querySelector('input:checked') || {}).value || now;
+  box.addEventListener('change', () => { more.hidden = !(value() === 'done' && now === 'reading'); });
+  box.append(el('div', { className:'segs' }, opts), more);
+  return { box, value, extra:() => ({ d:d.value, r:r.value === '' ? null : +r.value }) };
 }
 function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽은 책으로 옮길 때
   const isNew = !w, seed = w || pre || {};
@@ -2359,25 +2484,46 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   const k = el('select', {}, ...KINDS.filter(([x]) => x !== 'all' && x !== 'reading').map(([x, l]) => el('option', { value:x, textContent:l })));
   k.value = w ? w.k : 'book';
   const th = themeChecks(seed.th || []);
-  const kids = [bookLookup((f) => { t.value = f.t; a.value = f.a || a.value; p.value = f.p || p.value; }), field('제목', t), field('저자', a), field('출판사', p), field('종류', k), field('주제', th)];
-  let d, r, l, b, unfinished;
+  const thNote = el('small', { className:'auto-note', role:'status', hidden:true });
+  let pickRun = 0;
+  const applyFound = async (f) => {
+    t.value = f.t; a.value = f.a || a.value; p.value = f.p || p.value;
+    if (th.values().length || k.value !== 'book') return; // 이미 고른 주제는 건드리지 않는다
+    const mine = ++pickRun;
+    thNote.hidden = false; thNote.textContent = '주제 찾는 중이에요';
+    const got = await autoTheme(f, w ? w.id : '');
+    if (mine !== pickRun) return;
+    if (got && !th.values().length) { th.set([got.th]); thNote.textContent = `골라 둔 주제: ‹${got.th}› · ${got.why} 기준. 틀리면 눌러 고쳐요.`; th.flash(got.th); }
+    else if (!got) thNote.textContent = '주제는 찾지 못했어요. 골라 주세요.';
+    else thNote.hidden = true;
+  };
+  th.addEventListener('change', () => { pickRun++; thNote.hidden = true; });
+  const kids = [bookLookup(applyFound), field('제목', t), field('저자', a), field('출판사', p), field('종류', k), el('div', { className:'field' }, el('span', { textContent:'주제' }), th, thNote)];
+  let d, r, l, b, unfinished, reading = null, only = null;
   if (isNew) {
     unfinished = el('label', { className:'check' }, el('input', { type:'checkbox' }), ' 아직 읽는 중이에요');
     d = el('input', { type:'date', value:today() }); r = ratingSelect(null); l = el('input', { type:'text' }); b = el('textarea', { rows:6 });
     kids.push(field('읽은 날', d), unfinished, field('별점', r), field('한 줄 평', l), field('기록', b));
-  } else if (canMarkReading(w)) { // 서평·메모만 있고 다 읽은 기록이 없는 책은 여기서 읽는 중으로 돌린다
-    unfinished = readingCheck(w);
-    kids.push(unfinished);
+  } else {
+    if (w.k === 'book') { reading = readingPicker(w); kids.push(reading.box); k.addEventListener('change', () => { reading.box.hidden = k.value !== 'book'; }); }
+    if (!LOCAL) { // «이 책 전체 나만 보기»(전에는 책 창에 따로 있던 칸)
+      only = el('input', { type:'checkbox', checked:isOnlyMe(w) });
+      kids.push(el('div', { className:'only-box' + (isOnlyMe(w) ? ' on' : '') }, el('label', { className:'check' }, only, ' 이 책 전체 나만 보기'), el('small', { textContent:onlyMeText(w) })));
+    }
   }
   const save = async () => {
     const title = t.value.trim();
     if (!title) throw fail('제목을 적어 주세요');
     if (isNew && !newId) newId = DEMO ? `demo${Date.now()}` : await fb.newId();
-    const base = isNew ? { id:newId, recs:[], notes:[], known:true } : { ...w };
+    let base = isNew ? { id:newId, recs:[], notes:[], known:true } : { ...w };
+    if (reading && k.value === 'book') base = readingPatch(base, reading.value(), reading.extra());
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), k:k.value, th:th.values(), known:true });
     delete base.guess;
     if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
-    else if (unfinished && k.value === 'book' && unfinished.querySelector('input').checked !== isReading(w)) setReading(base, unfinished.querySelector('input').checked);
+    if (only && only.checked !== isOnlyMe(w)) { // 예전 책 창 칸과 같은 규칙: 책·영화는 풀면 only를 지워 원래 기준으로
+      base.only = only.checked;
+      if (!only.checked && ['book', 'film'].includes(base.k || 'book')) delete base.only;
+    }
     await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
     if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
@@ -2390,7 +2536,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   const del = w ? el('button', { className:'copy danger', type:'button', textContent:'책장에서 빼기' }) : null;
   if (del) del.onclick = async () => { if (!await ask(`«${titleOf(w)}»을 책장에서 뺄까요?${w.marks.length ? ` 밑줄 ${w.marks.length}개도 함께 안 보이게 돼요.` : ''}`, '빼기')) return; try { await saveWork({ ...w, del:true }, '책장에서 뺐어요'); $('form').close(); if ($('sheet').open) $('sheet').close(); } catch (e) { toast('빼지 못했어요'); } };
   if (del) kids.push(el('div', { className:'memo-foot' }, del));
-  showForm(isNew ? '책 추가' : '책 정보 고치기', kids, save);
+  showForm(isNew ? '책 추가' : '책 고치기', kids, save);
 }
 function openRecForm(w, i) {
   const r = i >= 0 ? w.recs[i] : {};
@@ -2399,16 +2545,20 @@ function openRecForm(w, i) {
   const st = el('label', { className:'check' }, el('input', { type:'checkbox', checked:i >= 0 ? r.st === 'unread' : isReading(w) }), ' 아직 다 못 읽음'); // 읽는 중인 책에 새 기록을 더하면 읽는 중 그대로 둔다
   const l = el('input', { type:'text', value:r.l || '' });
   const b = el('textarea', { rows:8, value:r.b || '' });
-  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), field('기록', b)];
+  const pub = pubBox(r);
+  const del = i >= 0 ? formBtn('지우기', () => delRec(w, i, () => $('form').close()), true) : null;
+  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), field('기록', b), pub, formTools(del)].filter(Boolean);
   const save = async () => {
-    const next = { ...r, d:d.value, r:rt.value === '' ? null : +rt.value, l:l.value.trim(), b:b.value.trim() };
+    const body = b.value.trim() || l.value.trim(); // 공개되는 글: 본문, 비면 한 줄 평(tools/publish.js와 같음)
+    await pubCheck(pub, r.pub === true, body, 'recs', w);
+    const next = setPub({ ...r, d:d.value, r:rt.value === '' ? null : +rt.value, l:l.value.trim(), b:b.value.trim() }, pub);
     if (st.querySelector('input').checked) next.st = 'unread'; else delete next.st;
     const recs = [...w.recs];
     if (i >= 0) recs[i] = next; else recs.push(next);
     await saveWork({ ...w, recs, unread:recs.every((x) => x.st === 'unread') }, '기록을 저장했어요');
     openBook(w.id, $('sheet').returnEl);
   };
-  // 지우기는 책 창의 기록 카드(고치기 옆)에 있다
+  // 공개·지우기는 이 창 아래에 있다(2026-11-14)
   showForm(i >= 0 ? '기록 고치기' : '기록 더하기', kids, save);
 }
 function bookPicker(required, exceptId) {

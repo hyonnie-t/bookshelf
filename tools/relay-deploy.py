@@ -6,7 +6,9 @@ from pathlib import Path
 from googleapiclient.discovery import build
 
 # PC마다 OneDrive 위치가 달라(C:·D:) 이 파일 기준으로 찾는다. worktree(웹앱\.wt-*)도 같은 깊이다
-GS = Path(__file__).resolve().parents[2] / "history26_backend" / "tools" / "gas_sync.py"
+# 레포 안 .claude\worktrees\… 에서 돌려도 찾도록 위로 올라가며 찾는다(2026-11-14)
+GS = next(p / "history26_backend" / "tools" / "gas_sync.py" for p in Path(__file__).resolve().parents
+          if (p / "history26_backend" / "tools" / "gas_sync.py").exists())
 spec = importlib.util.spec_from_file_location("gas_sync", GS)
 gs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gs)
