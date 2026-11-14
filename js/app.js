@@ -1782,8 +1782,10 @@ function openManyForm() {
   const works = () => new Map(list().filter((w) => w.t && w.k === 'book').map((w) => [norm(w.t), w]));
   const lookup = bookLookup((b) => {
     found.set(norm(b.t), b);
-    const lines = manyLines(x.value);
-    if (!lines.some((l) => norm(manySplit(l).title) === norm(b.t))) x.value = [...lines, b.a ? `${b.t} / ${b.a}` : b.t].join('\n');
+    const lines = manyLines(x.value), line = b.a ? `${b.t} / ${b.a}` : b.t;
+    const at = lines.findIndex((l) => norm(manySplit(l).title) === norm(b.t));
+    if (at < 0) lines.push(line); else if (!manySplit(lines[at]).author) lines[at] = line; // 제목만 적어 둔 줄은 저자를 붙인다
+    x.value = lines.join('\n');
     draw();
   });
   const pickSig = (k, author) => `${norm(author)}|${found.has(k) ? 1 : 0}`; // 저자를 나중에 붙이거나 책 찾기로 고르면 다시 고른다
@@ -1796,8 +1798,10 @@ function openManyForm() {
     const got = await autoTheme(info, '');
     if (picks.get(k) !== pk || !pk.auto) return; // 그사이 손으로 골랐거나 줄을 지웠다
     Object.assign(pk, { th:got ? got.th : '', why:got ? got.why : '', busy:false, just:!!got });
-    draw();
+    const row = shown.get(k); // 목록을 통째로 다시 그리면 다른 줄에 열어 둔 고르기 칸이 닫혀 그 줄만 고친다
+    if (row) { row.sel.value = pk.th; row.note.textContent = noteText(pk); if (pk.just) { row.sel.classList.add('just'); pk.just = false; } }
   };
+  const shown = new Map(); // 제목 키 → 지금 보이는 { sel, note }
   const noteText = (pk) => pk.busy ? '주제 찾는 중이에요' : !pk.auto ? (pk.th ? '직접 고른 주제' : '주제 없이 꽂아요') : pk.th ? `골라 둔 주제 · ${pk.why} 기준` : '주제는 못 골랐어요. 골라 주세요';
   let timer = 0;
   function draw() {
@@ -1817,9 +1821,11 @@ function openManyForm() {
       const note = el('small', { className:'auto-note', role:'status', textContent:noteText(pk) });
       sel.onchange = () => { const next = { th:sel.value, why:'', auto:false }; picks.set(k, next); note.textContent = noteText(next); };
       if (pk.just) { sel.classList.add('just'); pk.just = false; }
+      shown.set(k, { sel, note });
       rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title }), author ? el('span', { textContent:author }) : null), sel, note));
     }
     [...picks.keys()].forEach((k) => { if (!seen.has(k)) picks.delete(k); }); // 지운 줄은 잊는다(다시 적으면 다시 고른다)
+    [...shown.keys()].forEach((k) => { if (!seen.has(k) || !picks.has(k)) shown.delete(k); });
     box.replaceChildren(...rows);
     box.hidden = !rows.length;
   }
@@ -1843,7 +1849,7 @@ function openManyForm() {
       if (!ids.has(norm(title))) ids.set(norm(title), await newLibId(ids.size));
       n++;
       const th = pk && pk.auto && pk.keep ? pk.keep : pk && pk.th ? [pk.th] : []; // 읽은 책 주제를 그대로 두면 둘째 주제까지 그대로
-      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : ''), p:hit ? hit.p || '' : f ? f.p || '' : '', w:hit ? hit.id : '', th, st:'own', where:where.value.trim(), added:today(), loans:[] };
+      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : f ? f.a || '' : ''), p:hit ? hit.p || '' : f ? f.p || '' : '', w:hit ? hit.id : '', th, st:'own', where:where.value.trim(), added:today(), loans:[] };
     }
     if (!n) throw fail('새로 꽂을 책이 없어요. 모두 이미 서재에 있어요.');
     await write('library', add, 'update');
