@@ -12,6 +12,11 @@ const books = new Map(pub.books.map((b) => [b.id, b]));
 const works = priv.works || {};
 const isOnlyMe = (w) => w.only === undefined ? !['book','film'].includes(w.k || 'book') : !!w.only;
 let changed = 0, removed = 0, added = 0;
+// 한 줄 평 공개(2026-11-15, 효니 쪽지 «한 줄평은 다 공개해도 됨»): 관리의 스위치 meta/linePub가 켜져 있을 때만, 공개되는 책(책 k:'book')의 기록 한 줄 평 l을
+// books[].ls=[[한 줄 평, ISO 날짜],…]로 옮긴다(기록마다 끈 lp:false 제외, 200자 이하, 날짜순 최대 10개, 이미 ms로 나간 글과 같으면 한 번만). 별점·긴 글·메모는 안 간다. 영화의 l:'왓챠'는 출처 표시라 넣지 않는다
+const LINE_PUB = !!(priv.meta && priv.meta.linePub === true);
+const LS_MAX = 200, LS_COUNT = 10;
+const lineTexts = (w, ms) => { if (!LINE_PUB || (w.k || 'book') !== 'book') return []; const shown = new Set((ms || []).map((x) => x[0])); const seen = new Set(); return (w.recs || []).filter((r) => r && r.lp !== false).map((r) => [String(r.l || '').replace(/\s+/g, ' ').trim(), /^\d{4}-\d{2}-\d{2}$/.test(r.d || '') ? r.d : '']).filter(([t]) => t && t.length <= LS_MAX && !shown.has(t) && !seen.has(t) && seen.add(t)).sort((a, b) => (a[1] || '9').localeCompare(b[1] || '9')).slice(0, LS_COUNT); };
 const QS_MAX = 3;
 const MS_MAX = 1000, MS_COUNT = 5;
 const sharedTexts = (w) => [...(w.notes || []), ...(w.recs || [])].filter((x) => x && x.pub === true).map((x) => [String(x.b || x.l || '').replace(/\r\n?/g, '\n').trim(), /^\d{4}-\d{2}-\d{2}$/.test(x.d || '') ? x.d : '']).filter(([t]) => t && t.length <= MS_MAX).sort((a, b) => (a[1] || '9').localeCompare(b[1] || '9')).slice(0, MS_COUNT);
@@ -20,7 +25,7 @@ const y24Of = (w) => (w.y24 === 0 ? 0 : Array.isArray(w.y24) && /^\d+$/.test(Str
 const tidy =(s) => String(s || '').replace(/\s+/g, ' ').trim();
 const pageNum = (p) => { const m = /\d+/.exec(p || ''); return m ? +m[0] : Infinity; };
 const quotes = (w) => (w.marks || []).filter((m) => m && m.pub !== false).map((m) => [tidy(m.q), tidy(m.p)]).filter(([q]) => q.length >= 12 && q.length <= 160).sort((a, b) => pageNum(a[1]) - pageNum(b[1])).slice(0, QS_MAX).map(([q, p]) => [q, p.length <= 20 ? p : '']); // 쪽 칸에 긴 글이 있으면 쪽을 비운다(내 생각이 새지 않게)
-const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || (w.wc ? '' : w.fd) || ''; /* 왓챠에서 온 작품은 공개본에 평가한 날을 넣지 않는다 */ const recs = w.recs || []; /* 안 읽음(2026-11-15, js/reading.js isNotRead와 같은 기준) */ if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && w.st === 'not') o.st = 'not'; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && w.st !== 'not' && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; const qs = quotes(w); if (qs.length) o.qs = qs; const ms = sharedTexts(w); if (ms.length) o.ms = ms; const y = y24Of(w); if (y !== undefined) o.y24 = y; return o; };
+const pick = (w) => { const prev = absorbed.has(w.id) ? {} : books.get(w.id) || {}; const o = { id:w.id, t:w.t || '', a:w.a || '', k:w.k || 'book', th:w.th || [], y:prev.y || w.y || '' }; if (w.p) o.p = w.p; o.fd = prev.fd || (w.wc ? '' : w.fd) || ''; /* 왓챠에서 온 작품은 공개본에 평가한 날을 넣지 않는다 */ const recs = w.recs || []; /* 안 읽음(2026-11-15, js/reading.js isNotRead와 같은 기준) */ if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && w.st === 'not') o.st = 'not'; if ((w.k || 'book') === 'book' && !recs.some((r) => r.st !== 'unread') && w.st !== 'not' && (w.unread || recs.some((r) => r.st === 'unread') || (w.notes || []).some((n) => n.s === 'reading'))) o.st = 'reading'; const qs = quotes(w); if (qs.length) o.qs = qs; const ms = sharedTexts(w); if (ms.length) o.ms = ms; const ls = lineTexts(w, ms); if (ls.length) o.ls = ls; const y = y24Of(w); if (y !== undefined) o.y24 = y; return o; };
 const posts = new Map(pub.posts.map((p) => [p.c, p]));
 Object.values(priv.igAdded || {}).forEach((p) => { if (!posts.has(p.c)) { added++; } posts.set(p.c, { c:p.c, d:p.d, x:p.x, k:p.k || 'review', w:p.w || [] }); });
 Object.entries(priv.igLinks || {}).forEach(([c, l]) => { const p = posts.get(c); if (p && JSON.stringify(p.w) !== JSON.stringify(l.w || [])) { p.w = l.w || []; p.k = l.k || p.k; changed++; } });
@@ -55,4 +60,5 @@ const text = fs.readFileSync(OUT, 'utf8');
 if (/"(recs|notes|archived|marks|q|why|r|l|b)":/.test(JSON.stringify([...books.values()]))) throw new Error('공개본에 비공개 칸이 섞였습니다');
 if ([...books.values()].some((b) => (b.qs || []).length > QS_MAX || (b.qs || []).some((x) => !Array.isArray(x) || x.length !== 2 || x[0].length > 160))) throw new Error('공개 밑줄 형식이 맞지 않습니다');
 if ([...books.values()].some((b) => (b.ms || []).length > MS_COUNT || (b.ms || []).some((x) => !Array.isArray(x) || x.length !== 2 || typeof x[0] !== 'string' || x[0].length > MS_MAX))) throw new Error('공개 글 형식이 맞지 않습니다');
-console.log({ 책:books.size, 글:posts.size, 추가:added, 변경:changed, 제외:removed, 크기KB:text.length / 1024 | 0 });
+if ([...books.values()].some((b) => (b.ls || []).length > LS_COUNT || (b.ls || []).some((x) => !Array.isArray(x) || x.length !== 2 || typeof x[0] !== 'string' || x[0].length > LS_MAX))) throw new Error('공개 한 줄 평 형식이 맞지 않습니다');
+console.log({ 책:books.size, 글:posts.size, 한줄평:[...books.values()].reduce((a, b) => a + (b.ls || []).length, 0), 한줄평책:[...books.values()].filter((b) => (b.ls || []).length).length, 추가:added, 변경:changed, 제외:removed, 크기KB:text.length / 1024 | 0 });
