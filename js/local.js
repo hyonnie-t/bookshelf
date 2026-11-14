@@ -123,7 +123,7 @@ function cleanWork(w) {
   const marks = cleanMarks(w.marks);
   if (marks.length) o.marks = marks;
   if (w.unread === true) o.unread = true;
-  if (w.st === 'done') o.st = 'done';
+  if (w.st === 'done' || w.st === 'not') o.st = w.st; // 'not': 안 읽음(2026-11-15)
   if (w.del === true) o.del = true;
   // 실물 책등(2026-11-14): [예스24 상품 번호, 책등 그림 가로/세로] 또는 0(색 책등으로)
   if (Array.isArray(w.y24) && /^\d{4,12}$/.test(String(w.y24[0])) && w.y24[1] > 0 && w.y24[1] < 1) o.y24 = [String(w.y24[0]), +w.y24[1]];

@@ -558,6 +558,18 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .seg input:checked + span { background:var(--accent); color:var(--accent-ink); font-weight:700; }
 .seg input:focus-visible + span { outline:2px solid var(--focus,var(--accent)); outline-offset:-3px; }
 .seg-fixed { margin:0; font-weight:700; }
+/* 읽기 상태 세 칸(2026-11-15): 안 읽음을 못 고르는 책은 칸이 흐리다. 책 창 왼쪽의 세 칸은 예전 «읽는 중» 글자 자리 */
+.seg input:disabled { cursor:not-allowed; }
+.seg input:disabled + span { opacity:.45; }
+.read-state { display:flex; flex-direction:column; align-items:center; text-align:center; gap:var(--space-1); margin:var(--space-2) 0 0; }
+.read-state small { margin:0; font-size:.82rem; }
+.tome-segs .seg span { min-height:32px; padding:0 var(--space-2); font-size:.88rem; }
+.seg input:checked + span { transition:background-color .2s ease-out, color .2s ease-out; }
+.read-filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap:var(--space-2) var(--space-3); }
+.read-filters select, .read-filters input { width:100%; min-width:0; }
+.fill-row.locked { opacity:.55; }
+.toast-undo { background:none; border:0; padding:0 var(--space-1); color:inherit; font:inherit; font-weight:700; text-decoration:underline; cursor:pointer; min-height:32px; }
+@media (prefers-reduced-motion: reduce) { .seg input:checked + span { transition:none; } }
 .reading-more { display:grid; gap:var(--space-2); margin-top:var(--space-2); }
 .auto-note { color:var(--muted); font-size:.85rem; }
 .checks .check.just { animation:chip-picked 1.2s ease-out; border-radius:4px; }

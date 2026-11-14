@@ -60,9 +60,13 @@ export function mergePlan(keep, drop, opt = {}) {
   if (keep.only || drop.only) next.only = true; // 한쪽이라도 나만 보기로 잠갔으면 합친 뒤에도 잠근다
   // 다 읽음 표시 st:'done'(2026-11-14 연결 점검): 다 읽은 기록이 없고 미완독 기록이 있으면 읽는 중이 이긴다(앱 isReading과 tools/publish.js가 같은 답을 내게).
   // 기록이 없으면 한쪽이라도 다 읽음 표시면 다 읽음. 공개본에서 온 st:'reading'은 표시로 치지 않는다
-  if (recs.some((r) => r.st !== 'unread')) { if (keep.st === 'reading') delete next.st; }
+  // 안 읽음 st:'not'(2026-11-15): 다 읽은 기록 > 다 읽음 표시 > 읽는 중 > 안 읽음 순. 둘 다 안 읽음이거나 한쪽만 안 읽음이고 다른 쪽에 표시가 없으면 안 읽음
+  const sideReading = (x) => x.st !== 'not' && (!!x.unread || (x.notes || []).some((n) => n.s === 'reading'));
+  if (recs.some((r) => r.st !== 'unread')) { if (keep.st === 'reading' || keep.st === 'not') delete next.st; }
   else if (recs.length) delete next.st;
   else if (keep.st === 'done' || drop.st === 'done') { next.st = 'done'; delete next.unread; }
+  else if (sideReading(keep) || sideReading(drop)) { if (keep.st === 'reading' || keep.st === 'not') delete next.st; }
+  else if (keep.st === 'not' || drop.st === 'not') { next.st = 'not'; delete next.unread; }
   else if (keep.st === 'reading') delete next.st;
   if (!next.wc && src.wc) next.wc = src.wc; // 왓챠 작품 코드(영화 공개 판정에 쓰임)
   const was = { a:keep.a || '', p:keep.p || '', th:keep.th || [], known:keep.known, unread:keep.unread, guess:keep.guess, only:keep.only, y:keep.y || '', fd:keep.fd || '' };

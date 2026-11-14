@@ -7,7 +7,7 @@ import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGr
 import { pickTheme, authorTheme, firstAuthorOf } from './kdc.js';
 import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
-import { isReading, canMarkReading, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
+import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -44,7 +44,9 @@ function rebuild() {
   (D.pub.books || []).forEach((b) => works.set(b.id, { recs:[], notes:[], known:true, th:[], ...b, pub:true }));
   if (S.owner) Object.entries(D.priv.works || {}).forEach(([id, w]) => {
     const pub = works.get(id) || {};
-    works.set(id, { recs:[], notes:[], ...pub, ...w, id, th:w.th || (DEMO ? pub.th : []) || [], y:w.y || pub.y || '', fd:w.fd || pub.fd || '' });
+    const m = { recs:[], notes:[], ...pub, ...w, id, th:w.th || (DEMO ? pub.th : []) || [], y:w.y || pub.y || '', fd:w.fd || pub.fd || '' };
+    if (w.st === undefined) delete m.st; // 읽기 상태는 비공개 칸이 정한다. 공개본의 st('reading'·'not', tools/publish.js가 만듦)가 주인이 바꾼 상태를 덮지 않게(2026-11-15)
+    works.set(id, m);
   });
   D.moved = new Map();
   for (const [id, w] of works) { w.recs = w.recs || []; w.notes = w.notes || []; w.archived = w.archived || []; w.marks = w.marks || []; w.th = w.th || []; if (w.del) { if (w.into) D.moved.set(id, w.into); works.delete(id); } }
@@ -138,7 +140,7 @@ function pullOut(b, go) {
   b._pull = setTimeout(() => { b._pull = 0; go(); }, 170);
   setTimeout(() => b.classList.remove('pull'), 620);
 }
-const spineMark = (w) => (w.guess ? '추정' : isReading(w) ? '미완' : showsOnlyMe(w) ? '나만' : '');
+const spineMark = (w) => (w.guess ? '추정' : isReading(w) ? '미완' : isNotRead(w) ? '안읽음' : showsOnlyMe(w) ? '나만' : ''); // 안읽음(2026-11-15)은 세 글자라 책등 높이 계산(markH)이 글자 수를 본다
 // 책등 색(2026-11-14): data/spines.json의 [바탕, 글자, 강조]는 tools/cover-colors.js가 표지에서 뽑았다. 글자는 바탕과 대비 4.5 이상.
 // 색이 없는 책(표지를 못 찾음·범용판)은 예전처럼 주제 색 바탕이고, 색이 있는 책은 주제 색을 아래 작은 띠로 남긴다
 const coverColors = (w) => (!LOCAL && w && (w.k || 'book') === 'book' && D.spines[w.id]) || null;
@@ -233,11 +235,12 @@ function spine(w, pose) {
   const mark = spineMark(w);
   const thin = thinColor(w) ? thinSize(w) : null;
   // 얇은 색 책등은 한 줄(글자 약 12px)에 들어가는 만큼만: 위아래 여백·×n·추정 표시·주제 띠 자리를 빼고 남은 높이
-  const room = thin ? Math.max(3, Math.floor((thin.h - 22 - (multi ? 16 : 0) - (mark ? 16 : 0)) / 12)) : 24;
+  const markH = mark ? Math.max(16, mark.length * 8) : 0; // 표시 글자(두 글자, «안읽음»은 세 글자) 높이
+  const room = thin ? Math.max(3, Math.floor((thin.h - 22 - (multi ? 16 : 0) - markH) / 12)) : 24;
   const label = raw.length > room ? raw.slice(0, room - 1) + '…' : raw;
   const cols = thin ? 1 : label.length <= 8 ? 1 : label.length <= 16 ? 2 : 3;
   const len = rv.reduce((a, p) => a + p.x.length, 0) + w.notes.reduce((a, n) => a + (n.len || 0), 0);
-  let h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (mark ? 18 : 0));
+  let h = Math.min(198, (cols > 1 ? 150 : 124) + Math.min(36, Math.round(Math.sqrt(len) * .8)) + (multi ? 22 : 0) + (mark ? markH + 2 : 0));
   // 출판사 자리: 제목 글자 높이(한 줄 약 13.5px)+위아래 여백+출판사 글자(약 10.5px)+띠. 198px 안에 다 들어갈 때만 넣고 그만큼 책을 키운다
   const pub = coverColors(w) && !mark && !thin ? pubShort(w.p) : '';
   const pubH = pub ? pub.length * 10.5 + 18 : 0;
@@ -704,7 +707,7 @@ async function delRec(w, i, onYes) {
   if (onYes) onYes();
   const recs = cur.recs.filter((_, x) => x !== i);
   const next = { ...cur, recs };
-  if (recs.length) next.unread = recs.every((x) => x.st === 'unread'); // 남은 기록으로 읽는 중인지 다시 정한다(기록을 더할 때와 같은 기준)
+  settleRecs(next); // 남은 기록으로 읽는 중인지 다시 정한다(기록을 더할 때와 같은 기준, js/reading.js)
   await keepScroll(() => memoSave(next, '기록을 지웠어요'));
 }
 // 공개 페이지(data/public.json)는 tools/publish.js로만 바뀐다. 그래서 지금 방문자에게 어떻게 보이는지를 그대로 적는다
@@ -1048,7 +1051,9 @@ function renderTome(w, item, from) {
   const cover = coverImage(w);
   const left = [el('div', { className:'title-page' }, cover, el('h2', { id:'sheet-title', textContent:titleOf(w) }), el('p', { className:'by', textContent:byline }),
     cq ? el('figure', { className:'cover-q' }, el('blockquote', { textContent:cq.q }), cq.where ? el('figcaption', { textContent:cq.where }) : null) : null)];
-  if (isReading(w)) left.push(el('p', { className:'by', textContent:'읽는 중' }));
+  // 읽기 상태(2026-11-15, 효니 쪽지 «읽는 중 완독은 온오프 버튼»): 주인에게는 예전 «읽는 중» 글자 자리에 세 칸 단추, 방문자에게는 글자만
+  if (S.owner && w.id && w.k === 'book' && !hasDoneRec(w)) left.push(readingSegs(w));
+  else if (isReading(w) || isNotRead(w)) left.push(el('p', { className:'by', textContent:isReading(w) ? '읽는 중' : '안 읽음' }));
   if (w.th.length) left.push(el('div', { className:'title-tags' }, w.th.map((t) => { const s = el('span', { className:'tag', textContent:t }); s.style.background = themeVar(t); return s; })));
   if (w.guess && S.owner) left.push(el('p', { className:'warn', textContent:'제목과 저자는 메모 내용으로 추정한 것이에요. 틀렸으면 고쳐 주세요.' }));
   if (S.owner && !LOCAL && w.id && w.k === 'book' && !w.known && relayOn()) left.push(guessBox(w));
@@ -1390,7 +1395,7 @@ function setPeriod(y) {
   if (b) b.focus({ preventScroll:true });
 }
 function renderRecap() {
-  const box = $('recap'), redraw = S.view === 'recap' && box.children.length > 0, allBooks = list().filter((w) => w.k === 'book' && w.known && !isReading(w)); // 제목 확인 안 된 칸은 책장 권수처럼 뺀다
+  const box = $('recap'), redraw = S.view === 'recap' && box.children.length > 0, allBooks = list().filter((w) => w.known && countsRead(w)); // 제목 확인 안 된 칸은 책장 권수처럼 뺀다. 읽는 중·안 읽음(2026-11-15)도 뺀다
   if (LOCAL && !allBooks.length) { box.replaceChildren(el('div', { className:'empty span2' }, el('div', { textContent:'책을 꽂으면 해마다 읽은 책과 내 독서 성향을 모아 보여 줄게요.' }))); return; }
   const yc = {};
   allBooks.forEach((w) => { const y = readYear(w); if (y) yc[y] = (yc[y] || 0) + 1; });
@@ -1781,7 +1786,7 @@ const fromWho = (who) => `${who}${/(도서관|학교|문고)$/.test(who || '') ?
 const isActive = (it) => it.st === 'own' || !!openLoan(it); // 빌려 온 책을 돌려주면 서가에서 빠지고 기록만 남는다
 const libWork = (it) => (it.w ? D.works.get(it.w) : null);
 const libByWork = (id) => D.lib.find((x) => x.w === id && isActive(x)) || null;
-const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !isReading(w); };
+const libRead = (it) => { const w = libWork(it); return !!w && w.k !== 'wishlist' && !isReading(w) && !isNotRead(w); }; // 이어진 책이 안 읽음이면 서재에서도 «아직 안 읽음»
 const libThemes = (it) => (it.th.length ? it.th : (libWork(it) || {}).th || []);
 // 첫 저자만: «저자, 역자 옮김», «A / B», «홍길동(지은이)», «첫 사람 외» 꼴에서 이름만 남긴다
 const libAuthor = (it) => firstAuthorOf(it.a || (libWork(it) || {}).a || '');
@@ -2839,7 +2844,7 @@ function openMoveForm(w, group, find) {
     const to = { ...dest, [group]:[...dest[group], item] };
     if (group === 'recs') {
       to.recs.sort((x, y) => (x.d || '').localeCompare(y.d || ''));
-      [src, to].forEach((x) => { if (x.recs.length) x.unread = x.recs.every((r) => r.st === 'unread'); }); // 남은 기록으로 읽는 중인지 다시 정한다(delRec과 같은 기준)
+      [src, to].forEach(settleRecs); // 남은 기록으로 읽는 중인지 다시 정한다(delRec과 같은 기준). 기록을 받은 «안 읽음» 책은 표시가 풀린다
     }
     const empty = emptyWork(src);
     if (!await ask(`이 ${MOVE_OBJ[group]} «${titleOf(dest)}»(으)로 옮길까요?${empty ? ` «${titleOf(cur)}»에는 남는 글이 없어서 책장에서 빠져요.` : ''}`, '옮기기', false)) return 'stay';
@@ -2927,6 +2932,62 @@ function openFillTool() {
   list_.addEventListener('change', upd);
 }
 if ($('fillBlanks')) $('fillBlanks').onclick = openFillTool;
+
+/* ---------- 읽기 상태 한꺼번에 (관리, 2026-11-15 효니 쪽지 «우시사 태그 책은 안 읽은 책이 대부분») ---------- */
+// 네트워크를 쓰지 않는다. 찾는 말(책 찾기와 같은 hay: 제목·저자·메모·기록·밑줄·인스타 서평 글)·주제·지금 상태로 거르고 → 목록에서 고르고 → 한 번에 저장
+const stateName = (v) => (READ_STATES.find((x) => x[0] === v) || [, ''])[1];
+// 이 책을 to 상태로 바꿀 수 없으면 까닭, 바꿀 수 있으면 ''(js/reading.js readingPatch와 같은 규칙)
+const readLock = (w, to) => (hasDoneRec(w) ? '다 읽은 기록이 있어 못 바꿈' : to === 'not' && !canMarkNot(w) ? '읽다 만 기록이 있어 «안 읽음»은 못 고름' : '');
+function openReadTool() {
+  const q = el('input', { type:'search', placeholder:'예: 해시태그, 저자 이름', ariaLabel:'찾는 말' });
+  const th = el('select', { ariaLabel:'주제' }, el('option', { value:'', textContent:'모든 주제' }), THEMES.map(([t]) => el('option', { value:t, textContent:t })));
+  const now = el('select', { ariaLabel:'지금 상태' }, el('option', { value:'', textContent:'모든 상태' }), READ_STATES.map(([v, l]) => el('option', { value:v, textContent:l })));
+  const to = el('select', { ariaLabel:'바꿀 상태' }, READ_STATES.map(([v, l]) => el('option', { value:v, textContent:l })));
+  to.value = 'not';
+  const head = el('p', { className:'warn', role:'status' });
+  const box = el('div', { className:'fill-list read-list' });
+  const picked = new Set();
+  let rows = [], upd = () => {};
+  const books = () => list().filter((w) => w.id && w.k === 'book' && w.known && !w.guess);
+  const draw = () => {
+    rows = books().filter((w) => hasAll(w.hay, q.value) && (!th.value || w.th.includes(th.value)) && (!now.value || readState(w) === now.value)).sort((a, b) => titleOf(a).localeCompare(titleOf(b), 'ko'));
+    const ok = rows.filter((w) => !readLock(w, to.value) && readState(w) !== to.value);
+    [...picked].forEach((id) => { if (!ok.some((w) => w.id === id)) picked.delete(id); }); // 조건이 바뀌어 빠진 책·못 바꾸는 책은 고른 것에서 뺀다
+    head.textContent = rows.length ? `맞는 책 ${rows.length}권 · 바꿀 수 있는 책 ${ok.length}권. 고른 책을 «${stateName(to.value)}»(으)로 한 번에 저장해요.` : '맞는 책이 없어요. 찾는 말이나 주제를 바꿔 보세요.';
+    box.replaceChildren(...rows.map((w) => {
+      const lock = readLock(w, to.value), same = !lock && readState(w) === to.value;
+      const c = el('input', { type:'checkbox', checked:picked.has(w.id), disabled:!!lock || same });
+      c.onchange = () => { if (c.checked) picked.add(w.id); else picked.delete(w.id); upd(); };
+      return el('div', { className:'dup-row fill-row' + (lock || same ? ' locked' : '') },
+        el('label', { className:'check overlap-pick' }, c, el('strong', { textContent:titleOf(w) })),
+        el('div', { className:'when', textContent:[w.a || '저자 없음', `지금: ${stateName(readState(w))}`, lock || (same ? '이미 이 상태' : '')].filter(Boolean).join(' · ') }));
+    }));
+    upd();
+  };
+  let t0 = 0;
+  q.addEventListener('input', () => { clearTimeout(t0); t0 = setTimeout(draw, 250); });
+  [th, now, to].forEach((s) => s.addEventListener('change', draw));
+  const filters = el('div', { className:'read-filters' }, field('찾는 말', q), field('주제', th), field('지금 상태', now), field('바꿀 상태', to));
+  showForm('읽기 상태 한꺼번에', [filters, head, box], async () => {
+    const ids = [...picked];
+    if (!ids.length) throw fail('바꿀 책을 골라 주세요');
+    const out = {};
+    ids.forEach((id) => { const cur = D.works.get(id); if (cur && !readLock(cur, to.value) && readState(cur) !== to.value) { const at = lastUnreadAt(cur); out[id] = storedWork(readingPatch(cur, to.value, { r:at >= 0 ? cur.recs[at].r ?? null : null })); } }); // 미완독 기록이 다 읽은 기록이 될 때 날짜·별점은 그 기록 그대로
+    if (!Object.keys(out).length) throw fail('바꿀 수 있는 책이 없어요');
+    await write('works', out, 'update');
+    Object.entries(out).forEach(([id, v]) => setPriv('works', id, v));
+    refreshAll();
+    toast(`${Object.keys(out).length}권을 «${stateName(to.value)}»(으)로 바꿨어요${LOCAL ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
+  }, '고른 책 저장');
+  upd = footCount('고른 책', () => picked.size);
+  const allOn = el('button', { className:'copy', type:'button', textContent:'모두 고르기' });
+  allOn.onclick = () => { rows.forEach((w) => { if (!readLock(w, to.value) && readState(w) !== to.value) picked.add(w.id); }); draw(); };
+  const allOff = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
+  allOff.onclick = () => { picked.clear(); draw(); };
+  $('form-body').querySelector('.pick-sum').append(allOn, allOff);
+  draw();
+}
+if ($('readStates')) $('readStates').onclick = openReadTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
 if ($('memoOverlap')) $('memoOverlap').onclick = openMemoOverlap;
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };
@@ -2958,21 +3019,43 @@ async function autoTheme(found, id) {
     return pickTheme(me, shelf, b ? b.kdc : '', b ? b.kid : false);
   } catch (e) { return null; }
 }
-// 읽기 상태 고르기(«책 고치기»): 읽는 중 / 다 읽음 두 칸. 다 읽음을 새로 고를 때만 다 읽은 날·별점이 보인다
+const READ_STATES = [['reading', '읽는 중'], ['done', '다 읽음'], ['not', '안 읽음']];
+const NOT_LOCKED = '읽다 만 기록이 있는 책이라 «안 읽음»은 못 골라요';
+let segBusy = false;
+// 책 창 왼쪽의 세 칸 단추(2026-11-15). 누르면 바로 저장하고 «되돌리기» 토스트. 다 읽음으로 바꿀 때 미완독 기록은 오늘 날짜의 다 읽은 기록이 된다(readingPatch, 별점은 그 기록 그대로).
+// 날짜·별점을 넣으려면 «책 고치기»
+function readingSegs(w) {
+  const now = readState(w), at = lastUnreadAt(w), name = `readseg-${w.id}`;
+  const box = el('div', { className:'segs tome-segs', role:'radiogroup', ariaLabel:'읽기 상태' }, READ_STATES.map(([v, l]) => el('label', { className:'seg' }, el('input', { type:'radio', name, value:v, checked:v === now, disabled:v === 'not' && !canMarkNot(w) }), el('span', { textContent:l }))));
+  box.addEventListener('change', async (e) => {
+    const v = e.target.value, cur = D.works.get(w.id) || w;
+    if (segBusy || readState(cur) === v) return;
+    segBusy = true;
+    const prev = { ...cur };
+    const next = readingPatch(cur, v, v === 'done' && at >= 0 ? { d:today(), r:cur.recs[at].r ?? null } : {});
+    try { await keepScroll(async () => { await saveWork(next, ''); reshow(); }); toastUndo(`«${READ_STATES.find((x) => x[0] === v)[1]}»으로 바꿨어요`, async () => { await saveWork(prev, '되돌렸어요'); reshow(); }); }
+    catch (err) { toast(err.userMsg || '저장하지 못했어요'); reshow(); }
+    finally { segBusy = false; }
+  });
+  const wrap = el('div', { className:'read-state' }, box);
+  if (!canMarkNot(w)) wrap.append(el('small', { className:'by', textContent:NOT_LOCKED }));
+  return wrap;
+}
+// 읽기 상태 고르기(«책 고치기»): 읽는 중 / 다 읽음 / 안 읽음 세 칸(2026-11-15). 다 읽음을 새로 고를 때만 다 읽은 날·별점이 보인다
 function readingPicker(w) {
-  const done = hasDoneRec(w), now = isReading(w) ? 'reading' : 'done', at = lastUnreadAt(w);
+  const done = hasDoneRec(w), now = readState(w), at = lastUnreadAt(w);
   const box = el('fieldset', { className:'field reading-pick' }, el('legend', { textContent:'읽기 상태' }));
   if (done) {
     box.append(el('p', { className:'seg-fixed', textContent:'다 읽음' }), el('small', { textContent:'다 읽은 기록이 있어요. 다시 읽는 중이면 책 창의 «기록 더하기»에서 «아직 다 못 읽음»을 켜요.' }));
     return { box, value:() => 'done', extra:() => ({}) };
   }
-  const opts = [['reading', '읽는 중'], ['done', '다 읽음']].map(([v, l]) => el('label', { className:'seg' }, el('input', { type:'radio', name:'readstate', value:v, checked:v === now }), el('span', { textContent:l })));
+  const opts = READ_STATES.map(([v, l]) => el('label', { className:'seg' }, el('input', { type:'radio', name:'readstate', value:v, checked:v === now, disabled:v === 'not' && !canMarkNot(w) }), el('span', { textContent:l })));
   const d = el('input', { type:'date', value:at >= 0 ? today() : '' });
   const r = ratingSelect(at >= 0 ? w.recs[at].r : null);
   const more = el('div', { className:'reading-more', hidden:true }, field('다 읽은 날', d, at >= 0 ? '읽는 중이던 기록(가장 최근 것)이 이 날짜의 다 읽은 기록으로 바뀌어요' : '비워 두면 기록은 더하지 않고 다 읽음으로만 바꿔요'), field('별점', r));
   const value = () => (box.querySelector('input:checked') || {}).value || now;
-  box.addEventListener('change', () => { more.hidden = !(value() === 'done' && now === 'reading'); });
-  box.append(el('div', { className:'segs' }, opts), more);
+  box.addEventListener('change', () => { more.hidden = !(value() === 'done' && now !== 'done'); });
+  box.append(el('div', { className:'segs' }, opts), ...(canMarkNot(w) ? [] : [el('small', { textContent:NOT_LOCKED })]), more);
   return { box, value, extra:() => ({ d:d.value, r:r.value === '' ? null : +r.value }) };
 }
 function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽은 책으로 옮길 때
@@ -3066,7 +3149,7 @@ function openRecForm(w, i) {
     if (st.querySelector('input').checked) next.st = 'unread'; else delete next.st;
     const recs = [...w.recs];
     if (i >= 0) recs[i] = next; else recs.push(next);
-    await saveWork({ ...w, recs, unread:recs.every((x) => x.st === 'unread') }, '기록을 저장했어요');
+    await saveWork(settleRecs({ ...w, recs }), '기록을 저장했어요'); // 기록을 더하면 «안 읽음» 표시는 풀린다(다 읽은 기록 → 다 읽음, 미완독 → 읽는 중)
     openBook(w.id, $('sheet').returnEl);
   };
   // 공개·지우기는 이 창 아래에 있다(2026-11-14)
@@ -3133,13 +3216,13 @@ function openPostForm() {
 /* ---------- 머리·탭·로그인 ---------- */
 function setLede() {
   if (LOCAL) {
-    const read = list().filter((w) => w.k === 'book' && !isReading(w)).length, now = list().filter(isReading).length;
-    $('lede').textContent = `읽은 책 ${read}권` + (now ? `, 읽는 중 ${now}권` : '');
+    const read = list().filter(countsRead).length, now = list().filter(isReading).length, not = list().filter(isNotRead).length;
+    $('lede').textContent = `읽은 책 ${read}권` + (now ? `, 읽는 중 ${now}권` : '') + (not ? `, 안 읽음 ${not}권` : '');
     $('foot').textContent = fb.syncStatus().on ? '기록은 이 기기와 내 구글 드라이브에 저장돼요. 이 책장을 만든 사람에게는 가지 않아요. 드라이브와 맞출 수 없을 때도 이 기기에는 그대로 저장되고, 연결되면 알아서 맞춰요.' : '기록은 이 기기에만 저장되고 어디로도 보내지 않아요. 여러 기기에서 쓰려면 «내 구글 드라이브 연결»을 켜 보세요. 브라우저 기록을 지우거나 기기를 바꾸면 사라지고, 아이폰 사파리는 오래 안 쓰면 지워질 수 있어요. 가끔 «파일로 저장»을 눌러 두세요. 홈 화면에 추가하면 더 안전한데, 아이폰은 저장 공간이 따로라 추가하기 전에 파일로 저장한 뒤 홈 화면 앱에서 불러와 주세요.';
     return;
   }
-  const books = list().filter((w) => w.k === 'book' && !isHidden(w) && !isReading(w)).length, now = list().filter((w) => isReading(w) && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review' && !p.blog).length, blogs = D.posts.filter((p) => p.blog).length;
-  $('lede').textContent = `책 ${books}권` + (now ? `, 읽는 중 ${now}권` : '') + `, 인스타 서평 ${reviews}개` + (blogs ? `, 블로그 글 ${blogs}개` : '');
+  const books = list().filter((w) => countsRead(w) && !isHidden(w)).length, now = list().filter((w) => isReading(w) && !isHidden(w)).length, not = list().filter((w) => isNotRead(w) && !isHidden(w)).length, reviews = D.posts.filter((p) => p.k === 'review' && !p.blog).length, blogs = D.posts.filter((p) => p.blog).length;
+  $('lede').textContent = `책 ${books}권` + (now ? `, 읽는 중 ${now}권` : '') + (not ? `, 안 읽음 ${not}권` : '') + `, 인스타 서평 ${reviews}개` + (blogs ? `, 블로그 글 ${blogs}개` : '');
   $('foot').textContent = S.owner
     ? '내 기록과 메모, 별점은 로그인한 나에게만 보여요. 고친 내용은 바로 저장되고, 공개 화면에는 다음 공개 반영 때 들어가요. 제목을 못 찾은 메모는 점선 책등으로 꽂아 뒀어요.'
     : '@hyonnie_books와 블로그 «효니의 기록»에 쓴 글을 책별로 모았어요.';
@@ -3347,6 +3430,14 @@ function toast(t) {
   const host = $('form').open ? $('form') : $('sheet').open ? $('sheet') : document.body;
   host.append($('toast')); $('toast').textContent = t; $('toast').hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => { $('toast').hidden = true; }, 2200);
+}
+// «바꿨어요 · 되돌리기» 토스트(2026-11-15, 책 창 읽기 상태 단추). 5초 동안 보이고 되돌리기를 누르면 한 번만 부른다
+function toastUndo(t, undo) {
+  toast(t);
+  const b = el('button', { className:'toast-undo', type:'button', textContent:'되돌리기' });
+  b.onclick = async () => { b.disabled = true; $('toast').hidden = true; try { await undo(); } catch (e) { toast(e.userMsg || '되돌리지 못했어요'); } };
+  $('toast').append(' · ', b);
+  clearTimeout(toastT); toastT = setTimeout(() => { $('toast').hidden = true; }, 5000);
 }
 function copy(text) {
   const failMsg = () => toast('복사하지 못했어요');
