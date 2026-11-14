@@ -1,8 +1,8 @@
 // 실물 책등(2026-11-14, 효니 결정): 책마다 예스24 상품 번호를 찾아 data/y24.json에 [번호, 책등 그림 가로/세로 비율, 실물 키 mm]만 쓴다.
 // 그림은 저장하지 않는다. 앱이 볼 때 https://image.yes24.com/goods/<번호>/SIDE/XL 을 불러온다(못 받으면 색 책등).
-// 짝 맞추기: 예스24 모바일 검색(m.yes24.com/Search, PC 검색은 결과가 스크립트로 붙어 안 읽힘) → 제목·저자 점수 → eBook·중고·세트 빼기
-//   → 책등 그림이 있는지(«이미지 없음» 그림은 420x600·4,975바이트) → 상품 쪽의 var realBHeight(mm)로 키.
-// 사용: node tools/yes24-spines.js [private.local.json] [--all] [--vol] [--limit N] [--only id,id]   (--vol: 권 번호가 있는 책만 다시)
+// 짝 맞추기: 예스24 Open API 상품 검색(책장 중계 src=y24, 2026-11-14부터. 전에는 m.yes24.com 화면 읽기) → 제목·저자 점수 → 세트·큰글자 빼기
+//   → 책등 그림이 있는지(«이미지 없음» 그림은 420x600·4,975바이트) → API의 세로(mm)로 키.
+// 사용: node tools/yes24-spines.js [private.local.json] [--all] [--miss] [--vol] [--limit N] [--only id,id]   (--vol: 권 번호가 있는 책만 다시)
 //   private.local.json을 주면 나만 보기 책도 넣는다. 이미 찾은 책·못 찾은 책은 건너뛴다(--all이면 다시). 제목·저자는 출력하지 않는다.
 const fs = require('fs'), path = require('path');
 
@@ -13,7 +13,6 @@ const flag = (n) => args.includes(n);
 const val = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
 const privPath = args.find((a) => a.endsWith('.json'));
 const MUA = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' };
-const PUA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const strip = (s) => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ');
@@ -36,12 +35,15 @@ async function get(url, headers, type = 'text') {
     } catch (e) { if (i === 2) return { status: 0, body: type === 'buf' ? Buffer.alloc(0) : '' }; await sleep(1500); }
   }
 }
-function items(html) {
-  return html.split('<li class="item ').slice(1).map((seg) => {
-    const no = (seg.match(/^[^>]*data-goods-no="(\d+)"/) || [])[1];
-    const alt = (seg.match(/alt="([^"]*)"/) || [])[1] || '';
-    return { no, alt, text: strip(seg.slice(0, 6000)).replace(/\s+/g, ' ') };
-  }).filter((x) => x.no);
+// 예스24 Open API를 책장 중계로 부른다(2026-11-14). 키는 중계 스크립트 속성에만 있어 어느 PC에서나 열쇠 파일 없이 돈다(레포 CLAUDE.md)
+const RELAY = 'https://script.google.com/macros/s/AKfycbyijv6_u2vViI8hsdMvmzFWwLoZXaeEoayBU0WlYdFiCNGHZrpTxpYOZ0qrBwqyFzA7/exec';
+async function search(q) {
+  const r = await get(`${RELAY}?src=y24&q=${encodeURIComponent(q.slice(0, 100))}`, {});
+  if (r.status !== 200) return null;
+  let j; try { j = JSON.parse(r.body); } catch (e) { return null; }
+  if (!j.ok) return null; // 한도·키 없음·예스24 오류는 받기 실패로(기록하지 않음)
+  // 화면 읽기 때와 같은 모양으로 맞춘다: alt = 상품 이름, text = 상품 이름·저자·역자·출판사(점수 계산이 그대로 돈다)
+  return (j.books || []).filter((b) => b.y24).map((b) => ({ no: String(b.y24), alt: b.title || '', text: [b.title, ...(b.authors || []), ...(b.translators || []), b.publisher].join(' '), mh: (b.size || [])[1] || 0 }));
 }
 // 책등 그림 크기(JPEG SOF). 그림이 없으면 null, 받지 못하면 'err'
 async function side(no) {
@@ -61,11 +63,6 @@ async function side(no) {
   if (r2 < 0.02 || r2 > 0.35) return null; // 책등이 아닌 그림(앞표지 등)
   return { w, h };
 }
-async function height(no) {
-  const r = await get('https://www.yes24.com/Product/Goods/' + no, PUA);
-  const mh = +((r.body.match(/var realBHeight\s*=\s*'(\d+)'/) || [])[1] || 0);
-  return mh >= 150 && mh <= 320 ? mh : 0; // 이상한 값은 버림(앱이 기본 키를 쓴다)
-}
 async function find(b) {
   const T = norm(mainTitle(b.t)), A = norm(firstAuthor(b.a)), V = volOf(b.t);
   const P = norm(String(b.p || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/출판사|출판|주식회사|㈜/g, '').split(/\s*[:/]\s*/)[0]).slice(0, 6);
@@ -73,9 +70,9 @@ async function find(b) {
   const tries = [`${mainTitle(b.t)} ${firstAuthor(b.a)}`.trim(), mainTitle(b.t)];
   let sawBook = false, sawAuthor = false, fetchFail = false;
   for (const q of [...new Set(tries)]) {
-    const r = await get('https://m.yes24.com/Search?query=' + encodeURIComponent(q), MUA);
-    if (!r.status || r.status >= 400) return { why: 'fetch' }; // 막힘(429)·서버 오류도 기록하지 않고 다음에 다시
-    const all = items(r.body).map((x) => {
+    const found = await search(q);
+    if (!found) return { why: 'fetch' }; // 중계·예스24 오류는 기록하지 않고 다음에 다시
+    const all = found.map((x) => {
       const at = norm(x.alt), tx = norm(x.text);
       // 제목은 같거나 앞이 같아야 한다(«이방인/페스트/시지프 신화» 같은 묶음책이 붙었던 일). 표기 차이(«해방일기/일지», «2025년/2025»)는 글자 1~2개까지, 긴 제목(8자 이상)은 앞에 시리즈 이름이 붙어도(«일상이 고고학, 나 혼자 …») 받는다
       const near = T.length >= 6 && Math.abs(at.length - T.length) <= 2 && dist(at, T) <= (T.length >= 10 ? 2 : 1);
@@ -102,7 +99,7 @@ async function find(b) {
     for (const c of cands.slice(0, 5)) {
       const sd = await side(c.no);
       if (sd === 'err') { fetchFail = true; continue; }
-      if (sd) return { no: c.no, r: +(sd.w / sd.h).toFixed(4), mh: await height(c.no) };
+      if (sd) return { no: c.no, r: +(sd.w / sd.h).toFixed(4), mh: c.mh >= 150 && c.mh <= 320 ? c.mh : 0 }; // 키는 API의 세로(mm). 이상한 값은 버림(앱이 기본 키를 쓴다)
     }
     await sleep(300);
   }
@@ -126,7 +123,8 @@ async function find(b) {
   const out = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
   out.y = out.y || {}; out.miss = out.miss || {};
   if (flag('--vol')) books = books.filter((b) => volOf(b.t)); // 권 번호가 있는 책만 다시(짝 규칙을 고친 뒤)
-  const todo = books.filter((b) => flag('--all') || flag('--vol') || only || (!(b.id in out.y) && !(b.id in out.miss))).slice(0, Number(val('--limit')) || Infinity);
+  // --miss: 못 찾은 책만 다시(예스24 API로 옮긴 뒤 2026-11-14)
+  const todo = books.filter((b) => flag('--all') || flag('--vol') || only || (flag('--miss') ? b.id in out.miss : (!(b.id in out.y) && !(b.id in out.miss)))).slice(0, Number(val('--limit')) || Infinity);
   const save = () => {
     for (const id in out.y) delete out.miss[id];
     const ordered = {
