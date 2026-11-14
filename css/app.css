@@ -670,6 +670,23 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 .rack::after { height:10px; background:linear-gradient(to bottom,var(--wood) 0 7px,var(--wood-deep) 7px); }
 .slot { height:211px; border-bottom:10px solid transparent; background:linear-gradient(to bottom,var(--wood) 0 7px,var(--wood-deep) 7px) left bottom / 100% 10px no-repeat border-box; } /* 판은 테두리 자리에 깐 배경(border-image는 1px만 늘어나 납작해짐) */
 .month .slot { height:auto; }
+/* 판을 칸 끝까지: 책마다 자기 자리의 판을 오른쪽으로 길게 깔고 칸 안쪽에서 자른다. 둘째 줄로 넘어가도 윗줄 판이 마지막 책에서 끊기지 않는다(예전 .rack::after는 마지막 줄만 채웠다) */
+/* 떠 있는 선반(2026-11-14, 효니가 고른 방향): 상자·뒷판 없이 나무판만. 책은 굵은 제목과 금박 줄(--ln)로 묶고, 색 덩어리(인라인 background-image)로 표지 느낌을 낸다 */
+@supports (overflow:clip) {
+  .rack { overflow-x:clip; border:0; border-radius:0; background:none; padding:var(--space-2) var(--space-3) var(--space-2); row-gap:var(--space-3); }
+  .rack::after { display:none; }
+  .slot { position:relative; border-bottom-width:12px; background:none; }
+  .slot::after { content:""; position:absolute; left:-24px; bottom:-12px; width:300vw; height:12px; background:linear-gradient(to bottom,var(--wood) 0 8px,var(--wood-deep) 8px); box-shadow:0 6px 8px -4px var(--case-shade); pointer-events:none; }
+  [data-edition="eink"] .slot { background:none; }
+  [data-edition="eink"] .slot::after { background:var(--wood); }
+  [data-edition="eink"] .rack { background:none; }
+}
+.spine.cov > span { font-family:var(--font-title); font-weight:700; }
+.spine.cov { border-radius:3px 3px 0 0; }
+.spine.cov::before { opacity:.85; }
+[data-edition="eink"] .spine.cov { background-image:none !important; }
+/* 밤 서재: 기기 설정과 상관없이 늘 어두운 밤빛 배경. 표지 색을 거의 그대로 둔다(js/spine.js night) */
+[data-edition="night"], [data-edition="night"]:not([data-theme="light"]) { color-scheme:dark; --h0:265; --k:.3; --s:34%; --l:34%; --j:1.5%; --bg:#1b1730; --surface:#262140; --ink:#efecf7; --muted:#b5aecb; --line:#463f66; --strong:#d2cce4; --plank:#6d6391; --accent:#d9cdf7; --accent-ink:#1b1730; --chip:#262140; --focus:#ffffff; --bar:#5e5390; --paper:#28233f; --paper-edge:#443d63; --gutter:rgba(0,0,0,.4); --wood:#b0865a; --wood-deep:#86623c; --case-back:#201b36; --case-shade:rgba(0,0,0,.55); --late:#f0a4aa; }
 .spine.cov { justify-content:flex-start; border-color:rgba(0,0,0,.28); }
 .spine.cov::before { background-image:none; }
 .spine.cov.ln-t1::before { background-image:linear-gradient(var(--ln),var(--ln)); }
