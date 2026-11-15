@@ -256,13 +256,14 @@ function spine(w, pose) {
   const colorW = thin ? thin.wd : 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9), colorH = h;
   if (real) h = realH(real.mh);
   const wd = real ? Math.max(14, Math.round(h * real.r)) : colorW;
-  const b = el('button', { type:'button', className:'spine' + (thin ? ' thin' : '') + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose === 'lean' ? ' lean' : '') });
+  const b = el('button', { type:'button', className:'spine' + (thin ? ' thin' : '') + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose && pose.lean ? ' lean' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
   let gap = 0;
-  if (pose === 'lean') { // 기대어 선다: 7~11°, 오른쪽 아래 모서리가 축이라 판에 박히지 않고, 기울어 나가는 만큼 오른쪽에 여백
-    const tilt = 7 + Math.abs(hash('tilt' + w.id)) % 5;
-    b.style.setProperty('--tilt', tilt + 'deg');
-    gap = Math.ceil(h * Math.sin(tilt * Math.PI / 180)) + 2;
+  if (pose && pose.lean) { // 기대어 선다(2026-11-15 효니 쪽지 «받쳐 주는 책이 있어야 자연스러운데»): 왼쪽 아래 모서리가 축, 윗부분이 왼쪽에 선 책에 닿는다
+    const tilt = 6 + Math.abs(hash('tilt' + w.id)) % 4, t = tilt * Math.PI / 180, hn = pose.lean; // hn = 왼쪽(받치는) 책 키
+    b.style.setProperty('--tilt', -tilt + 'deg');
+    // 받치는 책이 이 책보다 크면 이 책 위 모서리가 옆면에 닿고(h·sin), 작으면 받치는 책 윗면에 걸친다(hn·tan)
+    gap = Math.max(2, Math.round(hn >= h * Math.cos(t) ? h * Math.sin(t) : hn * Math.tan(t)) - 1);
   }
   b.append(spineText(label));
   paintSpine(b, w);
@@ -272,7 +273,7 @@ function spine(w, pose) {
   if (real) addRealImg(b, real, colorW, colorH);
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
   b.onclick = () => pullOut(b, () => openBook(w.id, b));
-  const slot = el('div', { className:'slot' + (pose === 'lean' ? ' lean' : '') }, b);
+  const slot = el('div', { className:'slot' + (pose && pose.lean ? ' lean' : '') }, b);
   if (gap) slot.style.setProperty('--gap', gap + 'px');
   return slot;
 }
@@ -282,9 +283,14 @@ function shelfBooks(items) {
   if (n < 4) return items.map((w) => spine(w));
   const seed = Math.abs(hash('end' + items[n - 1].id));
   const lie = n >= 8 && seed % 3 ? (n >= 14 && seed % 2 ? 3 : 2) : 0;
-  const lean = Math.max(0, Math.min(n - lie - 2, lie === 3 ? 0 : lie ? (seed >> 2) % 2 : 1 + (seed >> 2) % 2));
+  // 기댄 책은 한 권만, 왼쪽에 선 책에 기댄다(2026-11-15). 받치는 책이 이 책 키의 55%보다 낮으면 기대지 않고 바로 세운다
+  const lean = lie === 3 ? 0 : lie ? (seed >> 2) % 2 : 1;
   const out = items.slice(0, n - lie - lean).map((w) => spine(w));
-  items.slice(n - lie - lean, n - lie).forEach((w) => out.push(spine(w, 'lean')));
+  items.slice(n - lie - lean, n - lie).forEach((w) => {
+    const prev = out[out.length - 1].firstChild, hn = parseFloat(prev.style.height) || 0;
+    const me = spine(w), mh = parseFloat(me.firstChild.style.height) || 0;
+    out.push(hn >= mh * 0.55 ? spine(w, { lean:hn }) : me);
+  });
   if (lie) {
     out.push(el('div', { className:'slot pile' }, items.slice(n - lie).map((w) => {
       const b = lyingSpine(w);
@@ -405,6 +411,8 @@ function balanceRacks() {
     return hi + 2 < inner ? Math.ceil(hi) + side + 1 : 0;
   });
   racks.forEach((r, i) => { if (plan[i]) r.style.maxWidth = plan[i] + 'px'; });
+  // 기댄 책이 줄의 맨 앞으로 넘어가면 받칠 책이 없으니 바로 세운다(창 폭이 바뀌면 다시 잰다)
+  $('shelves').querySelectorAll('.slot.lean').forEach((s) => { const p = s.previousElementSibling; s.classList.toggle('alone', !p || Math.abs(p.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom) > 4); }); // 달 선반은 칸 키가 달라 아랫변으로 같은 줄인지 본다
 }
 let rackTimer = 0, rackW = innerWidth;
 window.addEventListener('resize', () => { if (innerWidth === rackW) return; rackW = innerWidth; clearTimeout(rackTimer); rackTimer = setTimeout(() => { if (S.view === 'shelf') balanceRacks(); }, 120); });
