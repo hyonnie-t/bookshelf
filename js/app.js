@@ -526,12 +526,13 @@ function setEdition(id) {
   if (id === 'base') delete document.documentElement.dataset.edition; else document.documentElement.dataset.edition = id;
   syncBarColor();
   repaintSpines();
-  if (spineView === 'real' && wasEink !== (id === 'eink') && D.works.size) renderShelf(); // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
+  if (spineView === 'real' && wasEink !== (id === 'eink')) { if (D.works.size) renderShelf(); if (D.lib.length) renderLibrary(); } // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
 }
 function setSpineView(v) {
   if (spineView === v) return;
   spineView = v;
   if (D.works.size) renderShelf();
+  if (D.lib.length) renderLibrary(); // 내 서재 책등 보기도 같은 실물/색 책등을 따른다
 }
 function openEditionForm() {
   const was = curEdition();
@@ -1894,8 +1895,32 @@ function libMatches(it) {
   if (!S.lq) return true;
   return hasAll(squeeze([it.t, it.a, it.p, it.where, ...it.loans.map((x) => x.who)].filter(Boolean).join(' ')), S.lq);
 }
+// 내 서재 보기(2026-11-15, 효니 쪽지 «내 서재에는 책등 기능 구현 안 하냐? 근데 이런 플랫한 느낌도 좋긴 하다»): 책등(읽은 책 책장과 같은 책등)/납작(예전 색면) 전환.
+// 기기별 localStorage. 빌려준 책은 어느 보기에서든 빈자리(점선)로 둔다
+const LIBVIEW_KEY = LOCAL ? 'myshelf-libview' : 'shelf-libview';
+S.lv = 'spine';
+try { if (localStorage.getItem(LIBVIEW_KEY) === 'flat') S.lv = 'flat'; } catch (e) {}
+function libSpine(it) {
+  const w = libWork(it), title = it.t || '제목 없음', l = openLoan(it);
+  let b;
+  if (w && (w.k || 'book') === 'book') b = spine(w).firstChild; // 읽은 책과 이어진 책: 표지 색·실물 책등 그대로
+  else if (realView()) { // 이어지지 않은 책: 실물 책등 보기에서는 얇은 색 책등(사진 책등과 굵기를 맞춤)
+    const sz = thinSize({ id:it.id }), room = Math.max(3, Math.floor((sz.h - 22) / 12));
+    b = el('button', { type:'button', className:`spine thin ${lineOf(it.id)}` });
+    b.style.height = sz.h + 'px'; b.style.width = sz.wd + 'px';
+    b.style.backgroundColor = themeVar(libThemes(it)[0]);
+    b.append(spineText(title.length > room ? title.slice(0, room - 1) + '…' : title));
+  } else return null; // 색 책등 보기에서 이어지지 않은 책은 납작한 색면이 같은 굵기라 그대로
+  const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : '소장';
+  b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
+  b.title = [title, status].join(' · ');
+  b.dataset.lib = it.id;
+  b.onclick = () => pullOut(b, () => openLib(it.id, b));
+  return el('div', { className:'lslot' }, b);
+}
 function caseBook(it) {
   const l = openLoan(it), out = !!l && l.dir === 'out';
+  if (S.lv === 'spine' && !out) { const s = libSpine(it); if (s) return s; }
   const title = it.t || '제목 없음', th = libThemes(it);
   // 플랫한 색면에 얇은 줄과 저자만 더한다(효니 선택 2026-11-05). 빌려준 책은 빈자리로 보인다
   const label = title.length > 24 ? title.slice(0, 23) + '…' : title;
@@ -2030,6 +2055,11 @@ function drawLibSort(sort) {
       try { localStorage.setItem(LIBSORT_KEY, k); } catch (e) {}
       renderLibrary();
     };
+    return b;
+  }), el('span', { className:'sort-label', textContent:'보기' }), ...[['spine', '책등'], ['flat', '납작']].map(([k, label]) => {
+    const b = el('button', { className:'chip', type:'button', textContent:label });
+    b.setAttribute('aria-pressed', S.lv === k);
+    b.onclick = () => { S.lv = k; try { localStorage.setItem(LIBVIEW_KEY, k); } catch (e) {} renderLibrary(); };
     return b;
   }));
 }
