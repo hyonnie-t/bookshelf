@@ -3213,6 +3213,73 @@ function openReadTool() {
   draw();
 }
 if ($('readStates')) $('readStates').onclick = openReadTool;
+/* 주제 더 붙이기(2026-11-15, 효니 쪽지 «주제 카테고리 대표 하나만 체크하는데 해당하는 주제 여러 개 체크할 수 있도록 -> 전수 조사 필요»).
+   주제(th)는 처음부터 여러 개를 담는 칸이라 저장 구조는 그대로다. 이미 있는 책 전부를 Claude가 살펴 더할 주제를 data/theme-suggest.json에 두었다
+   (s[id] = [주제…, 확신 'h'|'m'], 공개 책만 why[id]. 서재에만 있는 책은 id 앞에 'lib:'). 열면 «결과 모아 보기 → 고르기 → 한 번에 저장».
+   있는 주제는 지우지도 순서를 바꾸지도 않고 뒤에 붙인다(첫 주제 = 대표: 책등 띠·서재 칸). 고르지 않은 추천은 meta/thSkip/{id}에 남겨 다시 안 보이고, 맨 아래에서 다시 볼 수 있다 */
+let TH_SUG = null;
+const thSkipOf = (id) => ((D.priv.meta || {}).thSkip || {})[id.replace(':', '_')] || [];
+async function openThemeTool() {
+  if (!TH_SUG) { try { TH_SUG = await getJson('data/theme-suggest.json', 15000); } catch (e) { toast('추천 파일을 못 읽었어요. 인터넷을 확인해 주세요'); return; } }
+  const target = (key) => { if (key.startsWith('lib:')) { const it = D.lib.find((x) => x.id === key.slice(4)); return it && !it.w ? { key, lib:it, t:it.t, a:it.a, th:it.th || [] } : null; } const w = D.works.get(key); return w ? { key, w, t:titleOf(w), a:w.a, th:w.th } : null; };
+  const all = Object.entries(TH_SUG.s || {}).map(([key, v]) => { const x = target(key); if (!x) return null; const conf = v[v.length - 1] === 'm' ? 'm' : 'h'; const add = v.filter((t) => t !== 'h' && t !== 'm' && THEMES.some(([n]) => n === t) && !x.th.includes(t)); return add.length ? { ...x, add, conf, why:(TH_SUG.why || {})[key] || '' } : null; }).filter(Boolean)
+    .sort((a, b) => KO.compare(a.t || '', b.t || ''));
+  const fresh = (r) => r.add.filter((t) => !thSkipOf(r.key).includes(t));
+  const pick = new Map(); // key → Set(고른 주제)
+  const by = el('select', { ariaLabel:'추천 주제' }, el('option', { value:'', textContent:'모든 추천 주제' }), THEMES.map(([t]) => el('option', { value:t, textContent:t })));
+  const conf = el('select', { ariaLabel:'확신' }, el('option', { value:'', textContent:'확실 + 그럴 법함' }), el('option', { value:'h', textContent:'확실한 것만' }), el('option', { value:'m', textContent:'그럴 법한 것만' }));
+  const head = el('p', { className:'warn', role:'status' }), box = el('div', { className:'fill-list th-list' }), hidden = el('details', { className:'fold-more' });
+  let upd = () => {}, rows = [];
+  const chip = (r, t, on) => { const b = el('button', { type:'button', className:'chip th-chip', textContent:t }); b.setAttribute('aria-pressed', on); b.style.setProperty('--c', themeVar(t)); b.onclick = () => { const s = pick.get(r.key) || new Set(); if (s.has(t)) s.delete(t); else s.add(t); pick.set(r.key, s); b.setAttribute('aria-pressed', s.has(t)); upd(); }; return b; };
+  const row = (r, list) => el('div', { className:'dup-row fill-row' }, el('strong', { textContent:r.t || '제목 없음' }),
+    el('div', { className:'when', textContent:[r.a ? firstAuthorOf(r.a) : '저자 없음', `지금: ${r.th.join(' · ') || '주제 없음'}`, r.lib ? '서재에만 있는 책' : '', r.why, r.conf === 'm' ? '그럴 법함' : ''].filter(Boolean).join(' · ') }),
+    el('div', { className:'th-chips' }, list.map((t) => chip(r, t, (pick.get(r.key) || new Set()).has(t)))));
+  const draw = () => {
+    rows = all.filter((r) => fresh(r).length && (!by.value || fresh(r).includes(by.value)) && (!conf.value || r.conf === conf.value));
+    const nT = rows.reduce((a, r) => a + fresh(r).length, 0);
+    head.textContent = rows.length ? `더 붙일 만한 주제가 있는 책 ${rows.length}권 · 추천 ${nT}개. 확실한 추천은 미리 골라 뒀어요. 누르면 풀리고, 다시 누르면 골라져요. 저장하면 고른 주제는 책 뒤에 붙고, 고르지 않은 추천은 다음부터 숨겨요.` : '남은 추천이 없어요.';
+    box.replaceChildren(...rows.map((r) => row(r, fresh(r))));
+    const gone = all.filter((r) => r.add.some((t) => thSkipOf(r.key).includes(t)));
+    hidden.hidden = !gone.length;
+    if (gone.length) {
+      const again = el('button', { className:'copy', type:'button', textContent:'숨긴 추천 다시 보기' });
+      again.onclick = async () => { try { const keys = gone.map((r) => r.key.replace(':', '_')); await write('meta/thSkip', Object.fromEntries(keys.map((k) => [k, null])), 'update'); const m = D.priv.meta || {}; if (m.thSkip) keys.forEach((k) => delete m.thSkip[k]); draw(); } catch (e) { saveFailed(e); } };
+      hidden.replaceChildren(el('summary', { textContent:`숨긴 추천이 있는 책 ${gone.length}권` }), again);
+    }
+    upd();
+  };
+  all.forEach((r) => { if (r.conf === 'h') pick.set(r.key, new Set(fresh(r))); });
+  [by, conf].forEach((s) => s.addEventListener('change', draw));
+  showForm('주제 더 붙이기', [el('small', { textContent:'Claude가 책장 책 전부를 다시 살펴 더 붙일 만한 주제를 골라 뒀어요(2026-11-15). 있는 주제는 그대로 두고 뒤에 붙여요. 첫 주제가 대표라 책등 띠·서재 칸은 그대로예요.' }), el('div', { className:'read-filters' }, field('추천 주제', by), field('확신', conf)), head, box, hidden], async () => {
+    const works = {}, lib = {}, skip = {};
+    rows.forEach((r) => {
+      const on = [...(pick.get(r.key) || [])].filter((t) => fresh(r).includes(t)), off = fresh(r).filter((t) => !on.includes(t));
+      if (off.length) skip[r.key.replace(':', '_')] = [...new Set([...thSkipOf(r.key), ...off])];
+      if (!on.length) return;
+      if (r.lib) { const raw = (D.priv.library || {})[r.lib.id]; if (raw) lib[r.lib.id] = JSON.parse(JSON.stringify({ ...raw, th:[...(raw.th || []), ...on] })); }
+      else { const cur = D.works.get(r.key); works[r.key] = storedWork({ ...cur, th:[...cur.th, ...on] }); }
+    });
+    const n = Object.keys(works).length + Object.keys(lib).length;
+    if (!n && !Object.keys(skip).length) throw fail('고른 주제가 없어요');
+    if (n && !(await ask(`${n}권에 주제를 더 붙여요. 고르지 않은 추천 ${Object.values(skip).length ? '은 다음부터 숨겨요' : '은 없어요'}. 저장할까요?`, '저장'))) return 'stay';
+    if (Object.keys(works).length) await write('works', works, 'update');
+    if (Object.keys(lib).length) await write('library', lib, 'update');
+    if (Object.keys(skip).length) await write('meta/thSkip', skip, 'update');
+    Object.entries(works).forEach(([id, v]) => setPriv('works', id, v));
+    Object.entries(lib).forEach(([id, v]) => setPriv('library', id, v));
+    const m = D.priv.meta = D.priv.meta || {}; m.thSkip = { ...(m.thSkip || {}), ...skip };
+    refreshAll();
+    toast(`${n}권에 주제를 더 붙였어요${LOCAL ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
+  }, '고른 주제 저장');
+  upd = footCount('고른 주제', () => rows.reduce((a, r) => a + [...(pick.get(r.key) || [])].filter((t) => fresh(r).includes(t)).length, 0));
+  const allOn = el('button', { className:'copy', type:'button', textContent:'모두 고르기' });
+  allOn.onclick = () => { rows.forEach((r) => pick.set(r.key, new Set(fresh(r)))); draw(); };
+  const allOff = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
+  allOff.onclick = () => { rows.forEach((r) => pick.delete(r.key)); draw(); };
+  $('form-body').querySelector('.pick-sum').append(allOn, allOff);
+  draw();
+}
+if ($('themeMore')) $('themeMore').onclick = openThemeTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
 if ($('memoOverlap')) $('memoOverlap').onclick = openMemoOverlap;
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };
