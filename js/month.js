@@ -124,7 +124,7 @@ export function monthVoice(cur, prev, ctx = {}) {
   if (cur.again.length) change.push(`다시 펼친 책도 ${cur.again.length}권 있었다. 한 번으로 안 끝나는 책이 있다.`);
 
   const habit = [];
-  if (cur.dayN) habit.push(cur.run >= 3 ? `기록을 남긴 날은 ${cur.dayN}일이고 그중 ${cur.run}일은 하루도 안 빼고 이어서 남겼다.` : `기록을 남긴 날은 ${cur.dayN}일. 생각날 때마다 띄엄띄엄 남겼다.`);
+  if (cur.dayN) habit.push(cur.run >= 3 && cur.run === cur.dayN ? `기록을 남긴 ${cur.dayN}일이 하루도 안 빠지고 이어져 있다. 몰아서 읽은 게 티 난다 ㅎㅎ` : cur.run >= 3 ? `기록을 남긴 날은 ${cur.dayN}일이고 그중 ${cur.run}일은 하루도 안 빼고 이어서 남겼다.` : `기록을 남긴 날은 ${cur.dayN}일. 생각날 때마다 띄엄띄엄 남겼다.`);
   const avgM = +cur.avg.toFixed(1), avgA = +(ctx.avgAll || 0).toFixed(1);
   if (cur.rated.length >= 3 && (ctx.ratedAll || 0) >= 10 && Math.abs(avgM - avgA) >= .3) {
     habit.push(avgM > avgA ? `별점은 평소보다 후했다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점). 좋은 책만 골랐나 보다 ㅎㅎ` : `별점은 평소보다 짰다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점). 이번 달은 좀 아쉬운 책이 많았던 거 같다...`);
