@@ -177,6 +177,10 @@ a.copy { color:var(--ink); text-decoration:none; display:inline-block; }
 .field textarea { resize:vertical; line-height:1.6; }
 .field small { color:var(--muted); }
 .checks { display:flex; flex-wrap:wrap; gap:2px var(--space-3); }
+.checks.geul-list { flex-direction:column; flex-wrap:nowrap; gap:var(--space-1); max-height:50vh; overflow-y:auto; } /* 글감 서랍으로 보내기(2026-11-15): 책 한 줄씩 */
+.geul-list .check { color:var(--ink); min-height:32px; }
+.geul-list .check small { color:var(--muted); }
+.drill-top { display:flex; justify-content:flex-end; margin-bottom:var(--space-2); }
 .form-err { margin:0; color:#a3323a; font-size:.9rem; }
 dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copy.danger, :root:not([data-theme="light"]) .form-err { color:#f0a4aa; } }

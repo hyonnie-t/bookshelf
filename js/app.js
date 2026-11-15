@@ -701,6 +701,43 @@ async function pubCheck(box, was, body, group, w) {
 const setPub = (x, box) => { if (!box) return x; const z = { ...x }; if (box.input.checked) z.pub = true; else delete z.pub; return z; };
 /* 한 줄 평 공개(2026-11-15, 효니 쪽지 «한 줄평은 다 공개해도 됨 이것도 온오프 되도록 버튼으로»): 관리의 스위치 meta/linePub(전체)와 기록마다 끄기 recs[].lp=false.
    공개 반영(tools/publish.js)이 공개 책의 한 줄 평만 books[].ls로 옮긴다. 별점·긴 글(b)·메모는 그대로 나만 보기. 범용판에는 없다 */
+/* 글감 서랍으로 보내기(2026-11-15, 효니 쪽지 «돌아보기 섹션에 글감 서랍으로 옮길 만한 추천 있음»). 글감 서랍 앱은 보기만 하고 원본은 볼트라서
+   책장은 비공개 칸 meta/toGeulgam/{책id} = {t 제목, a 저자, why 왜 골랐나, at 날짜}만 남긴다. 볼트 정리(weekly-vault-check)가 이 칸을 읽어
+   0-수신함에 «type: 글감, 출처: 책장 YYYY-MM-DD» 노트로 옮기면 서랍에 뜬다(글감 서랍 쪽 일, 인수인계 글). 범용판에는 없다 */
+const GEUL_ACTS = new Set(['서평으로 남겨 볼 책', '다시 읽어 볼 책', '읽다 멈춘 책']); // 글감이 될 만한 추천만(소장·정리 추천은 빼고)
+const geulOf = (id) => ((D.priv.meta || {}).toGeulgam || {})[id] || null;
+const geulVal = (w, why) => ({ t:titleOf(w), a:w.a || '', why, at:today() });
+async function saveGeul(patch, msg) {
+  await write('meta/toGeulgam', patch, 'update');
+  const m = D.priv.meta = D.priv.meta || {}, g = m.toGeulgam = { ...(m.toGeulgam || {}) };
+  Object.entries(patch).forEach(([id, v]) => { if (v === null) delete g[id]; else g[id] = v; });
+  toast(msg);
+}
+// 돌아보기 «다음 할 일» 목록 위에 붙는 줄: 한꺼번에 고르기 → 한 번에 저장
+function geulTop(books, why) {
+  if (LOCAL || !books.length) return null;
+  const sent = books.filter((w) => geulOf(w.id)).length;
+  const b = el('button', { className:'copy', type:'button', textContent:sent ? `글감 서랍으로 보내기 · 보낸 책 ${sent}권` : '글감 서랍으로 보내기' });
+  b.onclick = () => openGeulForm(books, why);
+  return el('div', { className:'drill-top' }, b);
+}
+function openGeulForm(books, why) {
+  const boxes = books.map((w) => { const c = el('input', { type:'checkbox', checked:!!geulOf(w.id) }); c.dataset.id = w.id; return c; });
+  const count = el('small', { role:'status' });
+  const sync = () => { count.textContent = `고른 책 ${boxes.filter((c) => c.checked).length}권`; };
+  const all = el('button', { className:'copy', type:'button', textContent:'모두 고르기' }), none = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
+  all.onclick = () => { boxes.forEach((c) => { c.checked = true; }); sync(); }; none.onclick = () => { boxes.forEach((c) => { c.checked = false; }); sync(); };
+  boxes.forEach((c) => c.addEventListener('change', sync)); sync();
+  const list = el('div', { className:'checks geul-list' }, books.map((w, i) => el('label', { className:'check' }, boxes[i], el('span', { textContent:titleOf(w) }), w.a ? el('small', { textContent:firstAuthor(w) }) : null)));
+  showForm('글감 서랍으로 보내기', [el('small', { textContent:`«${why}» 중에서 글로 쓰고 싶은 책을 골라요. 서랍에는 월요일 볼트 정리 때 올라가요. 이미 보낸 책은 체크돼 있고, 풀면 빠져요.` }), el('div', { className:'actions' }, all, none, count), list], async () => {
+    const patch = {};
+    boxes.forEach((c) => { const on = !!geulOf(c.dataset.id); if (c.checked && !on) patch[c.dataset.id] = geulVal(D.works.get(c.dataset.id), why); if (!c.checked && on) patch[c.dataset.id] = null; });
+    if (!Object.keys(patch).length) { toast('바뀐 게 없어요'); return; }
+    const add = Object.values(patch).filter(Boolean).length, del = Object.keys(patch).length - add;
+    await saveGeul(patch, [add ? `${add}권 보냈어요` : '', del ? `${del}권 뺐어요` : ''].filter(Boolean).join(' · '));
+    renderRecap();
+  }, '한 번에 저장');
+}
 const linePubOn = () => !LOCAL && !!(D.priv.meta || {}).linePub;
 const linePubShows = (w) => linePubOn() && w.k === 'book' && !isOnlyMe(w);
 // 지금 켜면 올라갈 한 줄 평 수(대략: 이미 공개된 책만 센다. 실제 수는 공개 반영 때 정해진다)
@@ -1212,7 +1249,9 @@ function renderTome(w, item, from) {
     if (canPickSpine(w)) { spineBtn = el('button', { className:'copy', type:'button', textContent:'책등 바꾸기' }); spineBtn.onclick = () => openY24Form(w); }
     let addMark = null;
     if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
-    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, ...lib.tools])));
+    let geul = null; // 글감 서랍(2026-11-15): 범용판 없음, 한 권씩은 여기서, 여러 권은 돌아보기 «다음 할 일»에서
+    if (!LOCAL && w.known) { const on = !!geulOf(w.id); geul = el('button', { className:'copy', type:'button', textContent:on ? '글감 서랍에서 빼기' : '글감 서랍에 넣기' }); geul.onclick = () => saveGeul({ [w.id]:on ? null : geulVal(w, '책 창에서 고름') }, on ? '글감 서랍에서 뺐어요' : '글감 서랍에 넣었어요. 월요일 볼트 정리 때 서랍에 올라가요').then(() => { if ($('sheet').open) reshow(); }).catch(saveFailed); }
+    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, geul, ...lib.tools])));
   } else if (S.owner && lib.tools.length) left.push(el('div', { className:'actions sub' }, lib.tools)); // 서재에만 있는 책: 서재 단추는 그대로
   else if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
@@ -1599,7 +1638,7 @@ function renderRecap() {
       ry ? null : ['읽다 멈춘 책', '읽는 중인데 반년 넘게 기록이 없어요', list().filter((w) => w.k === 'book' && w.known && isReading(w) && lastTouch(w) && lastTouch(w) < halfYearAgo)],
     ].filter((x) => x && x[2].length);
     if (acts.length) actsCard = el('div', { className:'card span2 acts-card' }, head('기록으로 고르는 다음 할 일', true), el('p', { className:'sub', textContent:'별점과 서재, 서평을 함께 봤어요' }),
-      el('div', { className:'act-list' }, acts.map(([label, hint, rows]) => drillable(el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:label }), el('small', { textContent:hint })), el('span', { className:'n', textContent:`${rows.length}권` })), `x:${label}`, label, () => bookRows(rows)))));
+      el('div', { className:'act-list' }, acts.map(([label, hint, rows]) => drillable(el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:label }), el('small', { textContent:hint })), el('span', { className:'n', textContent:`${rows.length}권` })), `x:${label}`, label, () => { const r = bookRows(rows); if (GEUL_ACTS.has(label)) r.top = () => geulTop(rows, label); return r; }))));
   }
 
   /* 해마다 */
