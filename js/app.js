@@ -256,13 +256,14 @@ function spine(w, pose) {
   const colorW = thin ? thin.wd : 18 + cols * 19 + Math.abs(hash(full + w.fd) % 9), colorH = h;
   if (real) h = realH(real.mh);
   const wd = real ? Math.max(14, Math.round(h * real.r)) : colorW;
-  const b = el('button', { type:'button', className:'spine' + (thin ? ' thin' : '') + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose === 'lean' ? ' lean' : '') });
+  const b = el('button', { type:'button', className:'spine' + (thin ? ' thin' : '') + (w.known ? '' : ' unknown') + (multi ? ' multi' : '') + (mark ? ' guess' : '') + (rv.length ? ' has-ig' : '') + ' ' + lineOf(w.id) + (pose && pose.lean ? ' lean' : '') });
   b.style.height = h + 'px'; b.style.width = wd + 'px';
   let gap = 0;
-  if (pose === 'lean') { // 기대어 선다: 7~11°, 오른쪽 아래 모서리가 축이라 판에 박히지 않고, 기울어 나가는 만큼 오른쪽에 여백
-    const tilt = 7 + Math.abs(hash('tilt' + w.id)) % 5;
-    b.style.setProperty('--tilt', tilt + 'deg');
-    gap = Math.ceil(h * Math.sin(tilt * Math.PI / 180)) + 2;
+  if (pose && pose.lean) { // 기대어 선다(2026-11-15 효니 쪽지 «받쳐 주는 책이 있어야 자연스러운데»): 왼쪽 아래 모서리가 축, 윗부분이 왼쪽에 선 책에 닿는다
+    const tilt = 6 + Math.abs(hash('tilt' + w.id)) % 4, t = tilt * Math.PI / 180, hn = pose.lean; // hn = 왼쪽(받치는) 책 키
+    b.style.setProperty('--tilt', -tilt + 'deg');
+    // 받치는 책이 이 책보다 크면 이 책 위 모서리가 옆면에 닿고(h·sin), 작으면 받치는 책 윗면에 걸친다(hn·tan)
+    gap = Math.max(2, Math.round(hn >= h * Math.cos(t) ? h * Math.sin(t) : hn * Math.tan(t)) - 1);
   }
   b.append(spineText(label));
   paintSpine(b, w);
@@ -272,7 +273,7 @@ function spine(w, pose) {
   if (real) addRealImg(b, real, colorW, colorH);
   b.setAttribute('aria-label', `${full}${w.a ? ', ' + w.a : ''}, 글 ${rv.length}개${showsOnlyMe(w) ? ', 나만 보기' : ''}`);
   b.onclick = () => pullOut(b, () => openBook(w.id, b));
-  const slot = el('div', { className:'slot' + (pose === 'lean' ? ' lean' : '') }, b);
+  const slot = el('div', { className:'slot' + (pose && pose.lean ? ' lean' : '') }, b);
   if (gap) slot.style.setProperty('--gap', gap + 'px');
   return slot;
 }
@@ -282,9 +283,14 @@ function shelfBooks(items) {
   if (n < 4) return items.map((w) => spine(w));
   const seed = Math.abs(hash('end' + items[n - 1].id));
   const lie = n >= 8 && seed % 3 ? (n >= 14 && seed % 2 ? 3 : 2) : 0;
-  const lean = Math.max(0, Math.min(n - lie - 2, lie === 3 ? 0 : lie ? (seed >> 2) % 2 : 1 + (seed >> 2) % 2));
+  // 기댄 책은 한 권만, 왼쪽에 선 책에 기댄다(2026-11-15). 받치는 책이 이 책 키의 55%보다 낮으면 기대지 않고 바로 세운다
+  const lean = lie === 3 ? 0 : lie ? (seed >> 2) % 2 : 1;
   const out = items.slice(0, n - lie - lean).map((w) => spine(w));
-  items.slice(n - lie - lean, n - lie).forEach((w) => out.push(spine(w, 'lean')));
+  items.slice(n - lie - lean, n - lie).forEach((w) => {
+    const prev = out[out.length - 1].firstChild, hn = parseFloat(prev.style.height) || 0;
+    const me = spine(w), mh = parseFloat(me.firstChild.style.height) || 0;
+    out.push(hn >= mh * 0.55 ? spine(w, { lean:hn }) : me);
+  });
   if (lie) {
     out.push(el('div', { className:'slot pile' }, items.slice(n - lie).map((w) => {
       const b = lyingSpine(w);
@@ -405,6 +411,8 @@ function balanceRacks() {
     return hi + 2 < inner ? Math.ceil(hi) + side + 1 : 0;
   });
   racks.forEach((r, i) => { if (plan[i]) r.style.maxWidth = plan[i] + 'px'; });
+  // 기댄 책이 줄의 맨 앞으로 넘어가면 받칠 책이 없으니 바로 세운다(창 폭이 바뀌면 다시 잰다)
+  $('shelves').querySelectorAll('.slot.lean').forEach((s) => { const p = s.previousElementSibling; s.classList.toggle('alone', !p || Math.abs(p.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom) > 4); }); // 달 선반은 칸 키가 달라 아랫변으로 같은 줄인지 본다
 }
 let rackTimer = 0, rackW = innerWidth;
 window.addEventListener('resize', () => { if (innerWidth === rackW) return; rackW = innerWidth; clearTimeout(rackTimer); rackTimer = setTimeout(() => { if (S.view === 'shelf') balanceRacks(); }, 120); });
@@ -518,12 +526,13 @@ function setEdition(id) {
   if (id === 'base') delete document.documentElement.dataset.edition; else document.documentElement.dataset.edition = id;
   syncBarColor();
   repaintSpines();
-  if (spineView === 'real' && wasEink !== (id === 'eink') && D.works.size) renderShelf(); // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
+  if (spineView === 'real' && wasEink !== (id === 'eink')) { if (D.works.size) renderShelf(); if (D.lib.length) renderLibrary(); } // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
 }
 function setSpineView(v) {
   if (spineView === v) return;
   spineView = v;
   if (D.works.size) renderShelf();
+  if (D.lib.length) renderLibrary(); // 내 서재 책등 보기도 같은 실물/색 책등을 따른다
 }
 function openEditionForm() {
   const was = curEdition();
@@ -692,6 +701,46 @@ async function pubCheck(box, was, body, group, w) {
 const setPub = (x, box) => { if (!box) return x; const z = { ...x }; if (box.input.checked) z.pub = true; else delete z.pub; return z; };
 /* 한 줄 평 공개(2026-11-15, 효니 쪽지 «한 줄평은 다 공개해도 됨 이것도 온오프 되도록 버튼으로»): 관리의 스위치 meta/linePub(전체)와 기록마다 끄기 recs[].lp=false.
    공개 반영(tools/publish.js)이 공개 책의 한 줄 평만 books[].ls로 옮긴다. 별점·긴 글(b)·메모는 그대로 나만 보기. 범용판에는 없다 */
+/* 글감 서랍으로 보내기(2026-11-15, 효니 쪽지 «돌아보기 섹션에 글감 서랍으로 옮길 만한 추천 있음»). 글감 서랍 앱은 보기만 하고 원본은 볼트라서
+   책장은 비공개 칸 meta/toGeulgam/{책id} = {t 제목, a 저자, why 왜 골랐나, at 날짜}만 남긴다. 볼트 정리(weekly-vault-check)가 이 칸을 읽어
+   0-수신함에 «type: 글감, 출처: 책장 YYYY-MM-DD» 노트로 옮기면 서랍에 뜬다(글감 서랍 쪽 일, 인수인계 글). 범용판에는 없다 */
+const GEUL_ACTS = new Set(['서평으로 남겨 볼 책', '다시 읽어 볼 책', '읽다 멈춘 책']); // 글감이 될 만한 추천만(소장·정리 추천은 빼고)
+// 합쳐서 빠진 책으로 보낸 기록은 남긴 책을 따라간다(movedTo, 2026-11-15 검토자 지적). 빼면 옛 키도 함께 지운다
+const geulKeys = (id) => Object.keys((D.priv.meta || {}).toGeulgam || {}).filter((k) => movedTo(k) === id);
+const geulOf = (id) => { const g = (D.priv.meta || {}).toGeulgam || {}, k = geulKeys(id)[0]; return k ? g[k] : null; };
+const geulOff = (id) => Object.fromEntries(geulKeys(id).map((k) => [k, null]));
+const geulVal = (w, why) => ({ t:titleOf(w), a:w.a || '', why, at:today() });
+async function saveGeul(patch, msg) {
+  await write('meta/toGeulgam', patch, 'update');
+  const m = D.priv.meta = D.priv.meta || {}, g = m.toGeulgam = { ...(m.toGeulgam || {}) };
+  Object.entries(patch).forEach(([id, v]) => { if (v === null) delete g[id]; else g[id] = v; });
+  toast(msg);
+}
+// 돌아보기 «다음 할 일» 목록 위에 붙는 줄: 한꺼번에 고르기 → 한 번에 저장
+function geulTop(books, why) {
+  if (LOCAL || !books.length) return null;
+  const sent = books.filter((w) => geulOf(w.id)).length;
+  const b = el('button', { className:'copy', type:'button', textContent:sent ? `글감 서랍으로 보내기 · 보낸 책 ${sent}권` : '글감 서랍으로 보내기' });
+  b.onclick = () => openGeulForm(books, why);
+  return el('div', { className:'drill-top' }, b);
+}
+function openGeulForm(books, why) {
+  const boxes = books.map((w) => { const c = el('input', { type:'checkbox', checked:!!geulOf(w.id) }); c.dataset.id = w.id; return c; });
+  const count = el('small', { role:'status' });
+  const sync = () => { count.textContent = `고른 책 ${boxes.filter((c) => c.checked).length}권`; };
+  const all = el('button', { className:'copy', type:'button', textContent:'모두 고르기' }), none = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
+  all.onclick = () => { boxes.forEach((c) => { c.checked = true; }); sync(); }; none.onclick = () => { boxes.forEach((c) => { c.checked = false; }); sync(); };
+  boxes.forEach((c) => c.addEventListener('change', sync)); sync();
+  const list = el('div', { className:'checks geul-list' }, books.map((w, i) => el('label', { className:'check' }, boxes[i], el('span', { textContent:titleOf(w) }), w.a ? el('small', { textContent:firstAuthor(w) }) : null)));
+  showForm('글감 서랍으로 보내기', [el('small', { textContent:`«${why}» 중에서 글로 쓰고 싶은 책을 골라요. 고른 책은 글감 서랍 보낼 목록에 남고, 볼트 정리 때 서랍으로 옮겨요. 이미 보낸 책은 체크돼 있고, 풀면 빠져요.` }), el('div', { className:'actions' }, all, none, count), list], async () => {
+    const patch = {};
+    boxes.forEach((c) => { const on = !!geulOf(c.dataset.id); if (c.checked && !on) patch[c.dataset.id] = geulVal(D.works.get(c.dataset.id), why); if (!c.checked && on) Object.assign(patch, geulOff(c.dataset.id)); });
+    if (!Object.keys(patch).length) throw fail('바뀐 게 없어요. 보낼 책을 고르거나 풀어 주세요');
+    const add = Object.values(patch).filter(Boolean).length, del = Object.keys(patch).length - add;
+    await saveGeul(patch, [add ? `${add}권 보냈어요` : '', del ? `${del}권 뺐어요` : ''].filter(Boolean).join(' · '));
+    renderRecap();
+  }, '한 번에 저장');
+}
 const linePubOn = () => !LOCAL && !!(D.priv.meta || {}).linePub;
 const linePubShows = (w) => linePubOn() && w.k === 'book' && !isOnlyMe(w);
 // 지금 켜면 올라갈 한 줄 평 수(대략: 이미 공개된 책만 센다. 실제 수는 공개 반영 때 정해진다)
@@ -1203,7 +1252,9 @@ function renderTome(w, item, from) {
     if (canPickSpine(w)) { spineBtn = el('button', { className:'copy', type:'button', textContent:'책등 바꾸기' }); spineBtn.onclick = () => openY24Form(w); }
     let addMark = null;
     if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
-    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, ...lib.tools])));
+    let geul = null; // 글감 서랍(2026-11-15): 범용판 없음, 한 권씩은 여기서, 여러 권은 돌아보기 «다음 할 일»에서
+    if (!LOCAL && w.known) { const on = !!geulOf(w.id); geul = el('button', { className:'copy', type:'button', textContent:on ? '글감 서랍에서 빼기' : '글감 서랍에 넣기' }); geul.onclick = () => saveGeul(on ? geulOff(w.id) : { [w.id]:geulVal(w, '책 창에서 고름') }, on ? '글감 서랍 보낼 목록에서 뺐어요' : '글감 서랍 보낼 목록에 넣었어요').then(() => { if ($('sheet').open) reshow(); }).catch(saveFailed); }
+    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, geul, ...lib.tools])));
   } else if (S.owner && lib.tools.length) left.push(el('div', { className:'actions sub' }, lib.tools)); // 서재에만 있는 책: 서재 단추는 그대로
   else if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
@@ -1590,7 +1641,7 @@ function renderRecap() {
       ry ? null : ['읽다 멈춘 책', '읽는 중인데 반년 넘게 기록이 없어요', list().filter((w) => w.k === 'book' && w.known && isReading(w) && lastTouch(w) && lastTouch(w) < halfYearAgo)],
     ].filter((x) => x && x[2].length);
     if (acts.length) actsCard = el('div', { className:'card span2 acts-card' }, head('기록으로 고르는 다음 할 일', true), el('p', { className:'sub', textContent:'별점과 서재, 서평을 함께 봤어요' }),
-      el('div', { className:'act-list' }, acts.map(([label, hint, rows]) => drillable(el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:label }), el('small', { textContent:hint })), el('span', { className:'n', textContent:`${rows.length}권` })), `x:${label}`, label, () => bookRows(rows)))));
+      el('div', { className:'act-list' }, acts.map(([label, hint, rows]) => drillable(el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:label }), el('small', { textContent:hint })), el('span', { className:'n', textContent:`${rows.length}권` })), `x:${label}`, label, () => { const r = bookRows(rows); if (GEUL_ACTS.has(label)) r.top = () => geulTop(rows, label); return r; }))));
   }
 
   /* 해마다 */
@@ -1886,8 +1937,32 @@ function libMatches(it) {
   if (!S.lq) return true;
   return hasAll(squeeze([it.t, it.a, it.p, it.where, ...it.loans.map((x) => x.who)].filter(Boolean).join(' ')), S.lq);
 }
+// 내 서재 보기(2026-11-15, 효니 쪽지 «내 서재에는 책등 기능 구현 안 하냐? 근데 이런 플랫한 느낌도 좋긴 하다»): 책등(읽은 책 책장과 같은 책등)/납작(예전 색면) 전환.
+// 기기별 localStorage. 빌려준 책은 어느 보기에서든 빈자리(점선)로 둔다
+const LIBVIEW_KEY = LOCAL ? 'myshelf-libview' : 'shelf-libview';
+S.lv = 'spine';
+try { if (localStorage.getItem(LIBVIEW_KEY) === 'flat') S.lv = 'flat'; } catch (e) {}
+function libSpine(it) {
+  const w = libWork(it), title = it.t || '제목 없음', l = openLoan(it);
+  let b;
+  if (w && (w.k || 'book') === 'book') b = spine(w).firstChild; // 읽은 책과 이어진 책: 표지 색·실물 책등 그대로
+  else if (realView()) { // 이어지지 않은 책: 실물 책등 보기에서는 얇은 색 책등(사진 책등과 굵기를 맞춤)
+    const sz = thinSize({ id:it.id }), room = Math.max(3, Math.floor((sz.h - 22) / 12));
+    b = el('button', { type:'button', className:`spine thin ${lineOf(it.id)}` });
+    b.style.height = sz.h + 'px'; b.style.width = sz.wd + 'px';
+    b.style.backgroundColor = themeVar(libThemes(it)[0]);
+    b.append(spineText(title.length > room ? title.slice(0, room - 1) + '…' : title));
+  } else return null; // 색 책등 보기에서 이어지지 않은 책은 납작한 색면이 같은 굵기라 그대로
+  const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : '소장';
+  b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
+  b.title = [title, status].join(' · ');
+  b.dataset.lib = it.id;
+  b.onclick = () => pullOut(b, () => openLib(it.id, b));
+  return el('div', { className:'lslot' }, b);
+}
 function caseBook(it) {
   const l = openLoan(it), out = !!l && l.dir === 'out';
+  if (S.lv === 'spine' && !out) { const s = libSpine(it); if (s) return s; }
   const title = it.t || '제목 없음', th = libThemes(it);
   // 플랫한 색면에 얇은 줄과 저자만 더한다(효니 선택 2026-11-05). 빌려준 책은 빈자리로 보인다
   const label = title.length > 24 ? title.slice(0, 23) + '…' : title;
@@ -2022,6 +2097,11 @@ function drawLibSort(sort) {
       try { localStorage.setItem(LIBSORT_KEY, k); } catch (e) {}
       renderLibrary();
     };
+    return b;
+  }), el('span', { className:'sort-label', textContent:'보기' }), ...[['spine', '책등'], ['flat', '납작']].map(([k, label]) => {
+    const b = el('button', { className:'chip', type:'button', textContent:label });
+    b.setAttribute('aria-pressed', S.lv === k);
+    b.onclick = () => { S.lv = k; try { localStorage.setItem(LIBVIEW_KEY, k); } catch (e) {} renderLibrary(); };
     return b;
   }));
 }
@@ -3136,6 +3216,75 @@ function openReadTool() {
   draw();
 }
 if ($('readStates')) $('readStates').onclick = openReadTool;
+/* 주제 더 붙이기(2026-11-15, 효니 쪽지 «주제 카테고리 대표 하나만 체크하는데 해당하는 주제 여러 개 체크할 수 있도록 -> 전수 조사 필요»).
+   주제(th)는 처음부터 여러 개를 담는 칸이라 저장 구조는 그대로다. 이미 있는 책 전부를 Claude가 살펴 더할 주제를 data/theme-suggest.json에 두었다
+   (s[id] = [주제…, 확신 'h'|'m'], 공개 책만 why[id]. 서재에만 있는 책은 id 앞에 'lib:'). 열면 «결과 모아 보기 → 고르기 → 한 번에 저장».
+   있는 주제는 지우지도 순서를 바꾸지도 않고 뒤에 붙인다(첫 주제 = 대표: 책등 띠·서재 칸). 고르지 않은 추천은 meta/thSkip/{id}에 남겨 다시 안 보이고, 맨 아래에서 다시 볼 수 있다 */
+let TH_SUG = null;
+const thSkipOf = (id) => ((D.priv.meta || {}).thSkip || {})[id.replace(':', '_')] || [];
+async function openThemeTool() {
+  if (!TH_SUG) { try { TH_SUG = await getJson('data/theme-suggest.json', 15000); } catch (e) { toast('추천 파일을 못 읽었어요. 인터넷을 확인해 주세요'); return; } }
+  const target = (key) => { if (key.startsWith('lib:')) { const it = D.lib.find((x) => x.id === key.slice(4)); return it && !it.w ? { key, lib:it, t:it.t, a:it.a, th:it.th || [] } : null; } const w = D.works.get(key); return w ? { key, w, t:titleOf(w), a:w.a, th:w.th } : null; };
+  // 나만 보기·서재에만 있는 책의 추천은 공개 파일에 두지 않고 비공개 칸 meta/thSuggest(같은 모양, 키의 ':'는 '_')에 둔다(2026-11-15 검토자 지적)
+  const privSug = Object.fromEntries(Object.entries((D.priv.meta || {}).thSuggest || {}).map(([k, v]) => [k.replace(/^lib_/, 'lib:'), v]));
+  const all = Object.entries({ ...(TH_SUG.s || {}), ...privSug }).map(([key, v]) => { const x = target(key); if (!x) return null; const conf = v[v.length - 1] === 'm' ? 'm' : 'h'; const add = v.filter((t) => t !== 'h' && t !== 'm' && THEMES.some(([n]) => n === t) && !x.th.includes(t)); return add.length ? { ...x, add, conf, why:(TH_SUG.why || {})[key] || '' } : null; }).filter(Boolean)
+    .sort((a, b) => KO.compare(a.t || '', b.t || ''));
+  const fresh = (r) => r.add.filter((t) => !thSkipOf(r.key).includes(t));
+  const pick = new Map(); // key → Set(고른 주제)
+  const by = el('select', { ariaLabel:'추천 주제' }, el('option', { value:'', textContent:'모든 추천 주제' }), THEMES.map(([t]) => el('option', { value:t, textContent:t })));
+  const conf = el('select', { ariaLabel:'확신' }, el('option', { value:'', textContent:'확실 + 그럴 법함' }), el('option', { value:'h', textContent:'확실한 것만' }), el('option', { value:'m', textContent:'그럴 법한 것만' }));
+  const head = el('p', { className:'warn', role:'status' }), box = el('div', { className:'fill-list th-list' }), hidden = el('details', { className:'fold-more' });
+  let upd = () => {}, rows = [];
+  const chip = (r, t, on) => { const b = el('button', { type:'button', className:'chip th-chip', textContent:t }); b.setAttribute('aria-pressed', on); b.style.setProperty('--c', themeVar(t)); b.onclick = () => { const s = pick.get(r.key) || new Set(); if (s.has(t)) s.delete(t); else s.add(t); pick.set(r.key, s); b.setAttribute('aria-pressed', s.has(t)); upd(); }; return b; };
+  const row = (r, list) => el('div', { className:'dup-row fill-row' }, el('strong', { textContent:r.t || '제목 없음' }),
+    el('div', { className:'when', textContent:[r.a ? firstAuthorOf(r.a) : '저자 없음', `지금: ${r.th.join(' · ') || '주제 없음'}`, r.lib ? '서재에만 있는 책' : '', r.why, r.conf === 'm' ? '그럴 법함' : ''].filter(Boolean).join(' · ') }),
+    el('div', { className:'th-chips' }, list.map((t) => chip(r, t, (pick.get(r.key) || new Set()).has(t)))));
+  const draw = () => {
+    rows = all.filter((r) => fresh(r).length && (!by.value || fresh(r).includes(by.value)) && (!conf.value || r.conf === conf.value));
+    const nT = rows.reduce((a, r) => a + fresh(r).length, 0);
+    head.textContent = rows.length ? `더 붙일 만한 주제가 있는 책 ${rows.length}권 · 추천 ${nT}개. 확실한 추천은 미리 골라 뒀어요. 누르면 풀리고, 다시 누르면 골라져요. 저장하면 고른 주제는 책 뒤에 붙고, 고르지 않은 추천은 다음부터 숨겨요.` : '남은 추천이 없어요.';
+    box.replaceChildren(...rows.map((r) => row(r, fresh(r))));
+    const gone = all.filter((r) => r.add.some((t) => thSkipOf(r.key).includes(t)));
+    hidden.hidden = !gone.length;
+    if (gone.length) {
+      const again = el('button', { className:'copy', type:'button', textContent:'숨긴 추천 다시 보기' });
+      again.onclick = async () => { try { const keys = gone.map((r) => r.key.replace(':', '_')); await write('meta/thSkip', Object.fromEntries(keys.map((k) => [k, null])), 'update'); const m = D.priv.meta || {}; if (m.thSkip) keys.forEach((k) => delete m.thSkip[k]); draw(); } catch (e) { saveFailed(e); } };
+      hidden.replaceChildren(el('summary', { textContent:`숨긴 추천이 있는 책 ${gone.length}권` }), again);
+    }
+    upd();
+  };
+  all.forEach((r) => { if (r.conf === 'h') pick.set(r.key, new Set(fresh(r))); });
+  [by, conf].forEach((s) => s.addEventListener('change', draw));
+  showForm('주제 더 붙이기', [el('small', { textContent:'Claude가 책장 책 전부를 다시 살펴 더 붙일 만한 주제를 골라 뒀어요(2026-11-15). 있는 주제는 그대로 두고 뒤에 붙여요. 첫 주제가 대표라 책등 띠·서재 칸은 그대로예요.' }), el('div', { className:'read-filters' }, field('추천 주제', by), field('확신', conf)), head, box, hidden], async () => {
+    const works = {}, lib = {}, skip = {}, shown = new Set(rows.map((r) => r.key));
+    all.filter((r) => fresh(r).length).forEach((r) => { // 고른 주제는 거르기 칸 밖으로 숨은 책 것까지 저장하고, 숨기기는 지금 보이는 책만(2026-11-15 제미나이 지적)
+      const on = [...(pick.get(r.key) || [])].filter((t) => fresh(r).includes(t)), off = shown.has(r.key) ? fresh(r).filter((t) => !on.includes(t)) : [];
+      if (off.length) skip[r.key.replace(':', '_')] = [...new Set([...thSkipOf(r.key), ...off])];
+      if (!on.length) return;
+      if (r.lib) { const raw = (D.priv.library || {})[r.lib.id]; if (raw) lib[r.lib.id] = JSON.parse(JSON.stringify({ ...raw, th:[...(raw.th || []), ...on] })); }
+      else { const cur = D.works.get(r.key); works[r.key] = storedWork({ ...cur, th:[...cur.th, ...on] }); }
+    });
+    const n = Object.keys(works).length + Object.keys(lib).length;
+    if (!n && !Object.keys(skip).length) throw fail('고른 주제가 없어요');
+    if (n && !(await ask(`${n}권에 주제를 더 붙여요. 고르지 않은 추천 ${Object.values(skip).length ? '은 다음부터 숨겨요' : '은 없어요'}. 저장할까요?`, '저장'))) return 'stay';
+    if (Object.keys(works).length) await write('works', works, 'update');
+    if (Object.keys(lib).length) await write('library', lib, 'update');
+    if (Object.keys(skip).length) await write('meta/thSkip', skip, 'update');
+    Object.entries(works).forEach(([id, v]) => setPriv('works', id, v));
+    Object.entries(lib).forEach(([id, v]) => setPriv('library', id, v));
+    const m = D.priv.meta = D.priv.meta || {}; m.thSkip = { ...(m.thSkip || {}), ...skip };
+    refreshAll();
+    toast(`${n}권에 주제를 더 붙였어요${LOCAL ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
+  }, '고른 주제 저장');
+  upd = footCount('고른 주제', () => all.reduce((a, r) => a + [...(pick.get(r.key) || [])].filter((t) => fresh(r).includes(t)).length, 0));
+  const allOn = el('button', { className:'copy', type:'button', textContent:'모두 고르기' });
+  allOn.onclick = () => { rows.forEach((r) => pick.set(r.key, new Set(fresh(r)))); draw(); };
+  const allOff = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
+  allOff.onclick = () => { rows.forEach((r) => pick.delete(r.key)); draw(); };
+  $('form-body').querySelector('.pick-sum').append(allOn, allOff);
+  draw();
+}
+if ($('themeMore')) $('themeMore').onclick = openThemeTool;
 if ($('memoBin')) $('memoBin').onclick = () => openMemoBin();
 if ($('memoOverlap')) $('memoOverlap').onclick = openMemoOverlap;
 const fail = (m) => { const e = new Error(m); e.userMsg = m; return e; };

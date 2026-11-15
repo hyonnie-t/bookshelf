@@ -72,8 +72,11 @@ button { cursor:pointer; }
 .est { display:block; white-space:nowrap; writing-mode:horizontal-tb; position:absolute; bottom:6px; left:50%; transform:translateX(-50%); font-size:.75rem; line-height:1.3; font-family:var(--font-body); font-weight:500; font-style:normal; }
 .spine.guess { padding-bottom:var(--space-4); --lb:23px; }
 /* 자세: 기대어 선 책(선반 끝, 7~11°)과 눕혀 쌓은 책(가로 제목 22px). 오른쪽 아래 모서리를 축으로 기울어 판 위에 서고, 기울어 나가는 만큼 오른쪽에 여백을 둔다 */
-.slot.lean { padding-left:3px; padding-right:calc(var(--gap,0px) + 1px); } /* 여백을 slot 안쪽에 둬 선반 판이 끊기지 않게 */
-.spine.lean { transform:rotate(var(--tilt)); transform-origin:bottom right; }
+.slot.lean { padding-left:var(--gap,0px); padding-right:var(--space-1); } /* 왼쪽 책에 기댄다(2026-11-15): 아래 여백만큼 벌어져 윗부분이 옆 책에 닿는다. 여백을 slot 안쪽에 둬 선반 판이 끊기지 않게 */
+.spine.lean { transform:rotate(var(--tilt)); transform-origin:bottom left; }
+.slot.lean.alone { padding-left:1px; padding-right:1px; } /* 줄 맨 앞으로 넘어가 받칠 책이 없으면 바로 선다 */
+.slot.lean.alone .spine.lean { transform:none; animation:none; }
+.slot.lean.alone .spine.lean:hover,.slot.lean.alone .spine.lean:focus-visible { transform:translateY(-6px); }
 .spine.lean:hover,.spine.lean:focus-visible { transform:translateY(-6px) rotate(var(--tilt)); }
 .slot.pile { flex-direction:column-reverse; align-items:flex-start; height:auto; }
 .spine.lie { --lt:0px; flex:none; height:22px; padding:0 var(--space-2) 0 var(--space-2); gap:var(--space-1); justify-content:flex-start; writing-mode:horizontal-tb; font-size:.75rem; line-height:1; border:1px solid rgba(0,0,0,.22); border-radius:2px; }
@@ -174,6 +177,10 @@ a.copy { color:var(--ink); text-decoration:none; display:inline-block; }
 .field textarea { resize:vertical; line-height:1.6; }
 .field small { color:var(--muted); }
 .checks { display:flex; flex-wrap:wrap; gap:2px var(--space-3); }
+.checks.geul-list { flex-direction:column; flex-wrap:nowrap; gap:var(--space-1); max-height:50vh; overflow-y:auto; } /* 글감 서랍으로 보내기(2026-11-15): 책 한 줄씩 */
+.geul-list .check { color:var(--ink); min-height:32px; }
+.geul-list .check small { color:var(--muted); }
+.drill-top { display:flex; justify-content:flex-end; margin-bottom:var(--space-2); }
 .form-err { margin:0; color:#a3323a; font-size:.9rem; }
 dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copy.danger, :root:not([data-theme="light"]) .form-err { color:#f0a4aa; } }
@@ -249,6 +256,8 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .lib-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:2px var(--space-3); }
 .lib-tools .row { min-width:0; align-items:center; }
 .sort-label { flex:none; color:var(--muted); font-size:.86rem; margin-right:2px; }
+#libSort { flex-wrap:wrap; align-items:center; } /* 꽂는 순서 + 보기(책등/납작, 2026-11-15): 폰에서 «보기»가 화면 밖으로 숨지 않게 다음 줄로 */
+#libSort .sort-label + .chip ~ .sort-label { margin-left:var(--space-2); }
 .shelf-head h2 .sw { display:inline-block; width:.6em; height:.6em; border-radius:2px; margin-right:var(--space-2); vertical-align:.06em; }
 /* 주제 칸: 몇 권 안 되는 칸은 옆으로 나란히 놓아 빈 선반이 길게 이어지지 않게 한다 */
 #cases.by-theme { display:flex; flex-wrap:wrap; align-items:flex-start; column-gap:var(--space-3); }
