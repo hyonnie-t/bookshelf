@@ -1885,7 +1885,7 @@ function monthReview(ry) {
 /* 이달에 남긴 물음표(2026-11-16, 효니 말 «그달의 내 물음이 문장이 어색해»: 이름은 효니가 고르고, 답이 없으면 이 이름).
    그달 메모·밑줄의 내 생각·기록 본문에서 효니가 쓴 «?» 문장만(js/month.js monthQuestions). AI가 짓지 않는다. 주인 화면만, 결산 그림에는 넣지 않는다.
    «다른 물음표»는 볼 순서만 넘기고(S.rq, 메모리에만) 저장하지 않는다 */
-const Q_LABEL = '이달에 남긴 물음표';
+const Q_LABEL = '아직 답하지 못한 질문'; // 효니 결정 2026-11-16 «아직 답하지 못한 질문»
 const Q_SRC = { note:'메모', mark:'밑줄에 쓴 내 생각', rec:'기록' };
 function monthQuestionBox(ym) {
   const qs = monthQuestions(list(), ym, { known:isKnown });
@@ -1896,7 +1896,7 @@ function monthQuestionBox(ym) {
     const x = qs[S.rq % qs.length], [, mm, dd] = x.d.split('-');
     const book = el('button', { className:'chip mbook', type:'button', textContent:titleOf(x.w) });
     book.onclick = () => openBook(x.w.id, book);
-    const more = qs.length > 1 ? el('button', { className:'copy', type:'button', textContent:`다른 물음표 (${S.rq % qs.length + 1}/${qs.length})` }) : null;
+    const more = qs.length > 1 ? el('button', { className:'copy', type:'button', textContent:`다른 질문 (${S.rq % qs.length + 1}/${qs.length})` }) : null;
     if (more) more.onclick = () => { S.rq = (S.rq + 1) % qs.length; draw(); box.querySelector('.mquestion').classList.add('turned'); box.querySelector('button.copy').focus({ preventScroll:true }); };
     box.replaceChildren(el('h3', { className:'recap-sec', textContent:Q_LABEL }),
       el('figure', { className:'mquote mquestion' }, el('blockquote', { textContent:x.q }), el('figcaption', { className:'mq-cap' }, book, el('span', { textContent:`${+mm}월 ${+dd}일 ${Q_SRC[x.src]}` }))),
