@@ -746,6 +746,17 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 .mnote { margin:var(--space-2) 0 0; font-size:.78rem; }
 .msave { margin-top:var(--space-3); }
 .month-card.turned .profile-head, .month-card.turned .mtiles, .month-card.turned .mpara { animation:drillIn .22s ease both; }
+/* 이달에 남긴 물음표·결산 글감·연말 결산 (2026-11-16 저녁) */
+.msaves { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+.mqbox > .copy { margin-top:var(--space-2); }
+.mquestion blockquote::before { content:'?'; display:inline-block; margin-right:var(--space-2); color:var(--accent); font-weight:700; }
+.mq-cap { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-2); }
+.mquestion.turned { animation:drillIn .22s ease both; }
+.ylist { list-style:none; margin:var(--space-3) 0 0; padding:0; display:grid; gap:var(--space-2); }
+.ylist li { display:grid; gap:var(--space-1); max-width:62ch; font-size:.95rem; }
+.ylist strong { color:var(--accent); font-size:.85rem; }
+.ychips { flex-wrap:wrap; gap:var(--space-2); margin-top:var(--space-2); }
+.year-card .mpara { margin-top:var(--space-3); }
 
 /* 혹시 이 책? 후보 */
 .guess-box { display:grid; gap:var(--space-2); margin-top:var(--space-2); }
