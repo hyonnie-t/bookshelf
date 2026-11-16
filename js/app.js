@@ -1796,7 +1796,7 @@ function shownMonth(ry) {
 function setMonth(ym, focusSel) {
   S.rm = ym; closeDrill();
   renderRecap();
-  const card = $('recap').querySelector('.month-card');
+  const card = $('recap').querySelector('.month-card:not(.year-card)'); // 해를 고르면 연말 결산 카드가 앞에 온다(검토자 지적 2026-11-16)
   if (!card) return;
   card.classList.add('turned');
   const b = focusSel && card.querySelector(focusSel);
@@ -2006,7 +2006,7 @@ async function saveCardImage(make, name, btn) {
    묶음은 «해마다 읽은 책» 막대와 같은 readYear(처음 다 읽은 해). 나만 보기 책은 제목·책등에서만 빼고 숫자에는 센다(효니 결정 2026-11-16 «지금처럼 셈»).
    주인 화면·효니 책장만, 저장하는 칸이 없다 */
 function yearReview(ry, books, allBooks) {
-  const opt = { firstAuthor:firstAuthorOf, thick:bookThick, only:isOnlyMe };
+  const opt = { firstAuthor:firstAuthorOf, thick:bookThick, only:isOnlyMe, known:isKnown };
   const cur = yearStats(books, list(), ry, opt);
   if (!cur.doneN) return null;
   const pb = allBooks.filter((w) => readYear(w) === String(+ry - 1));
@@ -2046,8 +2046,12 @@ async function yearCanvas(cur, v, photos) {
   let y = top + 150 + 40;
   v.items.slice(0, 4).forEach(([label, text]) => {
     g.fillStyle = C.accent; g.font = `700 30px ${body}`; g.fillText(`📌 ${label}`, pad, y);
-    g.fillStyle = C.ink; g.font = `500 28px ${body}`; g.fillText(fitText(g, text, W0 - pad * 2), pad, y + 42);
-    y += 96;
+    g.fillStyle = C.ink; g.font = `500 28px ${body}`;
+    // 두 줄까지 감싸고 넘치면 둘째 줄 끝을 줄인다(제목이 둘 이상이면 끝 말이 잘렸다, 검토자 지적 2026-11-16)
+    const max = W0 - pad * 2, lines = [''];
+    [...text].forEach((ch) => { const t = lines[lines.length - 1] + ch; if (g.measureText(t).width > max && lines.length < 2) lines.push(ch.trim() ? ch : ''); else lines[lines.length - 1] = t; });
+    lines.forEach((t, i) => g.fillText(fitText(g, t, max), pad, y + 42 + i * 38));
+    y += 42 + lines.length * 38 + 16;
   });
   const rateOf = (w) => Math.max(-1, ...w.recs.filter((r) => r.st !== 'unread' && r.r != null).map((r) => r.r));
   const shelf = cur.books.filter((w) => !isOnlyMe(w)).sort((a, b) => rateOf(b) - rateOf(a) || (firstRead(a) || '').localeCompare(firstRead(b) || '')).slice(0, 40);

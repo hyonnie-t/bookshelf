@@ -197,6 +197,7 @@ export function questionsIn(text) {
       const s = raw.replace(Q_LEAD, '').trim();
       if (!Q_END.test(s) || s.length < 6 || s.length > 140) return;
       if (/[(（][?？]+[)）]$/.test(s)) return; // «모르겠다(?)»는 효니 혼잣말 버릇이지 물음이 아니다
+      if (/https?:\/\//.test(s)) return; // 주소 끝의 «?»는 물음이 아니다(검토자 지적)
       if (!/[가-힣]/.test(s.replace(/#\S+/g, ''))) return; // 해시태그·영어만 있는 줄은 뺀다
       out.push(s);
     });
@@ -239,8 +240,10 @@ export function yearStats(books, all, y, opt = {}) {
   bs.forEach((w) => (w.th || []).forEach((t) => { tc[t] = (tc[t] || 0) + 1; }));
   const themes = Object.entries(tc).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko')).slice(0, 3);
   // 다시 편 책: 그해에 다 읽은 기록이 있고 그 전 해에도 다 읽은 기록이 있는 책(처음 읽은 해가 아니라 «완독한 책» 수에는 안 든다)
+  const known = opt.known || ((w) => w.known !== false);
   const allBooks = all.filter(isBook);
-  const again = allBooks.filter((w) => { const ds = doneRecs(w).map((r) => r.d || '').filter((d) => /^\d{4}/.test(d)); return ds.some(inY) && ds.some((d) => d.slice(0, 4) < y); }).sort(byTitle);
+  // 제목 미확인 책은 막대·완독 수처럼 뺀다(검토자 지적)
+  const again = allBooks.filter(known).filter((w) => { const ds = doneRecs(w).map((r) => r.d || '').filter((d) => /^\d{4}/.test(d)); return ds.some(inY) && ds.some((d) => d.slice(0, 4) < y); }).sort(byTitle);
   let marks = 0;
   allBooks.forEach((w) => (w.marks || []).forEach((m) => { if (inY(m.d)) marks++; }));
   const mc = {};
@@ -261,7 +264,7 @@ export function yearVoice(cur, prev, ctx = {}) {
   const big = cur.doneN ? `완독한 책 ${cur.doneN}권 👏` : '완독한 책은 아직 없어요 🫣';
   const list = (ws, n) => { const xs = ws.slice(0, n).map((w) => `«${title(w)}»`); return ws.length > n ? `${xs.join(', ')} 외 ${ws.length - n}권` : xs.join(', '); };
   const items = [];
-  if (cur.shownTop.length) {
+  if (cur.shownTop.length && cur.best >= 4) { // 낮은 별점뿐인 해에 «제일 좋았던 책»이라 하지 않는다(검토자 지적)
     const many = cur.shownTop.length > 1;
     items.push(['가장 높게 준 책', `${list(cur.shownTop, 3)}. ${pick(many ? ['올해 제일 좋았던 책들이에요 💕', '두고두고 추천할 거 같습니다 ㅎㅎ'] : ['올해 제일 좋았던 책이에요 💕', '한동안 계속 추천할 거 같습니다 ㅎㅎ'], 'top')}`]);
   }

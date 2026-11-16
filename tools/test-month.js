@@ -147,6 +147,12 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     assert.ok(M.yearVoice(cur, big, { ongoing:true }).more[0].includes('2025년엔 8권이었어요'), '진행 중인 해');
     assert.ok(M.yearVoice(cur, prev, { ongoing:true }).more[0].includes('벌써 2025년보다 3권 더'));
     assert.strictEqual(M.yearVoice(M.yearStats([], [], '2027', {}), null, {}).big, '완독한 책은 아직 없어요 🫣');
+    // 제목 미확인 책은 다시 편 책에서 빠지고, 낮은 별점뿐이면 «가장 높게 준 책» 줄을 안 쓴다
+    const unk = W('u1', { t:'모름', known:false, recs:[{ d:'2024-01-01' }, { d:'2026-02-01' }] });
+    assert.ok(!M.yearStats(ys, [...ys, unk], '2026', {}).again.some((w) => w.id === 'u1'));
+    const low = M.yearStats([W('l1', { t:'낮음', recs:[{ d:'2026-02-01', r:1.5 }] })], [], '2026', {});
+    assert.ok(!M.yearVoice(low, null, {}).items.some(([l]) => l === '가장 높게 준 책'));
+    assert.deepStrictEqual(M.questionsIn('자료는 https://a.com/x? 보세요'), []);
   });
   console.log(`통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });
