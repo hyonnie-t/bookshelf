@@ -184,3 +184,108 @@ export function nextBooks(lib, works, opt) {
   });
   return out.sort((a, b) => b.score - a.score || String(a.it.t).localeCompare(String(b.it.t), 'ko')).slice(0, opt.max || 6);
 }
+
+// 그달 내 물음표(2026-11-16, 효니 말 «그달의 내 물음이 문장이 어색해» → 이름은 효니가 고름, 기본 «이달에 남긴 물음표»).
+// 그달 날짜가 붙은 메모 본문(notes[].b)·밑줄의 내 생각(marks[].why)·기록 본문(recs[].b)에서 «?»로 끝나는 효니 문장만 모은다.
+// 책 문장(marks[].q)은 넣지 않고, AI가 질문을 짓지 않는다. 맨 앞은 달마다 같은 하나(hash), 나머지는 «다른 물음표»로 넘긴다.
+const Q_END = /[?？]+["'”’)\]」』〉》]*$/;
+const Q_LEAD = /^[\s\-–—·•*>#📌👉🔖📖✔💕👀]+/u;
+export function questionsIn(text) {
+  const out = [];
+  String(text || '').split(/\n+/).forEach((line) => {
+    line.split(/(?<=[.!?？…。]["'”’)\]」』〉》]*)\s+/).forEach((raw) => { // 닫는 따옴표·괄호까지 붙여 자른다(«"정말일까?" 그래서» 놓침, 제미나이 지적 2026-11-16)
+      const s = raw.replace(Q_LEAD, '').trim();
+      if (!Q_END.test(s) || s.length < 6 || s.length > 140) return;
+      if (/[(（][?？]+[)）]$/.test(s)) return; // «모르겠다(?)»는 효니 혼잣말 버릇이지 물음이 아니다
+      if (/https?:\/\//.test(s)) return; // 주소 끝의 «?»는 물음이 아니다(검토자 지적)
+      if (!/[가-힣]/.test(s.replace(/#\S+/g, ''))) return; // 해시태그·영어만 있는 줄은 뺀다
+      out.push(s);
+    });
+  });
+  return out;
+}
+// opt.known(w) = 제목 확인된 책인지(앱의 w.known). 책만, 날짜가 그달인 글만
+export function monthQuestions(works, ym, opt = {}) {
+  const known = opt.known || ((w) => w.known !== false);
+  const out = [], seen = new Set();
+  const add = (w, d, text, src) => questionsIn(text).forEach((q) => { const k = q.replace(/\s+/g, ''); if (seen.has(k)) return; seen.add(k); out.push({ w, d, q, src }); });
+  works.filter((w) => isBook(w) && known(w)).forEach((w) => {
+    (w.notes || []).forEach((n) => { if (inMonth(n.d, ym)) add(w, n.d, n.b, 'note'); });
+    (w.marks || []).forEach((m) => { if (inMonth(m.d, ym)) add(w, m.d, m.why, 'mark'); });
+    (w.recs || []).forEach((r) => { if (inMonth(r.d, ym)) add(w, r.d, r.b, 'rec'); });
+  });
+  out.sort((a, b) => a.d.localeCompare(b.d) || a.q.localeCompare(b.q, 'ko'));
+  const start = out.length ? hash(ym + '?') % out.length : 0;
+  return [...out.slice(start), ...out.slice(0, start)]; // 맨 앞이 그달의 하나
+}
+
+// 연말 결산(2026-11-16, 효니 «1,2,3 다 해도 될 거 같은데»). 이번 달 결산 카드의 1년판.
+// books = 그해 다 읽은 책(앱의 readYear === y와 같은 묶음: 처음 다 읽은 해), all = 모든 기록(다시 편 책·밑줄을 센다)
+// opt = { firstAuthor(a), thick(w), only(w): 나만 보기인지(제목 목록에서만 뺀다, 숫자는 센다) }
+export function yearStats(books, all, y, opt = {}) {
+  const fa = opt.firstAuthor || ((a) => String(a || '').split(/[,·]/)[0].trim());
+  const thick = opt.thick || (() => 0), only = opt.only || (() => false);
+  const bs = books.filter(isBook);
+  const inY = (d) => typeof d === 'string' && d.startsWith(y);
+  const byTitle = (a, b) => String(a.t || '').localeCompare(String(b.t || ''), 'ko');
+  // 별점: 그해 기록의 가장 높은 점수(그해 별점이 없으면 다른 해 기록)
+  const rateOf = (w) => { const rs = doneRecs(w).filter((r) => r.r != null); const iy = rs.filter((r) => inY(r.d)); const use = iy.length ? iy : rs; return use.length ? Math.max(...use.map((r) => r.r)) : null; };
+  const rated = bs.map((w) => ({ w, r:rateOf(w) })).filter((x) => x.r != null);
+  const best = rated.length ? Math.max(...rated.map((x) => x.r)) : null;
+  const top = best == null ? [] : rated.filter((x) => x.r === best).map((x) => x.w).sort(byTitle);
+  const ac = new Map();
+  bs.forEach((w) => { const a = fa(w.a); if (a) ac.set(a, (ac.get(a) || 0) + 1); });
+  const authors = [...ac].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko')).slice(0, 3);
+  const tc = {};
+  bs.forEach((w) => (w.th || []).forEach((t) => { tc[t] = (tc[t] || 0) + 1; }));
+  const themes = Object.entries(tc).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko')).slice(0, 3);
+  // 다시 편 책: 그해에 다 읽은 기록이 있고 그 전 해에도 다 읽은 기록이 있는 책(처음 읽은 해가 아니라 «완독한 책» 수에는 안 든다)
+  const known = opt.known || ((w) => w.known !== false);
+  const allBooks = all.filter(isBook);
+  // 제목 미확인 책은 막대·완독 수처럼 뺀다(검토자 지적)
+  const again = allBooks.filter(known).filter((w) => { const ds = doneRecs(w).map((r) => r.d || '').filter((d) => /^\d{4}/.test(d)); return ds.some(inY) && ds.some((d) => d.slice(0, 4) < y); }).sort(byTitle);
+  let marks = 0;
+  allBooks.forEach((w) => (w.marks || []).forEach((m) => { if (inY(m.d)) marks++; }));
+  const mc = {};
+  bs.forEach((w) => { const d = doneRecs(w).map((r) => r.d).filter((x) => DAY.test(x || '') && inY(x)).sort()[0]; if (d) mc[d.slice(5, 7)] = (mc[d.slice(5, 7)] || 0) + 1; });
+  const bestM = Object.entries(mc).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || null;
+  let mm = 0, measured = 0;
+  bs.forEach((w) => { const t = +thick(w) || 0; if (t > 0) { mm += t; measured++; } });
+  return { y, books:bs, doneN:bs.length, best, top, authors, themes, again, marks, bestM, mm, measured, shownTop:top.filter((w) => !only(w)), shownAgain:again.filter((w) => !only(w)) };
+}
+
+// 연말 결산 말투: 효니 인스타 «추천·결산» 갈래(효니위키 사람/효니-문체.md 표: 존댓말 «~요/~습니다», 📌·👉 목록, ㅎㅎ 잦음.
+// 대표 글 «9월 #독서결산 / 완독한 책 11권 👏 / 📌 #책 / 저자»). 책 제목은 나만 보기를 뺀 목록(shownTop·shownAgain)만 쓴다(화면·그림 같은 문장).
+// cur·prev = yearStats 결과(prev 없으면 비교 안 함), ctx.title(w)
+export function yearVoice(cur, prev, ctx = {}) {
+  const title = ctx.title || ((w) => w.t || '');
+  const pick = (arr, tag) => arr[hash(`${cur.y}|${tag}`) % arr.length];
+  const head = `${cur.y}년 #독서결산`;
+  const big = cur.doneN ? `완독한 책 ${cur.doneN}권 👏` : '완독한 책은 아직 없어요 🫣';
+  const list = (ws, n) => { const xs = ws.slice(0, n).map((w) => `«${title(w)}»`); return ws.length > n ? `${xs.join(', ')} 외 ${ws.length - n}권` : xs.join(', '); };
+  const items = [];
+  if (cur.shownTop.length && cur.best >= 4) { // 낮은 별점뿐인 해에 «제일 좋았던 책»이라 하지 않는다(검토자 지적)
+    const many = cur.shownTop.length > 1;
+    items.push(['가장 높게 준 책', `${list(cur.shownTop, 3)}. ${pick(many ? ['올해 제일 좋았던 책들이에요 💕', '두고두고 추천할 거 같습니다 ㅎㅎ'] : ['올해 제일 좋았던 책이에요 💕', '한동안 계속 추천할 거 같습니다 ㅎㅎ'], 'top')}`]);
+  }
+  if (cur.authors.length) {
+    const [a, n] = cur.authors[0];
+    items.push(['많이 읽은 저자', `${a} 작가님 책을 ${n}권이나 읽었어요${cur.authors.length > 1 ? ` (${cur.authors.slice(1).map(([x, k]) => `${x} ${k}권`).join(', ')}도요)` : ''} ㅎㅎ`]);
+  }
+  if (cur.themes.length) {
+    const [t, n] = cur.themes[0];
+    const rest = cur.themes.slice(1).map(([x, k]) => `${x} ${k}권`).join(', ');
+    items.push(['많이 읽은 주제', `${t} ${n}권${rest ? `, ${rest}` : ''}. ${cur.doneN && n / cur.doneN >= .4 ? '역시 손이 가는 데로 갔습니다 ㅎㅎ' : '이것저것 골고루 읽었더라구요 👀'}`]);
+  }
+  if (cur.again.length) {
+    const hid = cur.again.length - cur.shownAgain.length;
+    items.push(['다시 편 책', `${cur.shownAgain.length ? list(cur.shownAgain, 2) + (hid ? ` 말고도 ${hid}권 더` : '') : `${cur.again.length}권`}. 한 번으로는 안 끝나는 책이 있더라구요`]);
+  }
+  const more = [];
+  // 아직 안 끝난 해(ctx.ongoing)는 덜 읽었다고 하지 않는다(앱 성향 문장도 올해는 지난해와 견주지 않는다)
+  if (prev && prev.doneN && cur.doneN && ctx.ongoing) { const d = cur.doneN - prev.doneN; more.push(d >= 0 ? `벌써 ${+cur.y - 1}년보다 ${d ? `${d}권 더` : '많이'} 읽었어요 👏` : `${+cur.y - 1}년엔 ${prev.doneN}권이었어요. 남은 날 동안 얼마나 더 읽을지 ㅎㅎ`); }
+  else if (prev && prev.doneN && cur.doneN) { const d = cur.doneN - prev.doneN; more.push(d > 0 ? `${+cur.y - 1}년보다 ${d}권 더 읽었어요 👏` : d < 0 ? `${+cur.y - 1}년보다 ${-d}권 덜 읽었어요. 바빴던 해라고 해 둘게요 🫠` : `${+cur.y - 1}년이랑 똑같이 ${cur.doneN}권이에요. 꾸준하다고 봐도 되겠죠? ㅎㅎ`); }
+  if (cur.bestM && cur.bestM[1] >= 2) more.push(['01', '02', '07', '08'].includes(cur.bestM[0]) ? `${+cur.bestM[0]}월에 제일 많이 읽었어요(${cur.bestM[1]}권). 역시 방학 덕분인 거 같아요 ㅎㅎ` : `${+cur.bestM[0]}월에 제일 많이 읽었어요(${cur.bestM[1]}권). 학기 중인데 어떻게 읽었는지 저도 모르겠어요(?)`);
+  if (cur.marks) more.push(`밑줄은 ${cur.marks}개 그었습니다 ✍`);
+  return { head, big, items, more };
+}

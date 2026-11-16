@@ -95,5 +95,64 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     assert.ok(got[0].why[1].includes('평균 4.8점'), got[0].why.join('|'));
     assert.ok(got[1].why[0].includes('요즘 자주 읽는 역사'));
   });
+  ok('그달 내 물음표', () => {
+    assert.deepStrictEqual(M.questionsIn('첫 문장이다. 이 사람은 왜 끝까지 버텼을까? 잘 모르겠다(?)\n📌 다음엔 뭘 읽지??\n#해시태그?\n짧다?'), ['이 사람은 왜 끝까지 버텼을까?', '다음엔 뭘 읽지??']);
+    assert.deepStrictEqual(M.questionsIn('"정말 그게 최선이었을까?" 그래서 다시 읽었다.'), ['"정말 그게 최선이었을까?"'], '닫는 따옴표 뒤에서 자른다');
+    const qs = [
+      W('q1', { t:'물음 책', notes:[{ d:'2026-10-03', b:'메모다. 나라면 그때 떠날 수 있었을까?' }, { d:'2026-09-03', b:'지난달 물음은 아닐까?' }],
+        marks:[{ d:'2026-10-04', q:'책 문장은 넣지 않는 걸까?', why:'이 말이 왜 계속 남을까?' }],
+        recs:[{ d:'2026-10-05', r:4, b:'다 읽었다. 결국 누구의 이야기였을까?' }] }),
+      W('q2', { t:'미확인', known:false, notes:[{ d:'2026-10-06', b:'제목 모르는 책의 물음일까?' }] }),
+      W('q3', { t:'영화', k:'film', notes:[{ d:'2026-10-06', b:'영화 메모의 물음일까?' }] }),
+    ];
+    const got = M.monthQuestions(qs, '2026-10', { known });
+    assert.deepStrictEqual(got.map((x) => x.q).sort(), ['결국 누구의 이야기였을까?', '나라면 그때 떠날 수 있었을까?', '이 말이 왜 계속 남을까?'].sort(), '책 문장(q)·지난달·미확인·영화는 빠진다');
+    assert.deepStrictEqual(got.map((x) => x.src).sort(), ['mark', 'note', 'rec']);
+    assert.deepStrictEqual(M.monthQuestions(qs, '2026-10', { known }).map((x) => x.q), got.map((x) => x.q), '달마다 같은 순서');
+    assert.deepStrictEqual(M.monthQuestions(qs, '2026-11', { known }), []);
+  });
+  ok('연말 결산', () => {
+    const ys = [
+      W('y1', { t:'가책', a:'김작가', th:['역사'], recs:[{ d:'2026-01-05', r:5 }] }),
+      W('y2', { t:'나책', a:'김작가', th:['역사'], recs:[{ d:'2026-01-20', r:5 }], only:true }),
+      W('y3', { t:'다책', a:'이작가', th:['소설'], recs:[{ d:'2026-03-01', r:4 }], marks:[{ d:'2026-03-02', q:'밑줄' }, { d:'2025-03-02', q:'지난해' }] }),
+      W('y4', { t:'라책', a:'김작가', th:['역사', '여성'], recs:[{ d:'2026', r:3 }] }),
+    ];
+    const re = W('r9', { t:'다시책', a:'박작가', th:['소설'], recs:[{ d:'2022-05-01', r:4 }, { d:'2026-07-01', r:5 }] });
+    const re2 = W('r8', { t:'숨긴다시책', only:true, recs:[{ d:'2020', r:4 }, { d:'2026-08-01' }] });
+    const only = (w) => !!w.only;
+    const cur = M.yearStats(ys, [...ys, re, re2], '2026', { firstAuthor:K.firstAuthorOf, only, thick:(w) => (w.id === 'y1' ? 20 : 0) });
+    assert.strictEqual(cur.doneN, 4);
+    assert.strictEqual(cur.best, 5);
+    assert.deepStrictEqual(cur.top.map((w) => w.id), ['y1', 'y2']);
+    assert.deepStrictEqual(cur.shownTop.map((w) => w.id), ['y1'], '나만 보기는 제목 목록에서 빠진다');
+    assert.deepStrictEqual(cur.authors, [['김작가', 3]]);
+    assert.deepStrictEqual(cur.themes[0], ['역사', 3]);
+    assert.deepStrictEqual(cur.again.map((w) => w.id), ['r9', 'r8'], '다시 편 책(연도만 적힌 기록도, 제목순)');
+    assert.deepStrictEqual(cur.shownAgain.map((w) => w.id), ['r9']);
+    assert.strictEqual(cur.marks, 1);
+    assert.deepStrictEqual(cur.bestM, ['01', 2]);
+    assert.strictEqual(cur.mm, 20);
+    const prev = M.yearStats([ys[0]], ys, '2025', {});
+    const v = M.yearVoice(cur, prev, { title:(w) => w.t });
+    assert.strictEqual(v.big, '완독한 책 4권 👏');
+    const all = [v.head, v.big, ...v.items.map((x) => x.join(' ')), ...v.more].join('\n');
+    assert.ok(!all.includes('나책') && !all.includes('숨긴다시책'), '나만 보기 제목 없음');
+    assert.ok(all.includes('«가책»') && all.includes('김작가 작가님 책을 3권이나') && all.includes('«다시책» 말고도 1권 더'), all);
+    assert.ok(all.includes('2025년보다 3권 더') && all.includes('1월에 제일 많이 읽었어요(2권). 역시 방학'), all);
+    assert.ok(!/것 같다|것 같아요|—|라는 것\.|정리하면|핵심은/.test(all), 'AI 티 표현 없음');
+    assert.ok(/요|습니다/.test(v.items[0][1]), '존댓말');
+    // 아직 안 끝난 해: 지난해보다 적어도 «덜 읽었다»고 하지 않는다
+    const big = M.yearStats(ys.concat(ys.map((w) => ({ ...w, id:w.id + 'x' }))), ys, '2025', {});
+    assert.ok(M.yearVoice(cur, big, { ongoing:true }).more[0].includes('2025년엔 8권이었어요'), '진행 중인 해');
+    assert.ok(M.yearVoice(cur, prev, { ongoing:true }).more[0].includes('벌써 2025년보다 3권 더'));
+    assert.strictEqual(M.yearVoice(M.yearStats([], [], '2027', {}), null, {}).big, '완독한 책은 아직 없어요 🫣');
+    // 제목 미확인 책은 다시 편 책에서 빠지고, 낮은 별점뿐이면 «가장 높게 준 책» 줄을 안 쓴다
+    const unk = W('u1', { t:'모름', known:false, recs:[{ d:'2024-01-01' }, { d:'2026-02-01' }] });
+    assert.ok(!M.yearStats(ys, [...ys, unk], '2026', {}).again.some((w) => w.id === 'u1'));
+    const low = M.yearStats([W('l1', { t:'낮음', recs:[{ d:'2026-02-01', r:1.5 }] })], [], '2026', {});
+    assert.ok(!M.yearVoice(low, null, {}).items.some(([l]) => l === '가장 높게 준 책'));
+    assert.deepStrictEqual(M.questionsIn('자료는 https://a.com/x? 보세요'), []);
+  });
   console.log(`통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });

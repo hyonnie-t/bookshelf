@@ -10,7 +10,7 @@ import { seriesGroups, seriesIndex, keepTogether, seriesKey } from './series.js'
 import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillGroup, FILL_GROUPS, titleDiffers } from './fill-tool.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
-import { activeMonths, monthStats, monthVoice, nextBooks, prevMonth, nextMonth, daysIn } from './month.js';
+import { activeMonths, monthStats, monthVoice, nextBooks, prevMonth, nextMonth, daysIn, monthQuestions, yearStats, yearVoice } from './month.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -27,7 +27,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'' };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'', rq:0, rqm:'' };
 const D = { pub:null, blog:[], spines:{}, y24:{}, y24miss:{}, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
@@ -1647,6 +1647,7 @@ function renderRecap() {
 
   const monthCard = S.owner && !LOCAL ? monthReview(ry) : null; // 이달의 돌아보기(2026-11-16): 효니 책장 주인 화면만
   const nextCard = S.owner && !LOCAL ? nextBooksCard() : null;
+  const yearRecap = S.owner && !LOCAL && ry ? yearReview(ry, books, allBooks) : null; // 연말 결산(2026-11-16): 해를 고르면 이달의 돌아보기 위에
 
   /* 해마다 */
   const yearCard = foldCard('years', topY ? `최다 ${topY}년 ${maxY}권` : '', el('div', { className:'card span2' }, head('해마다 읽은 책'), el('p', { className:'sub', textContent:topY ? `${topY}년에 ${maxY}권으로 가장 많이 읽었어요. 막대를 누르면 그해만 돌아봐요${noYear ? `. 읽은 해를 모르는 ${noYear}권은 막대에서 빠져요` : ''}` : '' }),
@@ -1659,7 +1660,7 @@ function renderRecap() {
     el('div', { className:'ylabels' }, ys.map((y) => el('span', { textContent:"'" + y.slice(2) })))));
 
   /* 달력 */
-  const cards = [period, profile, monthCard, actsCard, nextCard, yearCard];
+  const cards = [period, profile, yearRecap, monthCard, actsCard, nextCard, yearCard];
   if (S.owner) {
     if (dated.length) {
       const mc = {};
@@ -1795,7 +1796,7 @@ function shownMonth(ry) {
 function setMonth(ym, focusSel) {
   S.rm = ym; closeDrill();
   renderRecap();
-  const card = $('recap').querySelector('.month-card');
+  const card = $('recap').querySelector('.month-card:not(.year-card)'); // 해를 고르면 연말 결산 카드가 앞에 온다(검토자 지적 2026-11-16)
   if (!card) return;
   card.classList.add('turned');
   const b = focusSel && card.querySelector(focusSel);
@@ -1860,7 +1861,11 @@ function monthReview(ry) {
     cells.push(drillable(b, `mc:${key}`, `${+m}월 ${d}일에 기록한 책`, () => ws.map((w) => ({ w, d:key, r:null })), calSlot));
   }
   const save = el('button', { className:'btn ghost msave', type:'button', textContent:'결산 카드 그림으로 저장' });
-  save.onclick = () => saveMonthImage(cur, v, save);
+  save.onclick = () => saveCardImage((photos) => monthCanvas(cur, v, photos), `책장_${cur.ym}_결산.png`, save);
+  // 이달 책을 글감 서랍으로(2026-11-16): 기존 openGeulForm(체크 → 한 번에 저장, meta/toGeulgam/{id}) 그대로. 카드에 늘 보이는 단추는 이것 하나
+  const doneWs = cur.done.map((x) => x.w), sent = doneWs.filter((w) => geulOf(w.id)).length;
+  const geul = el('button', { className:'btn ghost msave', type:'button', textContent:sent ? `결산 글감 고르기 · 보낸 책 ${sent}권` : '결산 글감 고르기' });
+  geul.onclick = () => openGeulForm(doneWs, `${y}년 ${+m}월 결산 글감`);
   return el('div', { className:'card span2 month-card' },
     el('div', { className:'mhead' }, nav(-1), pick, nav(1)),
     el('p', { className:'profile-when' }, `${y}년 ${+m}월의 나 `, privateTag()),
@@ -1871,10 +1876,34 @@ function monthReview(ry) {
     para('변화', v.change), para('습관', v.habit),
     v.next ? el('p', { className:'mnext', textContent:v.next }) : null,
     quote ? el('h3', { className:'recap-sec', textContent:'이달의 밑줄' }) : null, quote,
+    monthQuestionBox(ym),
     el('h3', { className:'recap-sec', textContent:'한 달의 달력' }),
     el('div', { className:'mcal' }, cells), calSlot,
     el('p', { className:'sub mnote', textContent:'기록·메모·밑줄에 남은 날짜로만 셌어요. 말은 그 숫자에서 골랐어요.' }),
-    cur.doneN ? save : null);
+    cur.doneN ? el('div', { className:'msaves' }, save, geul) : null);
+}
+/* 이달에 남긴 물음표(2026-11-16, 효니 말 «그달의 내 물음이 문장이 어색해»: 이름은 효니가 고르고, 답이 없으면 이 이름).
+   그달 메모·밑줄의 내 생각·기록 본문에서 효니가 쓴 «?» 문장만(js/month.js monthQuestions). AI가 짓지 않는다. 주인 화면만, 결산 그림에는 넣지 않는다.
+   «다른 물음표»는 볼 순서만 넘기고(S.rq, 메모리에만) 저장하지 않는다 */
+const Q_LABEL = '이달에 남긴 물음표';
+const Q_SRC = { note:'메모', mark:'밑줄에 쓴 내 생각', rec:'기록' };
+function monthQuestionBox(ym) {
+  const qs = monthQuestions(list(), ym, { known:isKnown });
+  if (!qs.length) return null;
+  if (S.rqm !== ym) { S.rqm = ym; S.rq = 0; }
+  const box = el('div', { className:'mqbox' });
+  const draw = () => {
+    const x = qs[S.rq % qs.length], [, mm, dd] = x.d.split('-');
+    const book = el('button', { className:'chip mbook', type:'button', textContent:titleOf(x.w) });
+    book.onclick = () => openBook(x.w.id, book);
+    const more = qs.length > 1 ? el('button', { className:'copy', type:'button', textContent:`다른 물음표 (${S.rq % qs.length + 1}/${qs.length})` }) : null;
+    if (more) more.onclick = () => { S.rq = (S.rq + 1) % qs.length; draw(); box.querySelector('.mquestion').classList.add('turned'); box.querySelector('button.copy').focus({ preventScroll:true }); };
+    box.replaceChildren(el('h3', { className:'recap-sec', textContent:Q_LABEL }),
+      el('figure', { className:'mquote mquestion' }, el('blockquote', { textContent:x.q }), el('figcaption', { className:'mq-cap' }, book, el('span', { textContent:`${+mm}월 ${+dd}일 ${Q_SRC[x.src]}` }))),
+      more);
+  };
+  draw();
+  return box;
 }
 // 결산 카드 그림(1080×1350, 인스타 세로 비율): 그달 다 읽은 책의 책등(실물 사진, 없으면 표지 색)과 숫자. «나만 보기» 책은 그림에서 뺀다.
 // 예스24 책등 사진은 Access-Control-Allow-Origin:*라 crossOrigin으로 받아 그린다. 그래도 캔버스가 막히면 사진 없이 다시 그린다
@@ -1911,16 +1940,27 @@ async function monthCanvas(cur, v, photos) {
     g.fillStyle = C.ink; g.font = `700 48px ${head}`; g.fillText(n, x + 24, top + 28);
     g.fillStyle = C.muted; g.font = `500 26px ${body}`; g.fillText(l, x + 24, top + 96);
   });
-  // 책등: 아래를 맞춰 세운다. 넘치면 모두 같은 비율로 줄인다
   const shown = cur.done.map((x) => x.w).filter((w) => !isOnlyMe(w));
-  const floor = 1130, k = 1.6;
-  const items = await Promise.all(shown.map(async (w) => {
+  const floor = 1130;
+  await drawShelf(g, shown, { pad, W0, floor, maxH:560, photos, C, body });
+  // 한 줄 평(변화 첫 문장)과 표시
+  g.fillStyle = C.ink; g.font = `500 32px ${body}`; g.textBaseline = 'top';
+  g.fillText(fitText(g, v.change[0] || v.habit[0] || '', W0 - pad * 2), pad, floor + 52);
+  g.fillStyle = C.muted; g.font = `500 26px ${body}`;
+  g.fillText('@hyonnie_books · 효니의 책장', pad, H0 - pad - 26);
+  return { cv, hidden:cur.doneN - shown.length };
+}
+const fitText = (g, s, max) => { let t = String(s); while (t.length > 1 && g.measureText(t).width > max) t = t.slice(0, -2) + '…'; return t; };
+// 결산 그림의 선반: 책등을 아래를 맞춰 세운다(실물 사진, 없으면 표지 색·주제 색). 넘치면 모두 같은 비율로 줄이고, 적으면 maxH까지 키운다
+async function drawShelf(g, ws, { pad, W0, floor, maxH, photos, C, body }) {
+  const k = 1.6;
+  const items = await Promise.all(ws.map(async (w) => {
     const real = realOf(w), img = photos && real ? await loadImg(`https://image.yes24.com/goods/${real.no}/SIDE/L`) : null;
     const h = (real && real.mh ? real.mh : 195 + Math.abs(hash('mh' + w.id)) % 46) * k;
     const wd = img ? Math.max(18, h * img.naturalWidth / img.naturalHeight) : Math.max(28, h * (real ? real.r : 0.08));
     return { w, img, h, wd };
   }));
-  const total = items.reduce((a, x) => a + x.wd + 4, 0), room = W0 - pad * 2, sc = Math.min(room / Math.max(1, total), 560 / Math.max(1, ...items.map((x) => x.h))); // 적으면 키우고 많으면 줄인다
+  const total = items.reduce((a, x) => a + x.wd + 4, 0), room = W0 - pad * 2, sc = Math.min(room / Math.max(1, total), maxH / Math.max(1, ...items.map((x) => x.h))); // 적으면 키우고 많으면 줄인다
   let x = pad + Math.max(0, (room - total * sc) / 2);
   items.forEach(({ w, img, h, wd }) => {
     const hh = h * sc, ww = wd * sc, top2 = floor - hh;
@@ -1930,31 +1970,25 @@ async function monthCanvas(cur, v, photos) {
       g.fillStyle = c ? `#${String(c[0]).replace('#', '')}` : (cssVar(themeVar(w.th[0]).slice(4, -1)) || C.accent);
       g.fillRect(x, top2, ww, hh);
       g.fillStyle = c ? `#${String(c[1]).replace('#', '')}` : '#fff';
-      const fs = Math.max(12, Math.min(26, ww * .55));
-      g.save(); g.translate(x + ww / 2, top2 + 14); g.rotate(Math.PI / 2); g.font = `600 ${fs}px ${body}`; g.textBaseline = 'middle';
-      let t = titleOf(w); while (t.length > 1 && g.measureText(t).width > hh - 28) t = t.slice(0, -2) + '…';
-      g.fillText(t, 0, 0); g.restore();
+      if (ww >= 10) { // 아주 많은 해(연말 결산)는 책등이 가늘어 글자를 넣지 않는다
+        const fs = Math.max(12, Math.min(26, ww * .55));
+        g.save(); g.translate(x + ww / 2, top2 + 14); g.rotate(Math.PI / 2); g.font = `600 ${fs}px ${body}`; g.textBaseline = 'middle';
+        g.fillText(fitText(g, titleOf(w), hh - 28), 0, 0); g.restore();
+      }
     }
     x += ww + 4 * sc;
   });
   g.fillStyle = C.wood; g.fillRect(pad - 16, floor, W0 - pad * 2 + 32, 16);
-  // 한 줄 평(변화 첫 문장)과 표시
-  g.fillStyle = C.ink; g.font = `500 32px ${body}`; g.textBaseline = 'top';
-  const say = v.change[0] || v.habit[0] || '';
-  let s = say; while (s.length > 1 && g.measureText(s).width > W0 - pad * 2) s = s.slice(0, -2) + '…';
-  g.fillText(s, pad, floor + 52);
-  g.fillStyle = C.muted; g.font = `500 26px ${body}`;
-  g.fillText('@hyonnie_books · 효니의 책장', pad, H0 - pad - 26);
-  return { cv, hidden:cur.doneN - shown.length };
 }
-async function saveMonthImage(cur, v, btn) {
+// 결산 그림 저장(이달·연말 같이 씀): make(photos) → { cv, hidden }. 폰(터치)은 공유 창, 아니면 내려받기
+async function saveCardImage(make, name, btn) {
   btn.disabled = true; const was = btn.textContent; btn.textContent = '그리는 중…';
   try {
     await document.fonts.ready;
-    let made = await monthCanvas(cur, v, true), blob;
+    let made = await make(true), blob;
     try { blob = await new Promise((ok, no) => { try { made.cv.toBlob((b) => (b ? ok(b) : no(new Error('blob'))), 'image/png'); } catch (e) { no(e); } }); }
-    catch (e) { made = await monthCanvas(cur, v, false); blob = await new Promise((ok) => made.cv.toBlob(ok, 'image/png')); } // 사진 때문에 캔버스가 막히면 색 책등으로
-    const name = `책장_${cur.ym}_결산.png`, file = new File([blob], name, { type:'image/png' });
+    catch (e) { made = await make(false); blob = await new Promise((ok) => made.cv.toBlob(ok, 'image/png')); } // 사진 때문에 캔버스가 막히면 색 책등으로
+    const file = new File([blob], name, { type:'image/png' });
     const note = made.hidden ? ` 나만 보기 ${made.hidden}권은 그림에서 뺐어요.` : '';
     if (matchMedia('(pointer:coarse)').matches && navigator.canShare && navigator.canShare({ files:[file] })) {
       try { await navigator.share({ files:[file] }); toast('결산 카드를 보냈어요.' + note); return; } catch (e) { if (e.name === 'AbortError') return; }
@@ -1965,6 +1999,67 @@ async function saveMonthImage(cur, v, btn) {
     toast('결산 카드를 저장했어요.' + note);
   } catch (e) { console.error(e); toast('그림을 만들지 못했어요'); }
   finally { btn.disabled = false; btn.textContent = was; }
+}
+
+/* ---------- 연말 결산 (2026-11-16, 효니 «1,2,3 다 해도 될 거 같은데») ----------
+   기간 단추에서 해를 고르면 이달의 돌아보기 위에 뜬다. 이번 달 결산 카드의 1년판이고 말투는 인스타 «추천·결산»(존댓말·📌·👉, js/month.js yearVoice).
+   묶음은 «해마다 읽은 책» 막대와 같은 readYear(처음 다 읽은 해). 나만 보기 책은 제목·책등에서만 빼고 숫자에는 센다(효니 결정 2026-11-16 «지금처럼 셈»).
+   주인 화면·효니 책장만, 저장하는 칸이 없다 */
+function yearReview(ry, books, allBooks) {
+  const opt = { firstAuthor:firstAuthorOf, thick:bookThick, only:isOnlyMe, known:isKnown };
+  const cur = yearStats(books, list(), ry, opt);
+  if (!cur.doneN) return null;
+  const pb = allBooks.filter((w) => readYear(w) === String(+ry - 1));
+  const v = yearVoice(cur, pb.length ? yearStats(pb, list(), String(+ry - 1), opt) : null, { title:titleOf, ongoing:ry === today().slice(0, 4) });
+  const hidTop = cur.top.length - cur.shownTop.length;
+  const chips = cur.shownTop.length ? el('div', { className:'row ychips' }, cur.shownTop.slice(0, 6).map((w) => { const b = el('button', { className:'chip mbook', type:'button', textContent:titleOf(w) }); b.onclick = () => openBook(w.id, b); return b; })) : null;
+  const save = el('button', { className:'btn ghost msave', type:'button', textContent:`${ry}년 결산 카드 그림으로 저장` });
+  save.onclick = () => saveCardImage((photos) => yearCanvas(cur, v, photos), `책장_${ry}_연말결산.png`, save);
+  return el('div', { className:'card span2 month-card year-card' },
+    el('p', { className:'profile-when' }, `${ry}년 결산 `, privateTag()),
+    el('h2', { className:'profile-head', textContent:v.big }),
+    el('ul', { className:'ylist' }, v.items.map(([label, text]) => el('li', {}, el('strong', { textContent:`📌 ${label}` }), el('span', { textContent:text })))),
+    cur.best != null ? el('p', { className:'sub', textContent:`가장 높게 준 별점 ${ratingWord(cur.best)}${hidTop ? ` · 나만 보기 ${hidTop}권은 제목을 뺐어요(숫자엔 셈)` : ''}` }) : null,
+    chips,
+    v.more.length ? el('div', { className:'mpara' }, v.more.map((t) => el('p', { textContent:`👉 ${t}` }))) : null,
+    save);
+}
+// 연말 결산 그림(1080×1350): 제목줄·숫자 네 칸·📌 네 줄·선반(가장 높게 준 책부터, 나만 보기 빼고 최대 40권). 별점 숫자·밑줄 문장은 넣지 않는다
+async function yearCanvas(cur, v, photos) {
+  const W0 = 1080, H0 = 1350, pad = 72, cv = document.createElement('canvas');
+  cv.width = W0; cv.height = H0;
+  const g = cv.getContext('2d'), body = getComputedStyle(document.body).fontFamily, head = cssVar('--font-title') || body;
+  const C = { bg:cssVar('--bg') || '#f6f1e7', card:cssVar('--surface') || '#fff', ink:cssVar('--ink') || '#222', muted:cssVar('--muted') || '#666', line:cssVar('--line') || '#ddd', accent:cssVar('--accent') || '#8a4b2f', wood:cssVar('--wood') || '#9a6b45' };
+  g.fillStyle = C.bg; g.fillRect(0, 0, W0, H0);
+  g.textBaseline = 'top';
+  g.fillStyle = C.muted; g.font = `500 34px ${body}`; g.fillText(v.head, pad, pad);
+  g.fillStyle = C.ink; g.font = `700 64px ${head}`; g.fillText(fitText(g, v.big, W0 - pad * 2), pad, pad + 56);
+  const nums = [['완독한 책', `${cur.doneN}권`], ['다시 편 책', `${cur.again.length}권`], ['밑줄', `${cur.marks}개`], cur.measured ? ['쌓은 높이', `${(cur.mm / 10).toFixed(0)}cm`] : ['많이 읽은 달', cur.bestM ? `${+cur.bestM[0]}월` : '—']];
+  const top = pad + 56 + 96, bw = (W0 - pad * 2 - 24 * 3) / 4;
+  nums.forEach(([l, n], i) => {
+    const x = pad + i * (bw + 24);
+    g.fillStyle = C.card; g.strokeStyle = C.line; g.lineWidth = 2;
+    g.beginPath(); g.roundRect(x, top, bw, 150, 16); g.fill(); g.stroke();
+    g.fillStyle = C.ink; g.font = `700 48px ${head}`; g.fillText(fitText(g, n, bw - 40), x + 24, top + 28);
+    g.fillStyle = C.muted; g.font = `500 26px ${body}`; g.fillText(l, x + 24, top + 96);
+  });
+  let y = top + 150 + 40;
+  v.items.slice(0, 4).forEach(([label, text]) => {
+    g.fillStyle = C.accent; g.font = `700 30px ${body}`; g.fillText(`📌 ${label}`, pad, y);
+    g.fillStyle = C.ink; g.font = `500 28px ${body}`;
+    // 두 줄까지 감싸고 넘치면 둘째 줄 끝을 줄인다(제목이 둘 이상이면 끝 말이 잘렸다, 검토자 지적 2026-11-16)
+    const max = W0 - pad * 2, lines = [''];
+    [...text].forEach((ch) => { const t = lines[lines.length - 1] + ch; if (g.measureText(t).width > max && lines.length < 2) lines.push(ch.trim() ? ch : ''); else lines[lines.length - 1] = t; });
+    lines.forEach((t, i) => g.fillText(fitText(g, t, max), pad, y + 42 + i * 38));
+    y += 42 + lines.length * 38 + 16;
+  });
+  const rateOf = (w) => Math.max(-1, ...w.recs.filter((r) => r.st !== 'unread' && r.r != null).map((r) => r.r));
+  const shelf = cur.books.filter((w) => !isOnlyMe(w)).sort((a, b) => rateOf(b) - rateOf(a) || (firstRead(a) || '').localeCompare(firstRead(b) || '')).slice(0, 40);
+  const floor = 1160;
+  await drawShelf(g, shelf, { pad, W0, floor, maxH:Math.max(200, floor - y - 24), photos, C, body });
+  g.fillStyle = C.muted; g.font = `500 26px ${body}`; g.textBaseline = 'top';
+  g.fillText('@hyonnie_books · 효니의 책장', pad, H0 - pad - 26);
+  return { cv, hidden:cur.books.filter(isOnlyMe).length };
 }
 // 서재에서 고른 다음 책: 소장했는데 아직 안 읽은 책 가운데 요즘(지난 1년) 읽는 책과 이어지는 책
 function nextBooksCard() {
