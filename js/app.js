@@ -2034,7 +2034,7 @@ async function yearCanvas(cur, v, photos) {
   g.textBaseline = 'top';
   g.fillStyle = C.muted; g.font = `500 34px ${body}`; g.fillText(v.head, pad, pad);
   g.fillStyle = C.ink; g.font = `700 64px ${head}`; g.fillText(fitText(g, v.big, W0 - pad * 2), pad, pad + 56);
-  const nums = [['완독한 책', `${cur.doneN}권`], ['다시 편 책', `${cur.again.length}권`], ['밑줄', `${cur.marks}개`], cur.measured ? ['쌓은 높이', `${(cur.mm / 10).toFixed(0)}cm`] : ['많이 읽은 달', cur.bestM ? `${+cur.bestM[0]}월` : '—']];
+  const nums = [['완독한 책', `${cur.doneN}권`], ['다시 만난 책', `${cur.again.length}권`], ['밑줄', `${cur.marks}개`], cur.measured ? ['쌓은 높이', `${(cur.mm / 10).toFixed(0)}cm`] : ['많이 읽은 달', cur.bestM ? `${+cur.bestM[0]}월` : '—']];
   const top = pad + 56 + 96, bw = (W0 - pad * 2 - 24 * 3) / 4;
   nums.forEach(([l, n], i) => {
     const x = pad + i * (bw + 24);

@@ -279,7 +279,7 @@ export function yearVoice(cur, prev, ctx = {}) {
   }
   if (cur.again.length) {
     const hid = cur.again.length - cur.shownAgain.length;
-    items.push(['다시 편 책', `${cur.shownAgain.length ? list(cur.shownAgain, 2) + (hid ? ` 말고도 ${hid}권 더` : '') : `${cur.again.length}권`}. 한 번으로는 안 끝나는 책이 있더라구요`]);
+    items.push(['다시 만난 책', `${cur.shownAgain.length ? list(cur.shownAgain, 2) + (hid ? ` 말고도 ${hid}권 더` : '') : `${cur.again.length}권`}. 한 번으로는 안 끝나는 책이 있더라구요`]);
   }
   const more = [];
   // 아직 안 끝난 해(ctx.ongoing)는 덜 읽었다고 하지 않는다(앱 성향 문장도 올해는 지난해와 견주지 않는다)
