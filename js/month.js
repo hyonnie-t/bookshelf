@@ -72,7 +72,9 @@ export function monthStats(works, ym, opt = {}) {
   // 다시 편 책: 이달에 다 읽었는데 그 전에도 다 읽은 기록이 있는 책
   const again = done.filter(({ w, d }) => doneRecs(w).some((r) => DAY.test(r.d || '') && r.d < ym + '-01'));
   // 읽는 중에 기록만 남긴 책: 이달에 흔적은 있는데 이달에 다 읽지 않았고 다 읽은 기록도 없는 책
-  const reading = [...touched].filter((w) => known(w) && !doneAt.has(w) && !doneRecs(w).length && w.st !== 'not');
+  // 판정은 앱과 같은 js/reading.js isReading을 opt.reading으로 받는다(날짜 없이 «다 읽음»만 눌러 둔 책 st:'done'이 «읽다 만»으로 나왔다, 검토자 재현 2026-11-16)
+  const isReading = opt.reading || ((w) => !doneRecs(w).length && w.st !== 'not' && w.st !== 'done');
+  const reading = [...touched].filter((w) => known(w) && !doneAt.has(w) && isReading(w));
   return {
     ym, done, doneN:done.length, days, dayN:days.size, run:longestRun(days.keys()), marks, notes, recs, writes:marks + notes + recs,
     rated, avg:rated.length ? rated.reduce((a, x) => a + x.r, 0) / rated.length : 0,
@@ -124,7 +126,7 @@ export function monthVoice(cur, prev, ctx = {}) {
   if (cur.again.length) change.push(`다시 펼친 책도 ${cur.again.length}권 있었다. 한 번으로 안 끝나는 책이 있다.`);
 
   const habit = [];
-  if (cur.dayN) habit.push(cur.run >= 3 && cur.run === cur.dayN ? `기록을 남긴 ${cur.dayN}일이 하루도 안 빠지고 이어져 있다. 몰아서 읽은 게 티 난다 ㅎㅎ` : cur.run >= 3 ? `기록을 남긴 날은 ${cur.dayN}일이고 그중 ${cur.run}일은 하루도 안 빼고 이어서 남겼다.` : `기록을 남긴 날은 ${cur.dayN}일. 생각날 때마다 띄엄띄엄 남겼다.`);
+  if (cur.dayN) habit.push(cur.run >= 3 && cur.run === cur.dayN ? `기록을 남긴 ${cur.dayN}일이 하루도 안 빠지고 이어져 있다. 한 번도 안 끊겼다 ㅎㅎ` : cur.run >= 3 ? `기록을 남긴 날은 ${cur.dayN}일이고 그중 ${cur.run}일은 하루도 안 빼고 이어서 남겼다.` : `기록을 남긴 날은 ${cur.dayN}일. 생각날 때마다 띄엄띄엄 남겼다.`);
   const avgM = +cur.avg.toFixed(1), avgA = +(ctx.avgAll || 0).toFixed(1);
   if (cur.rated.length >= 3 && (ctx.ratedAll || 0) >= 10 && Math.round(Math.abs(avgM - avgA) * 10) >= 3) { // 4.5 - 4.2 = 0.2999…라 소수 그대로 비교하면 경계에서 빠진다(제미나이 지적 2026-11-16)
     habit.push(avgM > avgA ? `별점은 평소보다 후했다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점). 좋은 책만 골랐나 보다 ㅎㅎ` : `별점은 평소보다 짰다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점). 이번 달은 좀 아쉬운 책이 많았던 거 같다...`);

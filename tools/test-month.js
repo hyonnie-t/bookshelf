@@ -23,6 +23,15 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
   const cur = M.monthStats(works, '2026-10', { known, thick:(w) => (w.id === 'a' ? 20 : 0) });
   const prev = M.monthStats(works, '2026-09', { known });
 
+  { // 읽다 만 책은 앱의 읽기 상태 판정(js/reading.js isReading)을 따른다
+    const R = await load('js/reading.js');
+    const xs = [
+      W('d1', { t:'다 읽음만 누름', st:'done', marks:[{ d:'2026-11-02', q:'열두 글자가 넘는 밑줄 문장입니다' }] }),
+      W('n1', { t:'안 읽음', st:'not', notes:[{ d:'2026-11-03', b:'필사' }] }),
+      W('r1', { t:'읽는 중', recs:[{ d:'2026-11-04', st:'unread' }] }),
+    ];
+    ok('읽다 만 책 판정', () => assert.deepStrictEqual(M.monthStats(xs, '2026-11', { known, reading:R.isReading }).reading.map((w) => w.id), ['r1']));
+  }
   ok('달 계산', () => {
     assert.strictEqual(M.prevMonth('2026-01'), '2025-12');
     assert.strictEqual(M.nextMonth('2026-12'), '2027-01');

@@ -726,6 +726,7 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 .mfacts { margin:var(--space-2) 0 0; }
 .mpath { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-2); margin-top:var(--space-3); }
 .mpath-l { color:var(--muted); font-size:.8rem; }
+.mpair { display:inline-flex; align-items:center; gap:var(--space-2); min-width:0; }
 .mpath-arrow { color:var(--accent); font-weight:700; }
 .mbook { max-width:min(18rem,70vw); overflow:hidden; text-overflow:ellipsis; }
 .mpara p, .mnext { margin:0 0 var(--space-1); max-width:62ch; font-size:.95rem; }

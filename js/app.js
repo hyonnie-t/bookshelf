@@ -1805,8 +1805,8 @@ function monthReview(ry) {
   const { ms, ym } = shownMonth(ry);
   if (!ym) return null;
   const books = list();
-  const cur = monthStats(books, ym, { thick:bookThick, known:isKnown });
-  const pm = prevMonth(ym), prev = monthStats(books, pm, { thick:bookThick, known:isKnown });
+  const cur = monthStats(books, ym, { thick:bookThick, known:isKnown, reading:isReading });
+  const pm = prevMonth(ym), prev = monthStats(books, pm, { thick:bookThick, known:isKnown, reading:isReading });
   const all = ratedRows(books.filter((w) => w.known && countsRead(w)));
   const v = monthVoice(cur, prev, { avgAll:meanOf(all), ratedAll:all.length, themeVoice:THEME_VOICE, title:titleOf });
   const at = ms.indexOf(ym), [y, m] = ym.split('-');
@@ -1839,7 +1839,8 @@ function monthReview(ry) {
     cur.rated.length ? `별점 평균 ${cur.avg.toFixed(1)}점` : '',
   ].filter(Boolean);
   const bookBtn = (w) => { const b = el('button', { className:'chip mbook', type:'button', textContent:titleOf(w) }); b.onclick = () => openBook(w.id, b); return b; };
-  const path = cur.doneN >= 2 ? el('div', { className:'mpath' }, el('span', { className:'mpath-l', textContent:'처음' }), bookBtn(cur.done[0].w), el('span', { className:'mpath-arrow', ariaHidden:'true', textContent:'→' }), el('span', { className:'mpath-l', textContent:'마지막' }), bookBtn(cur.done[cur.doneN - 1].w)) : null;
+  const pair = (label, w) => el('span', { className:'mpair' }, el('span', { className:'mpath-l', textContent:label }), bookBtn(w)); // 이름표와 책이 줄 바꿈에 떨어지지 않게
+  const path = cur.doneN >= 2 ? el('div', { className:'mpath' }, pair('처음', cur.done[0].w), el('span', { className:'mpath-arrow', ariaHidden:'true', textContent:'→' }), pair('마지막', cur.done[cur.doneN - 1].w)) : null;
   const para = (label, lines) => (lines.length ? el('div', { className:'mpara' }, el('h3', { className:'recap-sec', textContent:label }), lines.map((t) => el('p', { textContent:t }))) : null);
   const quote = v.quote ? el('figure', { className:'mquote' }, el('blockquote', { textContent:v.quote.q }), el('figcaption', {}, `«${titleOf(v.quote.w)}»${v.quote.p ? ` ${v.quote.p}쪽` : ''}`)) : null;
   // 한 달 달력: 기록이 있는 날을 누르면 그날 기록한 책이 펼쳐진다
