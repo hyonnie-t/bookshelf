@@ -193,7 +193,7 @@ const Q_LEAD = /^[\s\-–—·•*>#📌👉🔖📖✔💕👀]+/u;
 export function questionsIn(text) {
   const out = [];
   String(text || '').split(/\n+/).forEach((line) => {
-    line.split(/(?<=[.!?？…。])\s+/).forEach((raw) => {
+    line.split(/(?<=[.!?？…。]["'”’)\]」』〉》]*)\s+/).forEach((raw) => { // 닫는 따옴표·괄호까지 붙여 자른다(«"정말일까?" 그래서» 놓침, 제미나이 지적 2026-11-16)
       const s = raw.replace(Q_LEAD, '').trim();
       if (!Q_END.test(s) || s.length < 6 || s.length > 140) return;
       if (/[(（][?？]+[)）]$/.test(s)) return; // «모르겠다(?)»는 효니 혼잣말 버릇이지 물음이 아니다

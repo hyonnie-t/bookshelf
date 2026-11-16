@@ -97,6 +97,7 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
   });
   ok('그달 내 물음표', () => {
     assert.deepStrictEqual(M.questionsIn('첫 문장이다. 이 사람은 왜 끝까지 버텼을까? 잘 모르겠다(?)\n📌 다음엔 뭘 읽지??\n#해시태그?\n짧다?'), ['이 사람은 왜 끝까지 버텼을까?', '다음엔 뭘 읽지??']);
+    assert.deepStrictEqual(M.questionsIn('"정말 그게 최선이었을까?" 그래서 다시 읽었다.'), ['"정말 그게 최선이었을까?"'], '닫는 따옴표 뒤에서 자른다');
     const qs = [
       W('q1', { t:'물음 책', notes:[{ d:'2026-10-03', b:'메모다. 나라면 그때 떠날 수 있었을까?' }, { d:'2026-09-03', b:'지난달 물음은 아닐까?' }],
         marks:[{ d:'2026-10-04', q:'책 문장은 넣지 않는 걸까?', why:'이 말이 왜 계속 남을까?' }],
