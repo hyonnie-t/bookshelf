@@ -10,6 +10,7 @@ import { seriesGroups, seriesIndex, keepTogether, seriesKey } from './series.js'
 import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillGroup, FILL_GROUPS, titleDiffers } from './fill-tool.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
+import { activeMonths, monthStats, monthVoice, nextBooks, prevMonth, nextMonth, daysIn } from './month.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -26,7 +27,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0 };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'' };
 const D = { pub:null, blog:[], spines:{}, y24:{}, y24miss:{}, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
@@ -1644,6 +1645,9 @@ function renderRecap() {
       el('div', { className:'act-list' }, acts.map(([label, hint, rows]) => drillable(el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:label }), el('small', { textContent:hint })), el('span', { className:'n', textContent:`${rows.length}권` })), `x:${label}`, label, () => { const r = bookRows(rows); if (GEUL_ACTS.has(label)) r.top = () => geulTop(rows, label); return r; }))));
   }
 
+  const monthCard = S.owner && !LOCAL ? monthReview(ry) : null; // 이달의 돌아보기(2026-11-16): 효니 책장 주인 화면만
+  const nextCard = S.owner && !LOCAL ? nextBooksCard() : null;
+
   /* 해마다 */
   const yearCard = foldCard('years', topY ? `최다 ${topY}년 ${maxY}권` : '', el('div', { className:'card span2' }, head('해마다 읽은 책'), el('p', { className:'sub', textContent:topY ? `${topY}년에 ${maxY}권으로 가장 많이 읽었어요. 막대를 누르면 그해만 돌아봐요${noYear ? `. 읽은 해를 모르는 ${noYear}권은 막대에서 빠져요` : ''}` : '' }),
     el('div', { className:'years' }, ys.map((y) => { const bar = el('div', { className:'ybar' }); bar.style.height = `${yc[y] / maxY * 100}%`; bar.style.flex = '0 0 auto';
@@ -1655,7 +1659,7 @@ function renderRecap() {
     el('div', { className:'ylabels' }, ys.map((y) => el('span', { textContent:"'" + y.slice(2) })))));
 
   /* 달력 */
-  const cards = [period, profile, actsCard, yearCard];
+  const cards = [period, profile, monthCard, actsCard, nextCard, yearCard];
   if (S.owner) {
     if (dated.length) {
       const mc = {};
@@ -1774,6 +1778,208 @@ function renderRecap() {
   if (redraw) return; // 보고 있는 화면을 기간·저장으로 다시 그릴 때는 카드가 깜박이지 않게 움직임을 뺀다
   box.querySelectorAll('.card').forEach((c) => c.classList.add('rise'));
   watch('#recap .rise');
+}
+
+/* ---------- 이달의 돌아보기 (2026-11-16) ----------
+   효니 쪽지 «다른 독서 웹앱 기능 … 돌아보기 기능이 더 강화되면 좋겠음»(월간 분석·달 돌아보기·추천 책 사진), «효니 문체 더 들어가야할듯».
+   계산·문장은 js/month.js. 효니 책장 주인 화면만(범용판·공개 화면 없음). 저장하는 칸이 없다(볼 달 S.rm은 메모리에만) */
+const bookThick = (w) => { const r = realOf(w); return r ? r.r * (r.mh || 210) : 0; }; // 책등 사진 비율 × 키(모르면 210mm) = 두께 mm
+const isKnown = (w) => !!w.known;
+function shownMonth(ry) {
+  const ms = activeMonths(list());
+  if (!ms.length) return { ms, ym:'' };
+  if (ms.includes(S.rm)) return { ms, ym:S.rm };
+  const inYear = ry ? ms.filter((m) => m.startsWith(ry)) : [];
+  return { ms, ym:(inYear.length ? inYear : ms)[(inYear.length ? inYear : ms).length - 1] };
+}
+function setMonth(ym, focusSel) {
+  S.rm = ym; closeDrill();
+  renderRecap();
+  const card = $('recap').querySelector('.month-card');
+  if (!card) return;
+  card.classList.add('turned');
+  const b = focusSel && card.querySelector(focusSel);
+  if (b) b.focus({ preventScroll:true });
+}
+function monthReview(ry) {
+  const { ms, ym } = shownMonth(ry);
+  if (!ym) return null;
+  const books = list();
+  const cur = monthStats(books, ym, { thick:bookThick, known:isKnown, reading:isReading });
+  const pm = prevMonth(ym), prev = monthStats(books, pm, { thick:bookThick, known:isKnown, reading:isReading });
+  const all = ratedRows(books.filter((w) => w.known && countsRead(w)));
+  const v = monthVoice(cur, prev, { avgAll:meanOf(all), ratedAll:all.length, themeVoice:THEME_VOICE, title:titleOf });
+  const at = ms.indexOf(ym), [y, m] = ym.split('-');
+  const nav = (dir) => {
+    const to = ms[at + dir];
+    const b = el('button', { className:'copy mnav', type:'button', textContent:dir < 0 ? '‹' : '›', ariaLabel:dir < 0 ? '기록이 있는 앞 달' : '기록이 있는 다음 달' });
+    b.dataset.mnav = dir;
+    if (!to) b.disabled = true; else b.onclick = () => setMonth(to, `[data-mnav="${dir}"]`);
+    return b;
+  };
+  const pick = el('select', { className:'mpick', ariaLabel:'돌아볼 달' }, [...ms].reverse().map((x) => el('option', { value:x, textContent:`${x.slice(0, 4)}년 ${+x.slice(5)}월`, selected:x === ym })));
+  pick.onchange = () => setMonth(pick.value, '.mpick');
+  const slot = el('div', { className:'drill-slot' });
+  const delta = (a, b) => { if (!prev.dayN && !b || !a && !b) return null; const d = a - b; return d ? el('small', { className:'tile-d' + (d > 0 ? ' up' : ' down'), textContent:`${d > 0 ? '↑' : '↓'} ${Math.abs(d)}` }) : el('small', { className:'tile-d', textContent:'그대로' }); };
+  const uniq = (ws) => [...new Set(ws)];
+  const dayRows = (pred) => bookRows(uniq([...cur.days.values()].flat().filter(pred).map((x) => x.w)));
+  const tile = (label, value, d, key, title, getRows) => {
+    const b = el('button', { className:'tile', type:'button' }, el('span', { className:'tile-n', textContent:value }), el('span', { className:'tile-l' }, label, d ? ' ' : null, d));
+    if (!getRows().length) { b.disabled = true; return b; }
+    return drillable(b, key, title, getRows, slot);
+  };
+  const tiles = el('div', { className:'tiles mtiles' },
+    tile('다 읽은 책', `${cur.doneN}권`, delta(cur.doneN, prev.doneN), `mo:done`, `${+m}월에 다 읽은 책`, () => cur.done.map(({ w, d }) => ({ w, d, r:(cur.rated.find((x) => x.w === w) || {}).r ?? null }))),
+    tile('기록을 남긴 날', `${cur.dayN}일`, delta(cur.dayN, prev.dayN), `mo:days`, `${+m}월에 기록을 남긴 책`, () => dayRows(() => true)),
+    tile('밑줄', `${cur.marks}개`, delta(cur.marks, prev.marks), `mo:marks`, `${+m}월에 밑줄 그은 책`, () => dayRows((x) => x.kind === 'mark')),
+    tile('남긴 글', `${cur.writes}개`, delta(cur.writes, prev.writes), `mo:writes`, `${+m}월에 글을 남긴 책`, () => dayRows(() => true)));
+  const facts = [
+    cur.measured ? `쌓은 높이 약 ${(cur.mm / 10).toFixed(1)}cm${cur.measured < cur.doneN ? ` (책등 크기를 아는 ${cur.measured}권)` : ''}` : '',
+    cur.run >= 2 ? `가장 길게 이어 남긴 날 ${cur.run}일` : '',
+    cur.rated.length ? `별점 평균 ${cur.avg.toFixed(1)}점` : '',
+  ].filter(Boolean);
+  const bookBtn = (w) => { const b = el('button', { className:'chip mbook', type:'button', textContent:titleOf(w) }); b.onclick = () => openBook(w.id, b); return b; };
+  const pair = (label, w) => el('span', { className:'mpair' }, el('span', { className:'mpath-l', textContent:label }), bookBtn(w)); // 이름표와 책이 줄 바꿈에 떨어지지 않게
+  const path = cur.doneN >= 2 ? el('div', { className:'mpath' }, pair('처음', cur.done[0].w), el('span', { className:'mpath-arrow', ariaHidden:'true', textContent:'→' }), pair('마지막', cur.done[cur.doneN - 1].w)) : null;
+  const para = (label, lines) => (lines.length ? el('div', { className:'mpara' }, el('h3', { className:'recap-sec', textContent:label }), lines.map((t) => el('p', { textContent:t }))) : null);
+  const quote = v.quote ? el('figure', { className:'mquote' }, el('blockquote', { textContent:v.quote.q }), el('figcaption', {}, `«${titleOf(v.quote.w)}»${v.quote.p ? ` ${v.quote.p}쪽` : ''}`)) : null;
+  // 한 달 달력: 기록이 있는 날을 누르면 그날 기록한 책이 펼쳐진다
+  const first = new Date(Date.UTC(+y, +m - 1, 1)).getUTCDay(), n = daysIn(ym);
+  const maxDay = Math.max(1, ...[...cur.days.values()].map((x) => uniq(x.map((e) => e.w)).length));
+  const calSlot = el('div', { className:'drill-slot' });
+  const cells = [...'일월화수목금토'].map((d, i) => el('span', { className:'mcal-w' + (i === 0 ? ' sun' : ''), textContent:d }));
+  for (let i = 0; i < first; i++) cells.push(el('span', { className:'mcal-d empty-cell', ariaHidden:'true' }));
+  for (let d = 1; d <= n; d++) {
+    const key = `${ym}-${String(d).padStart(2, '0')}`, es = cur.days.get(key) || [];
+    const ws = uniq(es.map((e) => e.w));
+    if (!ws.length) { cells.push(el('span', { className:'mcal-d', textContent:d })); continue; }
+    const doneDay = es.some((e) => e.kind === 'done');
+    const b = el('button', { className:'mcal-d on' + (doneDay ? ' done' : ''), type:'button' }, el('span', { textContent:d }), el('i', { className:'mcal-n', textContent:ws.length > 1 ? ws.length : '' }));
+    b.style.setProperty('--mix', `${Math.round(18 + ws.length / maxDay * 22)}%`);
+    b.setAttribute('aria-label', `${+m}월 ${d}일, 책 ${ws.length}권${doneDay ? ', 다 읽은 날' : ''}`);
+    cells.push(drillable(b, `mc:${key}`, `${+m}월 ${d}일에 기록한 책`, () => ws.map((w) => ({ w, d:key, r:null })), calSlot));
+  }
+  const save = el('button', { className:'btn ghost msave', type:'button', textContent:'결산 카드 그림으로 저장' });
+  save.onclick = () => saveMonthImage(cur, v, save);
+  return el('div', { className:'card span2 month-card' },
+    el('div', { className:'mhead' }, nav(-1), pick, nav(1)),
+    el('p', { className:'profile-when' }, `${y}년 ${+m}월의 나 `, privateTag()),
+    el('h2', { className:'profile-head', textContent:v.name }),
+    tiles, slot,
+    facts.length ? el('p', { className:'sub mfacts', textContent:facts.join(' · ') }) : null,
+    path,
+    para('변화', v.change), para('습관', v.habit),
+    v.next ? el('p', { className:'mnext', textContent:v.next }) : null,
+    quote ? el('h3', { className:'recap-sec', textContent:'이달의 밑줄' }) : null, quote,
+    el('h3', { className:'recap-sec', textContent:'한 달의 달력' }),
+    el('div', { className:'mcal' }, cells), calSlot,
+    el('p', { className:'sub mnote', textContent:'기록·메모·밑줄에 남은 날짜로만 셌어요. 말은 그 숫자에서 골랐어요.' }),
+    cur.doneN ? save : null);
+}
+// 결산 카드 그림(1080×1350, 인스타 세로 비율): 그달 다 읽은 책의 책등(실물 사진, 없으면 표지 색)과 숫자. «나만 보기» 책은 그림에서 뺀다.
+// 예스24 책등 사진은 Access-Control-Allow-Origin:*라 crossOrigin으로 받아 그린다. 그래도 캔버스가 막히면 사진 없이 다시 그린다
+const cssVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+function loadImg(src) {
+  return new Promise((ok) => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    const t = setTimeout(() => ok(null), 6000);
+    img.onload = () => { clearTimeout(t); ok(notSpine(img) ? null : img); };
+    img.onerror = () => { clearTimeout(t); ok(null); };
+    img.src = src;
+  });
+}
+async function monthCanvas(cur, v, photos) {
+  const W0 = 1080, H0 = 1350, pad = 72, cv = document.createElement('canvas');
+  cv.width = W0; cv.height = H0;
+  const g = cv.getContext('2d'), body = getComputedStyle(document.body).fontFamily, head = cssVar('--font-title') || body;
+  const C = { bg:cssVar('--bg') || '#f6f1e7', card:cssVar('--surface') || '#fff', ink:cssVar('--ink') || '#222', muted:cssVar('--muted') || '#666', line:cssVar('--line') || '#ddd', accent:cssVar('--accent') || '#8a4b2f', wood:cssVar('--wood') || '#9a6b45' };
+  g.fillStyle = C.bg; g.fillRect(0, 0, W0, H0);
+  const [y, m] = cur.ym.split('-');
+  g.fillStyle = C.muted; g.font = `500 34px ${body}`; g.textBaseline = 'top';
+  g.fillText(`${y}년 ${+m}월의 책장`, pad, pad);
+  g.fillStyle = C.ink; g.font = `700 60px ${head}`;
+  const words = v.name.split(' '), lines = [''];
+  words.forEach((wd) => { const t = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${wd}` : wd; if (g.measureText(t).width > W0 - pad * 2 && lines[lines.length - 1]) lines.push(wd); else lines[lines.length - 1] = t; });
+  lines.slice(0, 2).forEach((t, i) => g.fillText(t, pad, pad + 56 + i * 76));
+  // 숫자 네 칸
+  const nums = [['다 읽은 책', `${cur.doneN}권`], ['기록을 남긴 날', `${cur.dayN}일`], ['밑줄', `${cur.marks}개`], cur.measured ? ['쌓은 높이', `${(cur.mm / 10).toFixed(1)}cm`] : ['남긴 글', `${cur.writes}개`]];
+  const top = pad + 56 + Math.min(2, lines.length) * 76 + 32, bw = (W0 - pad * 2 - 24 * 3) / 4;
+  nums.forEach(([l, n], i) => {
+    const x = pad + i * (bw + 24);
+    g.fillStyle = C.card; g.strokeStyle = C.line; g.lineWidth = 2;
+    g.beginPath(); g.roundRect(x, top, bw, 150, 16); g.fill(); g.stroke();
+    g.fillStyle = C.ink; g.font = `700 48px ${head}`; g.fillText(n, x + 24, top + 28);
+    g.fillStyle = C.muted; g.font = `500 26px ${body}`; g.fillText(l, x + 24, top + 96);
+  });
+  // 책등: 아래를 맞춰 세운다. 넘치면 모두 같은 비율로 줄인다
+  const shown = cur.done.map((x) => x.w).filter((w) => !isOnlyMe(w));
+  const floor = 1130, k = 1.6;
+  const items = await Promise.all(shown.map(async (w) => {
+    const real = realOf(w), img = photos && real ? await loadImg(`https://image.yes24.com/goods/${real.no}/SIDE/L`) : null;
+    const h = (real && real.mh ? real.mh : 195 + Math.abs(hash('mh' + w.id)) % 46) * k;
+    const wd = img ? Math.max(18, h * img.naturalWidth / img.naturalHeight) : Math.max(28, h * (real ? real.r : 0.08));
+    return { w, img, h, wd };
+  }));
+  const total = items.reduce((a, x) => a + x.wd + 4, 0), room = W0 - pad * 2, sc = Math.min(room / Math.max(1, total), 560 / Math.max(1, ...items.map((x) => x.h))); // 적으면 키우고 많으면 줄인다
+  let x = pad + Math.max(0, (room - total * sc) / 2);
+  items.forEach(({ w, img, h, wd }) => {
+    const hh = h * sc, ww = wd * sc, top2 = floor - hh;
+    if (img) g.drawImage(img, x, top2, ww, hh);
+    else {
+      const c = coverColors(w);
+      g.fillStyle = c ? `#${String(c[0]).replace('#', '')}` : (cssVar(themeVar(w.th[0]).slice(4, -1)) || C.accent);
+      g.fillRect(x, top2, ww, hh);
+      g.fillStyle = c ? `#${String(c[1]).replace('#', '')}` : '#fff';
+      const fs = Math.max(12, Math.min(26, ww * .55));
+      g.save(); g.translate(x + ww / 2, top2 + 14); g.rotate(Math.PI / 2); g.font = `600 ${fs}px ${body}`; g.textBaseline = 'middle';
+      let t = titleOf(w); while (t.length > 1 && g.measureText(t).width > hh - 28) t = t.slice(0, -2) + '…';
+      g.fillText(t, 0, 0); g.restore();
+    }
+    x += ww + 4 * sc;
+  });
+  g.fillStyle = C.wood; g.fillRect(pad - 16, floor, W0 - pad * 2 + 32, 16);
+  // 한 줄 평(변화 첫 문장)과 표시
+  g.fillStyle = C.ink; g.font = `500 32px ${body}`; g.textBaseline = 'top';
+  const say = v.change[0] || v.habit[0] || '';
+  let s = say; while (s.length > 1 && g.measureText(s).width > W0 - pad * 2) s = s.slice(0, -2) + '…';
+  g.fillText(s, pad, floor + 52);
+  g.fillStyle = C.muted; g.font = `500 26px ${body}`;
+  g.fillText('@hyonnie_books · 효니의 책장', pad, H0 - pad - 26);
+  return { cv, hidden:cur.doneN - shown.length };
+}
+async function saveMonthImage(cur, v, btn) {
+  btn.disabled = true; const was = btn.textContent; btn.textContent = '그리는 중…';
+  try {
+    await document.fonts.ready;
+    let made = await monthCanvas(cur, v, true), blob;
+    try { blob = await new Promise((ok, no) => { try { made.cv.toBlob((b) => (b ? ok(b) : no(new Error('blob'))), 'image/png'); } catch (e) { no(e); } }); }
+    catch (e) { made = await monthCanvas(cur, v, false); blob = await new Promise((ok) => made.cv.toBlob(ok, 'image/png')); } // 사진 때문에 캔버스가 막히면 색 책등으로
+    const name = `책장_${cur.ym}_결산.png`, file = new File([blob], name, { type:'image/png' });
+    const note = made.hidden ? ` 나만 보기 ${made.hidden}권은 그림에서 뺐어요.` : '';
+    if (matchMedia('(pointer:coarse)').matches && navigator.canShare && navigator.canShare({ files:[file] })) {
+      try { await navigator.share({ files:[file] }); toast('결산 카드를 보냈어요.' + note); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const a = el('a', { href:URL.createObjectURL(blob), download:name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('결산 카드를 저장했어요.' + note);
+  } catch (e) { console.error(e); toast('그림을 만들지 못했어요'); }
+  finally { btn.disabled = false; btn.textContent = was; }
+}
+// 서재에서 고른 다음 책: 소장했는데 아직 안 읽은 책 가운데 요즘(지난 1년) 읽는 책과 이어지는 책
+function nextBooksCard() {
+  if (!D.lib.length) return null;
+  const since = new Date(Date.now() + 9 * 3600e3 - 365 * 864e5).toISOString().slice(0, 10);
+  const here = D.lib.filter((it) => { const l = openLoan(it); return !(l && l.dir === 'out'); }); // 빌려준 책은 지금 서재에 없다
+  const got = nextBooks(here, list(), { firstAuthor:firstAuthorOf, seriesKey, done:(w) => w.known && countsRead(w), work:(id) => D.works.get(id), since, today:today() });
+  if (!got.length) return null;
+  return foldCard('next', `${got.length}권 · ${got[0].it.t}`, el('div', { className:'card span2 next-card' }, el('h2', {}, '서재에서 고른 다음 책 ', privateTag()),
+    el('p', { className:'sub', textContent:'소장했는데 아직 안 읽은 책 중에 요즘 읽는 책과 이어지는 책이에요' }),
+    el('div', { className:'act-list' }, got.map(({ it, why }) => {
+      const b = el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:it.t }), el('small', { textContent:[libAuthor(it), ...why].filter(Boolean).join(' · ') })));
+      b.onclick = () => openLib(it.id, b);
+      return b;
+    }))));
 }
 
 /* ---------- 낱말 지도 ---------- */
