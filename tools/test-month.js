@@ -53,6 +53,9 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     assert.strictEqual(v.quote.w.id, 'a');
     const all = [v.name, ...v.change, ...v.habit, v.next].join('\n');
     assert.ok(!/것 같다|—|라는 것\.|정리하면|핵심은/.test(all), 'AI 티 표현 없음');
+    // 별점 차이 0.3 경계(4.5 - 4.2는 소수로 0.2999…)
+    assert.ok(M.monthVoice(cur, prev, { avgAll:4.2, ratedAll:20, title:(w) => w.t }).habit.some((t) => t.includes('평소 4.2점 → 4.5점')), '경계 0.3도 말한다');
+    assert.ok(!M.monthVoice(cur, prev, { avgAll:4.3, ratedAll:20, title:(w) => w.t }).habit.some((t) => t.includes('평소')), '0.2 차이는 말하지 않는다');
     // 같은 달은 늘 같은 문장
     assert.deepStrictEqual(M.monthVoice(cur, prev, { avgAll:3.6, ratedAll:20, title:(w) => w.t }).change, M.monthVoice(cur, prev, { avgAll:3.6, ratedAll:20, title:(w) => w.t }).change);
     // 기록 없는 달
