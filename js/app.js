@@ -1460,7 +1460,7 @@ function shortList(key, items, keep, tail = 0) {
   return [items.slice(0, keep), more, tail ? items.slice(-tail) : []];
 }
 
-/* 독서 성향 문장: 효니가 서평에 쓰는 말투(다 평서체, 괄호 방백, ㅎㅎ). 날마다, 그리고 «다른 말로»를 누를 때마다 바뀐다. 문장마다 실제 숫자에서 나온 조건을 건다 */
+/* 독서 성향 문장: 담백한 평서체(2026-11-17 효니 쪽지 «ㅎㅎ 남발»으로 ㅎㅎ·(?)·말줄임 흉내를 뺐다). 날마다, 그리고 «다른 말로»를 누를 때마다 바뀐다. 문장마다 실제 숫자에서 나온 조건을 건다 */
 const hasJong = (s) => { const c = s.charCodeAt(s.length - 1) - 0xAC00; return c >= 0 && c <= 11171 && c % 28 > 0; };
 const josa = (s, a, b) => s + (hasJong(s) ? a : b);
 const THEME_VOICE = {
@@ -1469,10 +1469,10 @@ const THEME_VOICE = {
   '역사':['책에서도 교실을 못 벗어난 역사 선생님', '퇴근해도 옛날로 돌아가는 사람', '지난 일을 또 따져 묻는 사람'],
   '청소년·그림책':['아이들 책장을 먼저 훑는 선생님', '그림책 앞에서 오래 서 있는 어른'],
   '사회·정치':['세상 돌아가는 꼴을 책으로 따지는 사람', '뉴스 보다 말고 책을 펴는 사람'],
-  '과학·환경':['모르는 세계 앞에서 신나는 문과생(?)', '지구 걱정을 책으로 하는 사람'],
+  '과학·환경':['모르는 세계 앞에서 신나는 사람', '지구 걱정을 책으로 하는 사람'],
   '여성':['여자들 이야기를 찾아 읽는 사람', '지워진 이름을 찾아 읽는 사람'],
   '철학':['답 없는 질문을 사서 붙드는 사람', '왜냐고 묻다 밤을 새우는 사람'],
-  '인문':['이것저것 왜냐고 묻는 사람', '궁금한 게 많아 피곤한 사람(?)'],
+  '인문':['이것저것 왜냐고 묻는 사람', '궁금한 게 많은 사람'],
   '심리':['남의 마음도 내 마음도 궁금한 사람', '내 마음부터 들여다보는 사람'],
   '예술':['그림 보러 책을 펴는 사람', '책으로 전시장을 도는 사람'],
   '시':['짧은 말에 오래 붙들리는 사람', '한 줄 앞에서 멈춰 서는 사람'],
@@ -1500,12 +1500,12 @@ function readerVoice({ ts, books, rated, avg, sd, authors, reviewed, again, best
     `${josa(top, '이', '가')} ${p}%로 1위다. 다음은 ${ts[1][0]}(${pct(ts[1][1], books.length)}%).`,
     `제일 많이 펼친 건 ${top}(${p}%), 그다음이 ${ts[1][0]}(${pct(ts[1][1], books.length)}%)다.`,
     ...(ts.length >= 8 && share < .5 ? [`주제만 ${ts.length}개를 돌았다. ${josa(top, '이', '가')} ${p}%로 그나마 제일 많다.`] : []),
-    ...(share >= .4 ? [`${top} ${p}%. 솔직히 편식이 맞다 ㅎㅎ`] : []),
-  ], 'first') : `${top}만 읽었다. 이 정도면 전공이다(?)`;
+    ...(share >= .4 ? [`${top} ${p}%. 한쪽으로 꽤 기울었다.`] : []),
+  ], 'first') : `${top}만 읽었다.`;
   const facts = [];
   if (enough) {
     const hi = pct(rated.filter((x) => x.r >= 4.5).length, rated.length), lo = pct(rated.filter((x) => x.r <= 2).length, rated.length);
-    facts.push(pick([`평균 ${avg.toFixed(1)}점. 4.5점 이상은 ${hi}%${hi < 15 && shownAvg < 3.8 ? '뿐이다' : '다'}.`, ...(lo >= 10 ? [`평균 ${avg.toFixed(1)}점. 2점 이하도 ${lo}%나 줬다. 할 말은 한다 ㅎㅎ`] : shownAvg >= 3.2 ? [`평균 ${avg.toFixed(1)}점. 2점 이하는 ${lo}%뿐이다. 나쁜 말은 잘 안 한다.`] : [])], 'rate'));
+    facts.push(pick([`평균 ${avg.toFixed(1)}점. 4.5점 이상은 ${hi}%${hi < 15 && shownAvg < 3.8 ? '뿐이다' : '다'}.`, ...(lo >= 10 ? [`평균 ${avg.toFixed(1)}점. 2점 이하도 ${lo}%다. 아쉬운 책엔 아쉽다고 준다.`] : shownAvg >= 3.2 ? [`평균 ${avg.toFixed(1)}점. 2점 이하는 ${lo}%뿐이다. 나쁜 말은 잘 안 한다.`] : [])], 'rate'));
     if (sd >= .9) facts.push('점수 폭이 넓다. 좋으면 좋고 아니면 아니다.');
     else if (sd < .6) facts.push('점수가 한곳에 몰린다. 웬만해선 안 흔들린다.');
   }
@@ -1517,10 +1517,10 @@ function readerVoice({ ts, books, rated, avg, sd, authors, reviewed, again, best
   }
   if (!LOCAL) {
     const rv = pct(reviewed, books.length);
-    facts.push(rv >= 40 ? pick([`읽은 책의 ${rv}%에 서평을 썼다. 읽고 그냥 못 넘어간다.`, `${rv}%는 서평까지 남겼다. 할 말이 많다 ㅎㅎ`], 'review') : `서평을 쓴 건 ${rv}%다. 나머지는 마음속에만 있다 ㅎㅎ`);
+    facts.push(rv >= 40 ? pick([`읽은 책의 ${rv}%에 서평을 썼다. 읽고 그냥 못 넘어간다.`, `${rv}%는 서평까지 남겼다.`], 'review') : `서평을 쓴 건 ${rv}%다.`);
   }
   if (again >= 3) facts.push(`같은 책을 다시 편 게 ${again}권이다. 한 번으로 안 끝났다.`);
-  if (bestM) facts.push(['01', '02', '07', '08'].includes(bestM) ? `${+bestM}월에 제일 많이 읽었다. 역시 방학이 있어야 읽는다 ㅎㅎ` : `${+bestM}월에 제일 많이 읽었다. 학기 중인데 어떻게 읽었는지 나도 모르겠다(?)`);
+  if (bestM) facts.push(['01', '02', '07', '08'].includes(bestM) ? `${+bestM}월에 제일 많이 읽었다. 방학 때 몰아 읽었다.` : `${+bestM}월에 제일 많이 읽었다.`);
   if (ry && prevN && ry !== today().slice(0, 4)) { const d = books.length - prevN; if (d) facts.push(d > 0 ? `${+ry - 1}년보다 ${d}권 더 읽었다.` : `${+ry - 1}년보다 ${-d}권 덜 읽었다. 바빴다고 해 두자.`); }
   const order = facts.map((t, i) => [mix(`${seed}|f${i}`), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   return { headline:`${lead} ${noun}`, lines:[first, ...order.slice(0, 2)] };
