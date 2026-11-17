@@ -27,7 +27,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'', rq:0, rqm:'' };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'', rq:0, rqm:'', rt:'sum' };
 const D = { pub:null, blog:[], spines:{}, y24:{}, y24miss:{}, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
@@ -1414,8 +1414,9 @@ function drillable(btn, key, title, getRows, slot) {
 const FOLD_MQ = matchMedia('(max-width:767px), (max-height:500px)');
 const folds = () => FOLD_MQ.matches;
 FOLD_MQ.addEventListener('change', () => { if ($('recap').children.length) renderRecap(); });
-function foldCard(key, line, card) {
-  if (!folds()) return card;
+// always: 넓은 화면에서도 접는다(월별 결산, 2026-11-17 효니 쪽지 «월별 결산 좋긴한데 접게 해주라»)
+function foldCard(key, line, card, always) {
+  if (!folds() && !always) return card;
   const [title, ...rest] = card.children, open = S.rOpen === key, bodyId = `rfold-${key}`;
   const btn = el('button', { className:'rfold-head', type:'button' },
     el('span', { className:'rfold-t' }, el('span', { className:'rfold-name' }, ...title.childNodes), line ? el('span', { className:'rfold-line', textContent:line }) : null),
@@ -1460,7 +1461,7 @@ function shortList(key, items, keep, tail = 0) {
   return [items.slice(0, keep), more, tail ? items.slice(-tail) : []];
 }
 
-/* 독서 성향 문장: 효니가 서평에 쓰는 말투(다 평서체, 괄호 방백, ㅎㅎ). 날마다, 그리고 «다른 말로»를 누를 때마다 바뀐다. 문장마다 실제 숫자에서 나온 조건을 건다 */
+/* 독서 성향 문장: 담백한 평서체(2026-11-17 효니 쪽지 «ㅎㅎ 남발»으로 ㅎㅎ·(?)·말줄임 흉내를 뺐다). 날마다, 그리고 «다른 말로»를 누를 때마다 바뀐다. 문장마다 실제 숫자에서 나온 조건을 건다 */
 const hasJong = (s) => { const c = s.charCodeAt(s.length - 1) - 0xAC00; return c >= 0 && c <= 11171 && c % 28 > 0; };
 const josa = (s, a, b) => s + (hasJong(s) ? a : b);
 const THEME_VOICE = {
@@ -1469,10 +1470,10 @@ const THEME_VOICE = {
   '역사':['책에서도 교실을 못 벗어난 역사 선생님', '퇴근해도 옛날로 돌아가는 사람', '지난 일을 또 따져 묻는 사람'],
   '청소년·그림책':['아이들 책장을 먼저 훑는 선생님', '그림책 앞에서 오래 서 있는 어른'],
   '사회·정치':['세상 돌아가는 꼴을 책으로 따지는 사람', '뉴스 보다 말고 책을 펴는 사람'],
-  '과학·환경':['모르는 세계 앞에서 신나는 문과생(?)', '지구 걱정을 책으로 하는 사람'],
+  '과학·환경':['모르는 세계 앞에서 신나는 사람', '지구 걱정을 책으로 하는 사람'],
   '여성':['여자들 이야기를 찾아 읽는 사람', '지워진 이름을 찾아 읽는 사람'],
   '철학':['답 없는 질문을 사서 붙드는 사람', '왜냐고 묻다 밤을 새우는 사람'],
-  '인문':['이것저것 왜냐고 묻는 사람', '궁금한 게 많아 피곤한 사람(?)'],
+  '인문':['이것저것 왜냐고 묻는 사람', '궁금한 게 많은 사람'],
   '심리':['남의 마음도 내 마음도 궁금한 사람', '내 마음부터 들여다보는 사람'],
   '예술':['그림 보러 책을 펴는 사람', '책으로 전시장을 도는 사람'],
   '시':['짧은 말에 오래 붙들리는 사람', '한 줄 앞에서 멈춰 서는 사람'],
@@ -1500,12 +1501,12 @@ function readerVoice({ ts, books, rated, avg, sd, authors, reviewed, again, best
     `${josa(top, '이', '가')} ${p}%로 1위다. 다음은 ${ts[1][0]}(${pct(ts[1][1], books.length)}%).`,
     `제일 많이 펼친 건 ${top}(${p}%), 그다음이 ${ts[1][0]}(${pct(ts[1][1], books.length)}%)다.`,
     ...(ts.length >= 8 && share < .5 ? [`주제만 ${ts.length}개를 돌았다. ${josa(top, '이', '가')} ${p}%로 그나마 제일 많다.`] : []),
-    ...(share >= .4 ? [`${top} ${p}%. 솔직히 편식이 맞다 ㅎㅎ`] : []),
-  ], 'first') : `${top}만 읽었다. 이 정도면 전공이다(?)`;
+    ...(share >= .4 ? [`${top} ${p}%. 한쪽으로 꽤 기울었다.`] : []),
+  ], 'first') : `${top}만 읽었다.`;
   const facts = [];
   if (enough) {
     const hi = pct(rated.filter((x) => x.r >= 4.5).length, rated.length), lo = pct(rated.filter((x) => x.r <= 2).length, rated.length);
-    facts.push(pick([`평균 ${avg.toFixed(1)}점. 4.5점 이상은 ${hi}%${hi < 15 && shownAvg < 3.8 ? '뿐이다' : '다'}.`, ...(lo >= 10 ? [`평균 ${avg.toFixed(1)}점. 2점 이하도 ${lo}%나 줬다. 할 말은 한다 ㅎㅎ`] : shownAvg >= 3.2 ? [`평균 ${avg.toFixed(1)}점. 2점 이하는 ${lo}%뿐이다. 나쁜 말은 잘 안 한다.`] : [])], 'rate'));
+    facts.push(pick([`평균 ${avg.toFixed(1)}점. 4.5점 이상은 ${hi}%${hi < 15 && shownAvg < 3.8 ? '뿐이다' : '다'}.`, ...(lo >= 10 ? [`평균 ${avg.toFixed(1)}점. 2점 이하도 ${lo}%다. 아쉬운 책엔 아쉽다고 준다.`] : shownAvg >= 3.2 ? [`평균 ${avg.toFixed(1)}점. 2점 이하는 ${lo}%뿐이다. 나쁜 말은 잘 안 한다.`] : [])], 'rate'));
     if (sd >= .9) facts.push('점수 폭이 넓다. 좋으면 좋고 아니면 아니다.');
     else if (sd < .6) facts.push('점수가 한곳에 몰린다. 웬만해선 안 흔들린다.');
   }
@@ -1517,13 +1518,20 @@ function readerVoice({ ts, books, rated, avg, sd, authors, reviewed, again, best
   }
   if (!LOCAL) {
     const rv = pct(reviewed, books.length);
-    facts.push(rv >= 40 ? pick([`읽은 책의 ${rv}%에 서평을 썼다. 읽고 그냥 못 넘어간다.`, `${rv}%는 서평까지 남겼다. 할 말이 많다 ㅎㅎ`], 'review') : `서평을 쓴 건 ${rv}%다. 나머지는 마음속에만 있다 ㅎㅎ`);
+    facts.push(rv >= 40 ? pick([`읽은 책의 ${rv}%에 서평을 썼다. 읽고 그냥 못 넘어간다.`, `${rv}%는 서평까지 남겼다.`], 'review') : `서평을 쓴 건 ${rv}%다.`);
   }
   if (again >= 3) facts.push(`같은 책을 다시 편 게 ${again}권이다. 한 번으로 안 끝났다.`);
-  if (bestM) facts.push(['01', '02', '07', '08'].includes(bestM) ? `${+bestM}월에 제일 많이 읽었다. 역시 방학이 있어야 읽는다 ㅎㅎ` : `${+bestM}월에 제일 많이 읽었다. 학기 중인데 어떻게 읽었는지 나도 모르겠다(?)`);
-  if (ry && prevN && ry !== today().slice(0, 4)) { const d = books.length - prevN; if (d) facts.push(d > 0 ? `${+ry - 1}년보다 ${d}권 더 읽었다.` : `${+ry - 1}년보다 ${-d}권 덜 읽었다. 바빴다고 해 두자.`); }
+  if (bestM) facts.push(['01', '02', '07', '08'].includes(bestM) ? `${+bestM}월에 제일 많이 읽었다. 방학 때 몰아 읽었다.` : `${+bestM}월에 제일 많이 읽었다.`);
+  if (ry && prevN && ry !== today().slice(0, 4)) { const d = books.length - prevN; if (d) facts.push(d > 0 ? `${+ry - 1}년보다 ${d}권 더 읽었다.` : `${+ry - 1}년보다 ${-d}권 덜 읽었다.`); }
   const order = facts.map((t, i) => [mix(`${seed}|f${i}`), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   return { headline:`${lead} ${noun}`, lines:[first, ...order.slice(0, 2)] };
+}
+function setRecapTab(k) {
+  S.rt = k; closeDrill();
+  renderRecap();
+  const box = $('recap'), b = box.querySelector(`[data-rtab="${k}"]`);
+  if (b) b.focus({ preventScroll:true });
+  box.querySelectorAll(':scope > .card').forEach((c) => c.classList.add('tabbed'));
 }
 function setPeriod(y) {
   S.ry = y; S.drill = '';
@@ -1541,16 +1549,21 @@ function renderRecap() {
   const ry = yc[S.ry] ? S.ry : '';
   const books = ry ? allBooks.filter((w) => readYear(w) === ry) : allBooks;
   const when = ry ? `${ry}년` : '지금까지';
+  /* 돌아보기 탭(2026-11-17 효니 쪽지 «살짝~ 돌아보기가 넘 많아서 탭을 나눠도 좋겠다»): 한눈에·결산·더 깊이. 볼 탭은 메모리에만(S.rt).
+     결산 탭은 «전체»가 없고, 해를 안 골랐으면 가장 최근 해를 보인다(쪽지 «왜 2023 결산만 있어?»: 전엔 기간에서 해를 골라야만 떴다) */
+  const recOk = S.owner && !LOCAL && ys.length > 0, deepOk = S.owner;
+  const tab = S.rt === 'rec' && recOk ? 'rec' : S.rt === 'deep' && deepOk ? 'deep' : 'sum';
+  const cy = tab === 'rec' ? (ry || ys[ys.length - 1]) : ry;
   const head = (text, only) => el('h2', {}, text, only ? ' ' : null, only ? privateTag() : null);
   const sec = (text) => el('h3', { className:'recap-sec', textContent:text });
   const hbar = (label, n, max, color, onclick, shown) => { const fill = el('div', { className:'fill' }); fill.style.width = `${n / max * 100}%`; fill.style.background = color;
     const b = el('button', { className:'hbar', type:'button' }, el('span', { textContent:label, title:label }), el('div', { className:'track' }, fill), el('span', { className:'n', textContent:shown || n }));
     if (onclick) b.onclick = onclick; return b; };
 
-  const period = el('div', { className:'row span2', role:'group', ariaLabel:'돌아볼 기간' }, [['', '전체'], ...[...ys].reverse().map((y) => [y, y])].map(([y, label]) => {
+  const period = el('div', { className:'row span2', role:'group', ariaLabel:tab === 'rec' ? '결산할 해' : '돌아볼 기간' }, [...(tab === 'rec' ? [] : [['', '전체']]), ...[...ys].reverse().map((y) => [y, y])].map(([y, label]) => {
     const b = el('button', { className:'chip', type:'button', textContent:label });
     b.dataset.period = y;
-    b.setAttribute('aria-pressed', ry === y);
+    b.setAttribute('aria-pressed', cy === y);
     b.onclick = () => setPeriod(y);
     return b;
   }));
@@ -1645,9 +1658,9 @@ function renderRecap() {
       el('div', { className:'act-list' }, acts.map(([label, hint, rows]) => drillable(el('button', { className:'act', type:'button' }, el('span', { className:'act-t' }, el('strong', { textContent:label }), el('small', { textContent:hint })), el('span', { className:'n', textContent:`${rows.length}권` })), `x:${label}`, label, () => { const r = bookRows(rows); if (GEUL_ACTS.has(label)) r.top = () => geulTop(rows, label); return r; }))));
   }
 
-  const monthCard = S.owner && !LOCAL ? monthReview(ry) : null; // 이달의 돌아보기(2026-11-16): 효니 책장 주인 화면만
+  const monthCard = tab === 'rec' ? monthReview(cy) : null; // 이달의 돌아보기(2026-11-16): 효니 책장 주인 화면만. 2026-11-17부터 결산 탭에서 접어 둔다
   const nextCard = S.owner && !LOCAL ? nextBooksCard() : null;
-  const yearRecap = S.owner && !LOCAL && ry ? yearReview(ry, books, allBooks) : null; // 연말 결산(2026-11-16): 해를 고르면 이달의 돌아보기 위에
+  const yearRecap = tab === 'rec' ? yearReview(cy, allBooks.filter((w) => readYear(w) === cy), allBooks) : null; // 연말 결산(2026-11-16): 결산 탭 맨 위
 
   /* 해마다 */
   const yearCard = foldCard('years', topY ? `최다 ${topY}년 ${maxY}권` : '', el('div', { className:'card span2' }, head('해마다 읽은 책'), el('p', { className:'sub', textContent:topY ? `${topY}년에 ${maxY}권으로 가장 많이 읽었어요. 막대를 누르면 그해만 돌아봐요${noYear ? `. 읽은 해를 모르는 ${noYear}권은 막대에서 빠져요` : ''}` : '' }),
@@ -1660,7 +1673,7 @@ function renderRecap() {
     el('div', { className:'ylabels' }, ys.map((y) => el('span', { textContent:"'" + y.slice(2) })))));
 
   /* 달력 */
-  const cards = [period, profile, yearRecap, monthCard, actsCard, nextCard, yearCard];
+  const T = { sum:[profile, actsCard, nextCard, yearCard], rec:[yearRecap, monthCard], deep:[] }; // 탭마다 카드
   if (S.owner) {
     if (dated.length) {
       const mc = {};
@@ -1685,7 +1698,7 @@ function renderRecap() {
       const months = Array.from({ length:12 }, (_, i) => String(i + 1).padStart(2, '0'));
       const fmt = (m) => m.replace('-', '.');
       const runText = run[2] > 1 ? ` 가장 오래 이어 읽은 때는 ${fmt(run[0])}~${fmt(run[1])}, ${run[2]}개월이에요.` : '';
-      cards.push(foldCard('cal', `가장 많이 읽은 달 ${+best}월`, el('div', { className:'card span2' }, head('달력으로 보는 독서', true),
+      T.deep.push(foldCard('cal', `가장 많이 읽은 달 ${+best}월`, el('div', { className:'card span2' }, head('달력으로 보는 독서', true),
         el('p', { className:'sub', textContent:`${+best}월에 가장 많이 읽었어요.${ry ? '' : runText} 날짜가 남은 ${dated.length}권 기준이에요` }),
         el('div', { className:'heat' }, el('span', { className:'heat-corner' }), months.map((mm) => el('span', { className:'heat-m', textContent:+mm })),
           rowYs.flatMap((y) => [el('span', { className:'heat-y', textContent:"'" + y.slice(2) }), ...months.map((mm) => cell(y, mm))])), slot)));
@@ -1698,19 +1711,20 @@ function renderRecap() {
       const pastYs = Object.keys(past).sort().reverse();
       if (pastYs.length) {
         const slot = el('div', { className:'drill-slot' });
-        cards.push(foldCard('then', `${+pastYs[0] === +nowY - 1 ? '작년' : `${pastYs[0]}년`} ${+nowM}월 ${past[pastYs[0]].length}권`, el('div', { className:'card span2' }, head('이맘때 읽은 책', true),
+        T.deep.push(foldCard('then', `${+pastYs[0] === +nowY - 1 ? '작년' : `${pastYs[0]}년`} ${+nowM}월 ${past[pastYs[0]].length}권`, el('div', { className:'card span2' }, head('이맘때 읽은 책', true),
           el('p', { className:'sub', textContent:`지난해들의 ${+nowM}월에 읽은 책이에요. 누르면 그 책이 나와요` }),
           el('div', { className:'again' }, pastYs.map((y) => drillable(el('button', { className:'chip', type:'button', textContent:`${y}년 ${past[y].length}권` }), `n:${y}`, `${y}년 ${+nowM}월에 읽은 책`, () => bookRows(past[y]), slot))), slot)));
       }
     }
 
-    cards.push(foldCard('word', '내 글에 자주 나온 말과 이어진 말', el('div', { className:'card span2' }, head('낱말 지도', true), wordCard(ry))));
+    // 숨은 탭에서는 글을 훑지 않는다
+    if (tab === 'deep') T.deep.push(foldCard('word', '내 글에 자주 나온 말과 이어진 말', el('div', { className:'card span2' }, head('낱말 지도', true), wordCard(ry))));
 
     /* 별점 */
     if (rated.length) {
       const maxR = Math.max(1, ...Object.values(rc));
       const avgByYear = ry ? [] : ys.map((y) => [y, ratedRows(allBooks.filter((w) => readYear(w) === y))]).filter(([, rows]) => rows.length >= 5);
-      cards.push(foldCard('rate', `평균 ${avg.toFixed(1)}점 · 최다 ${ratingWord(oftenR)}`, el('div', { className:'card' }, head('별점', true), el('p', { className:'sub', textContent:`별점을 남긴 ${rated.length}건, 평균 ${avg.toFixed(1)}점. 누르면 그 책이 나와요` }),
+      T.deep.push(foldCard('rate', `평균 ${avg.toFixed(1)}점 · 최다 ${ratingWord(oftenR)}`, el('div', { className:'card' }, head('별점', true), el('p', { className:'sub', textContent:`별점을 남긴 ${rated.length}건, 평균 ${avg.toFixed(1)}점. 누르면 그 책이 나와요` }),
         RATING_STEPS.filter((r) => rc[r]).map((r) => drillable(hbar(ratingWord(r), rc[r], maxR, 'var(--bar)'), `r:${r}`, `${ratingWord(r)} 준 기록`, () => rated.filter((x) => x.r === r))),
         avgByYear.length > 1 ? sec('해마다 평균 별점') : null,
         avgByYear.length > 1 ? shortList('rateY', (folds() ? [...avgByYear].reverse() : avgByYear).map(([y, rows]) => hbar(y, meanOf(rows), 5, 'var(--bar)', () => setPeriod(y), meanOf(rows).toFixed(1))), 3) : null)));
@@ -1719,7 +1733,7 @@ function renderRecap() {
       if (taste.length > 1) {
         const maxD = Math.max(.1, ...taste.map((x) => Math.abs(x.delta)));
         const hiT = taste[0], loT = taste[taste.length - 1];
-        cards.push(foldCard('taste', `${hiT.t} ${signed(hiT.delta)}, ${loT.t} ${signed(loT.delta)}`, el('div', { className:'card' }, head('높게 주는 주제, 낮게 주는 주제', true),
+        T.deep.push(foldCard('taste', `${hiT.t} ${signed(hiT.delta)}, ${loT.t} ${signed(loT.delta)}`, el('div', { className:'card' }, head('높게 주는 주제, 낮게 주는 주제', true),
           el('p', { className:'sub', textContent:`내 평균 ${avg.toFixed(1)}점보다 얼마나 높거나 낮은지예요. 별점 ${need}건 이상인 주제만 봐요` }),
           shortList('taste', taste.map((x) => {
             const fill = el('i', { className:'dfill ' + (x.delta >= 0 ? 'up' : 'down') });
@@ -1739,7 +1753,7 @@ function renderRecap() {
       if (ry) return drillable(hbar(t, n, ts[0][1], themeVar(t)), `th:${t}`, `${ry}년 ${t}`, () => bookRows(books.filter((w) => w.th.includes(t))));
       return hbar(t, n, ts[0][1], themeVar(t), () => { Object.assign(S, { kind:'book', theme:t, q:'', hideUnknown:true, onlyIg:false }); $('q').value = ''; show('shelf'); renderShelf(); scrollTo(0, 0); });
     }), 6))) : null;
-  cards.push(themeCard);
+  T.sum.push(themeCard);
 
   /* 저자 */
   const authors = [...authorBooks.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], 'ko'));
@@ -1748,7 +1762,7 @@ function renderRecap() {
     const list2 = shownAuthors.length ? shownAuthors : authors.slice(0, 5);
     const trust = rated.length ? authors.map(([a, x]) => { const rows = ratedRows(x); return { a, rows, m:meanOf(rows) }; }).filter((x) => x.rows.length >= 2 && x.m >= Math.max(3.5, avg + .5)).sort((a, b) => b.m - a.m || b.rows.length - a.rows.length).slice(0, 8) : [];
     const trustSlot = el('div', { className:'drill-slot' });
-    cards.push(foldCard('authors', list2[0][1].length > 1 ? `최다 ${list2[0][0]} ${list2[0][1].length}권` : `저자 ${authors.length}명`, el('div', { className:'card' }, head('많이 읽은 저자'), el('p', { className:'sub', textContent:`저자 ${authors.length}명 중 2권 이상 읽은 저자는 ${authors.filter(([, x]) => x.length > 1).length}명이에요` }),
+    T.sum.push(foldCard('authors', list2[0][1].length > 1 ? `최다 ${list2[0][0]} ${list2[0][1].length}권` : `저자 ${authors.length}명`, el('div', { className:'card' }, head('많이 읽은 저자'), el('p', { className:'sub', textContent:`저자 ${authors.length}명 중 2권 이상 읽은 저자는 ${authors.filter(([, x]) => x.length > 1).length}명이에요` }),
       shortList('authors', list2.map(([a, x]) => drillable(hbar(a, x.length, list2[0][1].length, 'var(--bar)'), `a:${a}`, `${a}의 책`, () => bookRows(x))), 5),
       trust.length ? el('h3', { className:'recap-sec' }, '믿고 읽는 저자 ', privateTag()) : null,
       trust.length ? el('div', { className:'again' }, trust.map((x) => drillable(el('button', { className:'chip', type:'button', textContent:`${x.a} ${x.m.toFixed(1)}` }), `ta:${x.a}`, `${x.a}에게 준 별점`, () => x.rows, trustSlot))) : null,
@@ -1759,7 +1773,7 @@ function renderRecap() {
   if (!ry && ys.length > 1) {
     const topOfYear = (y) => { const c = {}; allBooks.filter((w) => readYear(w) === y).forEach((w) => w.th.forEach((t) => { c[t] = (c[t] || 0) + 1; })); return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 3); };
     const newest = ys[ys.length - 1], newestTop = topOfYear(newest)[0];
-    cards.push(foldCard('shift', newestTop ? `${newest}년 최다 ${newestTop[0]}` : '', el('div', { className:'card' }, head('해마다 많이 읽은 주제'), el('p', { className:'sub', textContent:'그해에 가장 많이 읽은 주제 세 개예요' }),
+    (deepOk ? T.deep : T.sum).push(foldCard('shift', newestTop ? `${newest}년 최다 ${newestTop[0]}` : '', el('div', { className:'card' }, head('해마다 많이 읽은 주제'), el('p', { className:'sub', textContent:'그해에 가장 많이 읽은 주제 세 개예요' }),
       el('table', { className:'ytable' }, el('tbody', {}, [...ys].reverse().map((y) => el('tr', {}, el('th', { scope:'row', textContent:y }), el('td', {}, topOfYear(y).map(([t, n]) => { const g = el('span', { className:'tag' }, `${t} `, el('b', { textContent:n })); g.style.background = themeVar(t); return g; })))))))));
   }
 
@@ -1769,12 +1783,22 @@ function renderRecap() {
     D.posts.filter((p) => p.k === 'review' && !p.blog).forEach((p) => { const y = p.d.slice(0, 4); pc[y] = (pc[y] || 0) + 1; });
     const pys = Object.keys(pc).sort().reverse(), maxP = Math.max(1, ...Object.values(pc));
     const reviewed = [...D.byWork.entries()].map(([id, ps]) => [D.works.get(id), ps.filter((p) => !p.blog).length]).filter(([w, n]) => w && n > 1).sort((a, b) => b[1] - a[1]).slice(0, 24);
-    cards.push(foldCard('posts', `지금까지 ${Object.values(pc).reduce((a, b) => a + b, 0)}편`, el('div', { className:'card' }, head('해마다 쓴 서평'), el('p', { className:'sub', textContent:'@hyonnie_books에 올린 서평 글 기준' }),
+    T.sum.push(foldCard('posts', `지금까지 ${Object.values(pc).reduce((a, b) => a + b, 0)}편`, el('div', { className:'card' }, head('해마다 쓴 서평'), el('p', { className:'sub', textContent:'@hyonnie_books에 올린 서평 글 기준' }),
       pys.map((y) => hbar(y, pc[y], maxP, 'var(--bar)')),
       reviewed.length ? sec('여러 번 쓴 책') : null,
       reviewed.length ? el('div', { className:'again' }, shortList('postsAgain', reviewed.map(([w, n]) => { const b = el('button', { className:'chip', type:'button', textContent:`${titleOf(w)} ×${n}` }); b.onclick = () => openBook(w.id, b); return b; }), 6)) : null)));
   }
-  box.replaceChildren(...cards.filter(Boolean));
+  const names = [['sum', '한눈에'], ...(recOk ? [['rec', '결산']] : []), ...(deepOk ? [['deep', '더 깊이']] : [])];
+  const rtabs = names.length > 1 ? el('div', { className:'rtabs span2', role:'tablist', ariaLabel:'돌아보기 묶음' }, names.map(([k, label], i) => {
+    const b = el('button', { className:'rtab', type:'button', role:'tab', textContent:label });
+    b.dataset.rtab = k;
+    b.setAttribute('aria-selected', tab === k);
+    b.tabIndex = tab === k ? 0 : -1;
+    b.onclick = () => { if (tab !== k) setRecapTab(k); };
+    b.onkeydown = (e) => { const d = { ArrowRight:1, ArrowLeft:-1 }[e.key]; if (!d) return; e.preventDefault(); setRecapTab(names[(i + d + names.length) % names.length][0]); };
+    return b;
+  })) : null;
+  box.replaceChildren(...[rtabs, period, ...T[tab]].filter(Boolean));
   placeNet($('wordMap'));
   if (redraw) return; // 보고 있는 화면을 기간·저장으로 다시 그릴 때는 카드가 깜박이지 않게 움직임을 뺀다
   box.querySelectorAll('.card').forEach((c) => c.classList.add('rise'));
@@ -1787,11 +1811,10 @@ function renderRecap() {
 const bookThick = (w) => { const r = realOf(w); return r ? r.r * (r.mh || 210) : 0; }; // 책등 사진 비율 × 키(모르면 210mm) = 두께 mm
 const isKnown = (w) => !!w.known;
 function shownMonth(ry) {
-  const ms = activeMonths(list());
+  // 결산 탭(2026-11-17)은 늘 해를 넘기므로 그해 달만 고르고 넘긴다. 그해에 기록 남은 달이 없으면 월별 결산을 띄우지 않는다(다른 해 달이 뜨면 헷갈림)
+  const ms = activeMonths(list()).filter((m) => !ry || m.startsWith(ry));
   if (!ms.length) return { ms, ym:'' };
-  if (ms.includes(S.rm)) return { ms, ym:S.rm };
-  const inYear = ry ? ms.filter((m) => m.startsWith(ry)) : [];
-  return { ms, ym:(inYear.length ? inYear : ms)[(inYear.length ? inYear : ms).length - 1] };
+  return { ms, ym:ms.includes(S.rm) ? S.rm : ms[ms.length - 1] };
 }
 function setMonth(ym, focusSel) {
   S.rm = ym; closeDrill();
@@ -1866,7 +1889,8 @@ function monthReview(ry) {
   const doneWs = cur.done.map((x) => x.w), sent = doneWs.filter((w) => geulOf(w.id)).length;
   const geul = el('button', { className:'btn ghost msave', type:'button', textContent:sent ? `결산 글감 고르기 · 보낸 책 ${sent}권` : '결산 글감 고르기' });
   geul.onclick = () => openGeulForm(doneWs, `${y}년 ${+m}월 결산 글감`);
-  return el('div', { className:'card span2 month-card' },
+  return foldCard('month', `${y}년 ${+m}월 · 다 읽은 책 ${cur.doneN}권 · ${v.name}`, el('div', { className:'card span2 month-card' },
+    el('h2', {}, '월별 결산 ', privateTag()),
     el('div', { className:'mhead' }, nav(-1), pick, nav(1)),
     el('p', { className:'profile-when' }, `${y}년 ${+m}월의 나 `, privateTag()),
     el('h2', { className:'profile-head', textContent:v.name }),
@@ -1880,7 +1904,7 @@ function monthReview(ry) {
     el('h3', { className:'recap-sec', textContent:'한 달의 달력' }),
     el('div', { className:'mcal' }, cells), calSlot,
     el('p', { className:'sub mnote', textContent:'기록·메모·밑줄에 남은 날짜로만 셌어요. 말은 그 숫자에서 골랐어요.' }),
-    cur.doneN ? el('div', { className:'msaves' }, save, geul) : null);
+    cur.doneN ? el('div', { className:'msaves' }, save, geul) : null), true);
 }
 /* 이달에 남긴 물음표(2026-11-16, 효니 말 «그달의 내 물음이 문장이 어색해»: 이름은 효니가 고르고, 답이 없으면 이 이름).
    그달 메모·밑줄의 내 생각·기록 본문에서 효니가 쓴 «?» 문장만(js/month.js monthQuestions). AI가 짓지 않는다. 주인 화면만, 결산 그림에는 넣지 않는다.
@@ -2002,7 +2026,7 @@ async function saveCardImage(make, name, btn) {
 }
 
 /* ---------- 연말 결산 (2026-11-16, 효니 «1,2,3 다 해도 될 거 같은데») ----------
-   기간 단추에서 해를 고르면 이달의 돌아보기 위에 뜬다. 이번 달 결산 카드의 1년판이고 말투는 인스타 «추천·결산»(존댓말·📌·👉, js/month.js yearVoice).
+   «결산» 탭 맨 위에 뜬다(2026-11-17 전에는 기간 단추에서 해를 고를 때만 이달의 돌아보기 위에 떴다). 이번 달 결산 카드의 1년판이고 말투는 인스타 «추천·결산»(존댓말·📌·👉, js/month.js yearVoice).
    묶음은 «해마다 읽은 책» 막대와 같은 readYear(처음 다 읽은 해). 나만 보기 책은 제목·책등에서만 빼고 숫자에는 센다(효니 결정 2026-11-16 «지금처럼 셈»).
    주인 화면·효니 책장만, 저장하는 칸이 없다 */
 function yearReview(ry, books, allBooks) {

@@ -62,6 +62,7 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     assert.strictEqual(v.quote.w.id, 'a');
     const all = [v.name, ...v.change, ...v.habit, v.next].join('\n');
     assert.ok(!/것 같다|—|라는 것\.|정리하면|핵심은/.test(all), 'AI 티 표현 없음');
+    assert.ok(!/ㅎㅎ|\(\?\)|\.\.\./.test(all), 'ㅎㅎ·(?)·말줄임 흉내 없음(2026-11-17 효니 쪽지)');
     // 별점 차이 0.3 경계(4.5 - 4.2는 소수로 0.2999…)
     assert.ok(M.monthVoice(cur, prev, { avgAll:4.2, ratedAll:20, title:(w) => w.t }).habit.some((t) => t.includes('평소 4.2점 → 4.5점')), '경계 0.3도 말한다');
     assert.ok(!M.monthVoice(cur, prev, { avgAll:4.3, ratedAll:20, title:(w) => w.t }).habit.some((t) => t.includes('평소')), '0.2 차이는 말하지 않는다');
@@ -139,20 +140,28 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     const all = [v.head, v.big, ...v.items.map((x) => x.join(' ')), ...v.more].join('\n');
     assert.ok(!all.includes('나책') && !all.includes('숨긴다시책'), '나만 보기 제목 없음');
     assert.ok(all.includes('«가책»') && all.includes('김작가 작가님 책을 3권이나') && all.includes('«다시책» 말고도 1권 더'), all);
-    assert.ok(all.includes('2025년보다 3권 더') && all.includes('1월에 제일 많이 읽었어요(2권). 역시 방학'), all);
+    assert.ok(all.includes('2025년보다 3권 더') && all.includes('1월에 제일 많이 읽었어요(2권). 방학 때'), all);
     assert.ok(!/것 같다|것 같아요|—|라는 것\.|정리하면|핵심은/.test(all), 'AI 티 표현 없음');
+    assert.ok(!/ㅎㅎ|\(\?\)|\.\.\.|더라구요/.test(all), 'ㅎㅎ·(?)·말줄임 흉내 없음(2026-11-17 효니 쪽지)');
     assert.ok(/요|습니다/.test(v.items[0][1]), '존댓말');
     // 아직 안 끝난 해: 지난해보다 적어도 «덜 읽었다»고 하지 않는다
     const big = M.yearStats(ys.concat(ys.map((w) => ({ ...w, id:w.id + 'x' }))), ys, '2025', {});
     assert.ok(M.yearVoice(cur, big, { ongoing:true }).more[0].includes('2025년엔 8권이었어요'), '진행 중인 해');
     assert.ok(M.yearVoice(cur, prev, { ongoing:true }).more[0].includes('벌써 2025년보다 3권 더'));
-    assert.strictEqual(M.yearVoice(M.yearStats([], [], '2027', {}), null, {}).big, '완독한 책은 아직 없어요 🫣');
+    assert.strictEqual(M.yearVoice(M.yearStats([], [], '2027', {}), null, {}).big, '완독한 책은 아직 없어요');
     // 제목 미확인 책은 다시 편 책에서 빠지고, 낮은 별점뿐이면 «가장 높게 준 책» 줄을 안 쓴다
     const unk = W('u1', { t:'모름', known:false, recs:[{ d:'2024-01-01' }, { d:'2026-02-01' }] });
     assert.ok(!M.yearStats(ys, [...ys, unk], '2026', {}).again.some((w) => w.id === 'u1'));
     const low = M.yearStats([W('l1', { t:'낮음', recs:[{ d:'2026-02-01', r:1.5 }] })], [], '2026', {});
     assert.ok(!M.yearVoice(low, null, {}).items.some(([l]) => l === '가장 높게 준 책'));
     assert.deepStrictEqual(M.questionsIn('자료는 https://a.com/x? 보세요'), []);
+  });
+  ok('앱 성향 문장에도 ㅎㅎ·(?)·말줄임·농담 맺음이 없다(2026-11-17 효니 쪽지)', () => {
+    const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8');
+    const a = app.indexOf('const THEME_VOICE'), b = app.indexOf('function setRecapTab', a);
+    assert.ok(a > 0 && b > a, 'readerVoice 자리');
+    const body = app.slice(a, b).split('\n').filter((l) => !/^\s*(\/\/|\/\*)/.test(l)).join('\n');
+    assert.ok(!/ㅎㅎ|\(\?\)|\.\.\.[`']|바빴다고|더라구요/.test(body), body.match(/.{0,30}(ㅎㅎ|\(\?\)|\.\.\.[`']|바빴다고|더라구요)/)?.[0]);
   });
   console.log(`통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });

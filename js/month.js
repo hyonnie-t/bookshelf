@@ -88,7 +88,7 @@ const josa = (s, a, b) => s + (hasJong(s) ? a : b);
 const mon = (ym) => `${+ym.slice(5)}월`;
 const VACATION = ['01', '02', '07', '08'];
 
-// 효니 말투 한 달 평(효니위키 사람/효니-문체.md: 메모·인스타 감상 = 반말 평서 «~다», 말 줄임 «...», 괄호 혼잣말, «거 같다», 공개 글 웃음은 ㅎㅎ.
+// 효니 말투 한 달 평(효니위키 사람/효니-문체.md: 메모·인스타 감상 = 반말 평서 «~다».2026-11-17 효니 쪽지 «ㅎㅎ 남발»로 ㅎㅎ·(?)·말줄임 맺음은 쓰지 않는다.
 // 교훈 한 줄로 끊어 세우지 않고, 대구·«A가 아니라 B»·«~라는 것.» 맺음을 쓰지 않는다).
 // cur·prev = monthStats 결과, ctx = { avgAll:평소 별점 평균, ratedAll:평소 별점 수, themeVoice:{주제:[별명…]}, title:(w)=>제목 }
 export function monthVoice(cur, prev, ctx = {}) {
@@ -104,8 +104,8 @@ export function monthVoice(cur, prev, ctx = {}) {
   if (cur.marks >= 10) names.push('밑줄 긋다 한 달 다 간 사람');
   if (cur.notes >= 8) names.push('읽고 그냥 못 넘어가는 사람');
   if (top && cur.doneN >= 3 && share >= .5 && ctx.themeVoice && ctx.themeVoice[top[0]]) names.push(pick(ctx.themeVoice[top[0]], 'noun'));
-  if (VACATION.includes(cur.ym.slice(5)) && cur.doneN >= 4) names.push('방학이라 몰아 읽는 사람 ㅎㅎ');
-  if (cur.doneN === 0 && cur.dayN) names.push('읽는 중인 책만 늘어난 사람(?)');
+  if (VACATION.includes(cur.ym.slice(5)) && cur.doneN >= 4) names.push('방학에 몰아 읽은 사람');
+  if (cur.doneN === 0 && cur.dayN) names.push('읽는 중인 책이 늘어난 사람');
   if (!names.length) names.push(cur.doneN >= 3 ? '한 권씩 꾸준히 넘기는 사람' : cur.doneN ? '조용히 한두 권 읽은 사람' : '책을 잠깐 쉬어 간 사람');
   const name = pick(names, 'name');
 
@@ -113,32 +113,32 @@ export function monthVoice(cur, prev, ctx = {}) {
   if (prev) {
     const d = cur.doneN - prev.doneN;
     if (d > 0) change.push(prev.doneN ? `${pm}보다 ${d}권 더 읽었다(${prev.doneN}권 → ${cur.doneN}권).` : `${pm}엔 다 읽은 책이 없었는데 이번 달은 ${cur.doneN}권이다.`);
-    else if (d < 0) change.push(cur.doneN ? `${pm}보다 ${-d}권 덜 읽었다(${prev.doneN}권 → ${cur.doneN}권). 바빴다고 해 두자...` : `${pm}엔 ${prev.doneN}권이었는데 이번 달은 다 읽은 책이 없다... 바빴다고 해 두자.`);
-    else if (cur.doneN) change.push(`${pm}이랑 똑같이 ${cur.doneN}권. 이 정도면 꾸준한 거 같다 ㅎㅎ`);
+    else if (d < 0) change.push(cur.doneN ? `${pm}보다 ${-d}권 덜 읽었다(${prev.doneN}권 → ${cur.doneN}권).` : `${pm}엔 ${prev.doneN}권이었는데 이번 달은 다 읽은 책이 없다.`);
+    else if (cur.doneN) change.push(`${pm}이랑 똑같이 ${cur.doneN}권을 읽었다.`);
   } else if (cur.doneN) change.push(`이번 달에 다 읽은 책은 ${cur.doneN}권이다.`);
   const ptop = prev && prev.themes[0];
   if (top && cur.doneN >= 2) {
     if (ptop && ptop[0] !== top[0] && prev.doneN >= 2) change.push(`${pm}엔 ${ptop[0]} 책이 제일 많았는데 이번 달은 ${josa(top[0], '으로', '로')} 넘어갔다.`);
-    else if (ptop && ptop[0] === top[0] && prev.doneN >= 2) change.push(`이번 달도 ${top[0]}. 결국 손이 가는 데로 간다...`);
-    else if (share >= .5) change.push(`${cur.doneN}권 중 ${top[1]}권이 ${top[0]}. 솔직히 편식이 맞다 ㅎㅎ`);
-    else if (cur.themes.length >= 4) change.push(`주제만 ${cur.themes.length}개를 돌았다. 이것저것 많이도 펼쳤다(?)`);
+    else if (ptop && ptop[0] === top[0] && prev.doneN >= 2) change.push(`이번 달도 ${top[0]} 책이 제일 많다.`);
+    else if (share >= .5) change.push(`${cur.doneN}권 중 ${top[1]}권이 ${top[0]} 책이다.`);
+    else if (cur.themes.length >= 4) change.push(`${cur.themes.length}개 주제를 고루 펼쳤다.`);
   }
   if (cur.again.length) change.push(`다시 펼친 책도 ${cur.again.length}권 있었다. 한 번으로 안 끝나는 책이 있다.`);
 
   const habit = [];
-  if (cur.dayN) habit.push(cur.run >= 3 && cur.run === cur.dayN ? `기록을 남긴 ${cur.dayN}일이 하루도 안 빠지고 이어져 있다. 한 번도 안 끊겼다 ㅎㅎ` : cur.run >= 3 ? `기록을 남긴 날은 ${cur.dayN}일이고 그중 ${cur.run}일은 하루도 안 빼고 이어서 남겼다.` : `기록을 남긴 날은 ${cur.dayN}일. 생각날 때마다 띄엄띄엄 남겼다.`);
+  if (cur.dayN) habit.push(cur.run >= 3 && cur.run === cur.dayN ? `기록을 남긴 ${cur.dayN}일이 하루도 안 빠지고 이어져 있다.` : cur.run >= 3 ? `기록을 남긴 날은 ${cur.dayN}일이고 그중 ${cur.run}일은 하루도 안 빼고 이어서 남겼다.` : `기록을 남긴 날은 ${cur.dayN}일. 생각날 때마다 띄엄띄엄 남겼다.`);
   const avgM = +cur.avg.toFixed(1), avgA = +(ctx.avgAll || 0).toFixed(1);
   if (cur.rated.length >= 3 && (ctx.ratedAll || 0) >= 10 && Math.round(Math.abs(avgM - avgA) * 10) >= 3) { // 4.5 - 4.2 = 0.2999…라 소수 그대로 비교하면 경계에서 빠진다(제미나이 지적 2026-11-16)
-    habit.push(avgM > avgA ? `별점은 평소보다 후했다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점). 좋은 책만 골랐나 보다 ㅎㅎ` : `별점은 평소보다 짰다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점). 이번 달은 좀 아쉬운 책이 많았던 거 같다...`);
+    habit.push(avgM > avgA ? `별점은 평소보다 후했다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점).` : `별점은 평소보다 짰다(평소 ${avgA.toFixed(1)}점 → ${avgM.toFixed(1)}점).`);
   }
   if (cur.marks) habit.push(cur.marks >= 10 ? `밑줄은 ${cur.marks}개나 그었다. 손이 바빴다.` : `밑줄은 ${cur.marks}개.`);
-  else if (cur.doneN) habit.push('밑줄은 하나도 없다. 그냥 쭉 읽어 버렸나 보다(?)');
+  else if (cur.doneN) habit.push('밑줄은 하나도 없다.');
   if (cur.notes) habit.push(`메모는 ${cur.notes}개 남겼다.`);
 
   let next = '';
   if (cur.reading.length) {
     const w = [...cur.reading].sort((a, b) => String(title(a)).localeCompare(String(title(b)), 'ko'))[hash(seed + 'r') % cur.reading.length];
-    next = cur.reading.length > 1 ? `읽다 만 «${title(w)}» 말고도 ${cur.reading.length - 1}권이 더 있다... 다음 달엔 하나라도 끝낼 수 있을까.` : `읽다 만 «${title(w)}», 다음 달엔 끝낼 수 있을까...`;
+    next = cur.reading.length > 1 ? `읽다 만 책은 «${title(w)}» 말고도 ${cur.reading.length - 1}권이 더 있다.` : `읽다 만 책은 «${title(w)}» 한 권이다.`;
   }
   const quote = cur.quotes.length ? cur.quotes[hash(seed + 'q') % cur.quotes.length] : null;
   return { name, change, habit, next, quote };
@@ -179,7 +179,7 @@ export function nextBooks(lib, works, opt) {
     if (w && (w.recs || []).some((r) => r.st === 'unread')) { score += 1; why.push('읽다 멈춘 책이다'); }
     if (!score) return;
     const y = String(it.added || '').slice(0, 4);
-    if (/^\d{4}$/.test(y) && opt.today && +opt.today.slice(0, 4) - +y >= 1) { score += .5; why.push(`${y}년부터 꽂혀만 있다(?)`); }
+    if (/^\d{4}$/.test(y) && opt.today && +opt.today.slice(0, 4) - +y >= 1) { score += .5; why.push(`${y}년부터 서재에 꽂혀 있다`); }
     out.push({ it, why:why.slice(0, 2), score });
   });
   return out.sort((a, b) => b.score - a.score || String(a.it.t).localeCompare(String(b.it.t), 'ko')).slice(0, opt.max || 6);
@@ -254,38 +254,38 @@ export function yearStats(books, all, y, opt = {}) {
   return { y, books:bs, doneN:bs.length, best, top, authors, themes, again, marks, bestM, mm, measured, shownTop:top.filter((w) => !only(w)), shownAgain:again.filter((w) => !only(w)) };
 }
 
-// 연말 결산 말투: 효니 인스타 «추천·결산» 갈래(효니위키 사람/효니-문체.md 표: 존댓말 «~요/~습니다», 📌·👉 목록, ㅎㅎ 잦음.
+// 연말 결산 말투: 효니 인스타 «추천·결산» 갈래(효니위키 사람/효니-문체.md 표: 존댓말 «~요/~습니다», 📌·👉 목록. 2026-11-17부터 ㅎㅎ·덧붙이는 농담은 뺀다.
 // 대표 글 «9월 #독서결산 / 완독한 책 11권 👏 / 📌 #책 / 저자»). 책 제목은 나만 보기를 뺀 목록(shownTop·shownAgain)만 쓴다(화면·그림 같은 문장).
 // cur·prev = yearStats 결과(prev 없으면 비교 안 함), ctx.title(w)
 export function yearVoice(cur, prev, ctx = {}) {
   const title = ctx.title || ((w) => w.t || '');
   const pick = (arr, tag) => arr[hash(`${cur.y}|${tag}`) % arr.length];
   const head = `${cur.y}년 #독서결산`;
-  const big = cur.doneN ? `완독한 책 ${cur.doneN}권 👏` : '완독한 책은 아직 없어요 🫣';
+  const big = cur.doneN ? `완독한 책 ${cur.doneN}권 👏` : '완독한 책은 아직 없어요';
   const list = (ws, n) => { const xs = ws.slice(0, n).map((w) => `«${title(w)}»`); return ws.length > n ? `${xs.join(', ')} 외 ${ws.length - n}권` : xs.join(', '); };
   const items = [];
   if (cur.shownTop.length && cur.best >= 4) { // 낮은 별점뿐인 해에 «제일 좋았던 책»이라 하지 않는다(검토자 지적)
     const many = cur.shownTop.length > 1;
-    items.push(['가장 높게 준 책', `${list(cur.shownTop, 3)}. ${pick(many ? ['올해 제일 좋았던 책들이에요 💕', '두고두고 추천할 거 같습니다 ㅎㅎ'] : ['올해 제일 좋았던 책이에요 💕', '한동안 계속 추천할 거 같습니다 ㅎㅎ'], 'top')}`]);
+    items.push(['가장 높게 준 책', `${list(cur.shownTop, 3)}. ${pick(many ? ['올해 제일 좋았던 책들이에요', '두고두고 추천하고 싶은 책들이에요'] : ['올해 제일 좋았던 책이에요', '두고두고 추천하고 싶은 책이에요'], 'top')}`]);
   }
   if (cur.authors.length) {
     const [a, n] = cur.authors[0];
-    items.push(['많이 읽은 저자', `${a} 작가님 책을 ${n}권이나 읽었어요${cur.authors.length > 1 ? ` (${cur.authors.slice(1).map(([x, k]) => `${x} ${k}권`).join(', ')}도요)` : ''} ㅎㅎ`]);
+    items.push(['많이 읽은 저자', `${a} 작가님 책을 ${n}권이나 읽었어요${cur.authors.length > 1 ? ` (${cur.authors.slice(1).map(([x, k]) => `${x} ${k}권`).join(', ')}도요)` : ''}`]);
   }
   if (cur.themes.length) {
     const [t, n] = cur.themes[0];
     const rest = cur.themes.slice(1).map(([x, k]) => `${x} ${k}권`).join(', ');
-    items.push(['많이 읽은 주제', `${t} ${n}권${rest ? `, ${rest}` : ''}. ${cur.doneN && n / cur.doneN >= .4 ? '역시 손이 가는 데로 갔습니다 ㅎㅎ' : '이것저것 골고루 읽었더라구요 👀'}`]);
+    items.push(['많이 읽은 주제', `${t} ${n}권${rest ? `, ${rest}` : ''}. ${cur.doneN && n / cur.doneN >= .4 ? '가장 자주 손이 간 주제예요' : '여러 주제를 골고루 읽었어요'}`]);
   }
   if (cur.again.length) {
     const hid = cur.again.length - cur.shownAgain.length;
-    items.push(['다시 만난 책', `${cur.shownAgain.length ? list(cur.shownAgain, 2) + (hid ? ` 말고도 ${hid}권 더` : '') : `${cur.again.length}권`}. 한 번으로는 안 끝나는 책이 있더라구요`]);
+    items.push(['다시 만난 책', `${cur.shownAgain.length ? list(cur.shownAgain, 2) + (hid ? ` 말고도 ${hid}권 더` : '') : `${cur.again.length}권`}. 두 번 이상 읽었어요`]);
   }
   const more = [];
   // 아직 안 끝난 해(ctx.ongoing)는 덜 읽었다고 하지 않는다(앱 성향 문장도 올해는 지난해와 견주지 않는다)
-  if (prev && prev.doneN && cur.doneN && ctx.ongoing) { const d = cur.doneN - prev.doneN; more.push(d >= 0 ? `벌써 ${+cur.y - 1}년보다 ${d ? `${d}권 더` : '많이'} 읽었어요 👏` : `${+cur.y - 1}년엔 ${prev.doneN}권이었어요. 남은 날 동안 얼마나 더 읽을지 ㅎㅎ`); }
-  else if (prev && prev.doneN && cur.doneN) { const d = cur.doneN - prev.doneN; more.push(d > 0 ? `${+cur.y - 1}년보다 ${d}권 더 읽었어요 👏` : d < 0 ? `${+cur.y - 1}년보다 ${-d}권 덜 읽었어요. 바빴던 해라고 해 둘게요 🫠` : `${+cur.y - 1}년이랑 똑같이 ${cur.doneN}권이에요. 꾸준하다고 봐도 되겠죠? ㅎㅎ`); }
-  if (cur.bestM && cur.bestM[1] >= 2) more.push(['01', '02', '07', '08'].includes(cur.bestM[0]) ? `${+cur.bestM[0]}월에 제일 많이 읽었어요(${cur.bestM[1]}권). 역시 방학 덕분인 거 같아요 ㅎㅎ` : `${+cur.bestM[0]}월에 제일 많이 읽었어요(${cur.bestM[1]}권). 학기 중인데 어떻게 읽었는지 저도 모르겠어요(?)`);
+  if (prev && prev.doneN && cur.doneN && ctx.ongoing) { const d = cur.doneN - prev.doneN; more.push(d >= 0 ? `벌써 ${+cur.y - 1}년보다 ${d ? `${d}권 더` : '많이'} 읽었어요 👏` : `${+cur.y - 1}년엔 ${prev.doneN}권이었어요. 아직 남은 날이 있어요`); }
+  else if (prev && prev.doneN && cur.doneN) { const d = cur.doneN - prev.doneN; more.push(d > 0 ? `${+cur.y - 1}년보다 ${d}권 더 읽었어요 👏` : d < 0 ? `${+cur.y - 1}년보다 ${-d}권 덜 읽었어요` : `${+cur.y - 1}년이랑 똑같이 ${cur.doneN}권이에요`); }
+  if (cur.bestM && cur.bestM[1] >= 2) more.push(['01', '02', '07', '08'].includes(cur.bestM[0]) ? `${+cur.bestM[0]}월에 제일 많이 읽었어요(${cur.bestM[1]}권). 방학 때 많이 읽었어요` : `${+cur.bestM[0]}월에 제일 많이 읽었어요(${cur.bestM[1]}권)`);
   if (cur.marks) more.push(`밑줄은 ${cur.marks}개 그었습니다 ✍`);
   return { head, big, items, more };
 }

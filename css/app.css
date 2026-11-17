@@ -714,6 +714,13 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
   .month-card { padding:var(--space-3); }
 }
 
+.month-card.rfold { padding:0; }
+/* 돌아보기 탭 (2026-11-17): 위 큰 탭과 기간 칩 사이라 묶음 단추 모양으로 */
+.rtabs { display:flex; gap:var(--space-1); padding:var(--space-1); border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+.rtab { flex:1 1 0; min-height:40px; padding:0 var(--space-2); border:0; border-radius:8px; background:none; color:var(--muted); white-space:nowrap; transition:background-color .18s ease, color .18s ease; }
+.rtab[aria-selected="true"] { background:var(--ink); color:var(--surface); font-weight:700; }
+.recap > .card.tabbed { animation:drillIn .2s ease both; }
+
 /* 이달의 돌아보기 (2026-11-16) */
 .month-card .mhead { display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-2); }
 .mnav { min-width:40px; min-height:40px; padding:0; font-size:1.2rem; line-height:1; }
