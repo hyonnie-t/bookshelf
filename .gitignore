@@ -5,7 +5,9 @@ private*.json
 token.json
 api_key.txt
 credentials.json
-.claude/
+.claude/*
+# 레포 스킬(verify 등)만 올린다. worktrees·settings.local은 계속 무시(2026-11-17)
+!.claude/skills/
 
 # 공통 틀(2026-11-12): 도구 설정·캐시·내려받은 패키지·맥 파일
 .impeccable/

@@ -1,0 +1,8 @@
+{
+  "name": "bookshelf",
+  "private": true,
+  "description": "앱은 빌드 없이 GitHub Pages로 바로 나간다. 이 파일은 병합 전 시험 훅이 시험을 찾게 하려는 것뿐이다(2026-11-17).",
+  "scripts": {
+    "test": "node tools/run-tests.js"
+  }
+}
