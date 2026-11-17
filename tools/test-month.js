@@ -156,5 +156,12 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     assert.ok(!M.yearVoice(low, null, {}).items.some(([l]) => l === '가장 높게 준 책'));
     assert.deepStrictEqual(M.questionsIn('자료는 https://a.com/x? 보세요'), []);
   });
+  ok('앱 성향 문장에도 ㅎㅎ·(?)·말줄임·농담 맺음이 없다(2026-11-17 효니 쪽지)', () => {
+    const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8');
+    const a = app.indexOf('const THEME_VOICE'), b = app.indexOf('const mon = ', a);
+    assert.ok(a > 0 && b > a, 'readerVoice 자리');
+    const body = app.slice(a, b).split('\n').filter((l) => !/^\s*(\/\/|\/\*)/.test(l)).join('\n');
+    assert.ok(!/ㅎㅎ|\(\?\)|\.\.\.[`']|바빴다고|더라구요/.test(body), body.match(/.{0,30}(ㅎㅎ|\(\?\)|\.\.\.[`']|바빴다고|더라구요)/)?.[0]);
+  });
   console.log(`통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });

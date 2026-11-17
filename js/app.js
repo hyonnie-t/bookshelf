@@ -1522,7 +1522,7 @@ function readerVoice({ ts, books, rated, avg, sd, authors, reviewed, again, best
   }
   if (again >= 3) facts.push(`같은 책을 다시 편 게 ${again}권이다. 한 번으로 안 끝났다.`);
   if (bestM) facts.push(['01', '02', '07', '08'].includes(bestM) ? `${+bestM}월에 제일 많이 읽었다. 방학 때 몰아 읽었다.` : `${+bestM}월에 제일 많이 읽었다.`);
-  if (ry && prevN && ry !== today().slice(0, 4)) { const d = books.length - prevN; if (d) facts.push(d > 0 ? `${+ry - 1}년보다 ${d}권 더 읽었다.` : `${+ry - 1}년보다 ${-d}권 덜 읽었다. 바빴다고 해 두자.`); }
+  if (ry && prevN && ry !== today().slice(0, 4)) { const d = books.length - prevN; if (d) facts.push(d > 0 ? `${+ry - 1}년보다 ${d}권 더 읽었다.` : `${+ry - 1}년보다 ${-d}권 덜 읽었다.`); }
   const order = facts.map((t, i) => [mix(`${seed}|f${i}`), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   return { headline:`${lead} ${noun}`, lines:[first, ...order.slice(0, 2)] };
 }
@@ -2026,7 +2026,7 @@ async function saveCardImage(make, name, btn) {
 }
 
 /* ---------- 연말 결산 (2026-11-16, 효니 «1,2,3 다 해도 될 거 같은데») ----------
-   기간 단추에서 해를 고르면 이달의 돌아보기 위에 뜬다. 이번 달 결산 카드의 1년판이고 말투는 인스타 «추천·결산»(존댓말·📌·👉, js/month.js yearVoice).
+   «결산» 탭 맨 위에 뜬다(2026-11-17 전에는 기간 단추에서 해를 고를 때만 이달의 돌아보기 위에 떴다). 이번 달 결산 카드의 1년판이고 말투는 인스타 «추천·결산»(존댓말·📌·👉, js/month.js yearVoice).
    묶음은 «해마다 읽은 책» 막대와 같은 readYear(처음 다 읽은 해). 나만 보기 책은 제목·책등에서만 빼고 숫자에는 센다(효니 결정 2026-11-16 «지금처럼 셈»).
    주인 화면·효니 책장만, 저장하는 칸이 없다 */
 function yearReview(ry, books, allBooks) {
