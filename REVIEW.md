@@ -14,8 +14,8 @@
 
 | 이 파일·칸을 건드렸으면 | 꼭 볼 것 | 근거 |
 |---|---|---|
-| `tools/publish.js`, `data/public.json`, 새 `meta/*` 칸, `isOnlyMe` | **비공개가 공개본으로 새지 않나**: 별점·기록 본문·메모·`why`·날짜·나만 보기 책. `isOnlyMe`(app.js)와 publish.js가 같은 기준인가 | #13 #43 #73 #79, 159dc4c |
-| 저장 칸을 새로 만듦(`works/*` 새 키) | 연결 7곳: 합치기·되돌리기(`js/merge.js`)·`storedWork`·`publish.js`·`local.js cleanWork`·볼트 내보내기·찾기 `hay`. 레포 `CLAUDE.md` «연결 점검표»에 줄이 더해졌나 | #17 #20 #36 #71 #73 |
+| `tools/publish.js`, `data/public.json`, 새 `meta/*` 칸, `isOnlyMe` | **비공개가 공개본으로 새지 않나**: 별점·기록 본문·메모·`why`·날짜·나만 보기 책. `isOnlyMe`(app.js)와 publish.js가 같은 기준인가 | #13 #43 #73, 159dc4c |
+| 저장 칸을 새로 만듦(`works/*` 새 키) | 연결 7곳: 합치기·되돌리기(`js/merge.js`)·`storedWork`·`publish.js`·`local.js cleanWork`·볼트 내보내기·찾기 `hay`. 레포 `CLAUDE.md` «연결 점검표»에 줄이 더해졌나 | #17 #36 #71 #73 (볼트 내보내기는 #20) |
 | `js/merge.js`, `openMergeForm`, `was.*` | 합치기 → 되돌리기 = 두 책 모든 칸이 처음과 같나(숨긴 한 줄 평·`st`·`wc`·`ser`·`marks` 포함). `tools/test-merge.js`에 새 칸 사례가 있나 | #7 #70~#73 #76 |
 | `batchRun`, 일괄 창(`openFillTool`·`openSpineTool`·`rowSearch`) | 찾는 중 닫기 → 바로 다시 열기, 찾는 중 저장, 고른 수, 닫힌 창이 새 창 카드를 가져가지 않나 | #58 #67 #69 #74 |
 | `fromRelay`, `relayChain`, `LOCAL` 분기 | 범용판(`/my/`)이 카카오를 부르지 않나(국립중앙도서관·예스24만). `map(fromRelay)`처럼 배열 번호가 출처로 넘어가지 않나 | #12 #44 #66 #74, 500e930 |
