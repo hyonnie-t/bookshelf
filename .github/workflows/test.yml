@@ -1,0 +1,22 @@
+# 책장 시험(tools/test-*.js 13개)을 main 아닌 브랜치·PR에서 자동으로 돌려, 병합 전에 깨진 걸 알 수 있게 한다(2026-11-18).
+# 시험은 node 기본 모듈만 써서 npm 설치가 필요 없다. 시간표 레포 test.yml과 같은 틀.
+name: Test
+
+on:
+  push:
+    branches-ignore: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
