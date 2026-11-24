@@ -1660,7 +1660,7 @@ function renderRecap() {
   }
 
   const monthCard = tab === 'rec' ? monthReview(cy) : null; // 이달의 돌아보기(2026-11-16): 효니 책장 주인 화면만. 2026-11-17부터 결산 탭에서 접어 둔다
-  const nextCard = S.owner && !LOCAL ? nextBooksCard() : null;
+  const nextCard = S.owner ? nextBooksCard() : null;
   const yearRecap = tab === 'rec' ? yearReview(cy, allBooks.filter((w) => readYear(w) === cy), allBooks) : null; // 연말 결산(2026-11-16): 결산 탭 맨 위
 
   /* 해마다 */
@@ -1674,7 +1674,7 @@ function renderRecap() {
     el('div', { className:'ylabels' }, ys.map((y) => el('span', { textContent:"'" + y.slice(2) })))));
 
   /* 달력 */
-  const goalCard = S.owner && !LOCAL && !ry ? goalsCard() : null; // 다음 달 독서 목표(2026-11-24): 지금 기준이라 해를 고르면 숨긴다
+  const goalCard = S.owner && !ry ? goalsCard() : null; // 다음 달 독서 목표(2026-11-24, 범용판도 2026-11-24 효니 답 «내 토큰 쓰는 거면 말구»): 지금 기준이라 해를 고르면 숨긴다
   const T = { sum:[profile, actsCard, goalCard, nextCard, yearCard], rec:[yearRecap, monthCard], deep:[] }; // 탭마다 카드
   if (S.owner) {
     if (dated.length) {
@@ -2105,14 +2105,14 @@ function nextBooksCard() {
 
 /* ---------- 다음 달 독서 목표 (2026-11-24) ----------
    효니 쪽지 «다음 달 독서 목표 제안 … 기존에 내가 독서 빙고에서 했던 것들 … 빈틈을 제공하거나 새로운 독서목표를 통한 리프레시 및 동기부여».
-   계산은 js/goals.js. 효니 책장 주인 화면만(범용판·공개 화면 없음). 저장 칸은 비공개 meta/goals/{YYYY-MM} = {g:[목표 키], at}.
+   계산은 js/goals.js. 주인 화면만(공개 화면 없음). 범용판도 같은 카드(2026-11-24 효니 답 «내 토큰 쓰는 거면 말구»: 계산만 해서 토큰·서버를 안 씀, 서평 목표만 빠짐). 저장 칸은 비공개 meta/goals/{YYYY-MM} = {g:[목표 키], at}.
    이룬 정도는 저장하지 않고 그때그때 기록에서 센다(합치기·기록 고치기를 해도 따로 맞출 게 없다) */
 const goalsOf = (ym) => { const v = ((D.priv.meta || {}).goals || {})[ym]; return v && Array.isArray(v.g) ? v.g.filter((k) => parseGoal(k)) : []; };
-const goalCtx = () => ({ works:list(), lib:D.lib, posts:D.posts, today:today(), known:isKnown, reading:isReading, firstAuthor:firstAuthorOf, libWork:(it) => (it.w ? movedTo(it.w) : '') });
+const goalCtx = () => ({ works:list(), lib:D.lib, posts:LOCAL ? [] : D.posts, today:today(), known:isKnown, reading:isReading, firstAuthor:firstAuthorOf, libWork:(it) => (it.w ? movedTo(it.w) : '') });
 function goalBadgeEl(key, on) {
   const b = goalBadge(key);
   const box = el('span', { className:'goal-badge' + (on === false ? ' off' : '') + (b.img ? '' : ' emo'), ariaHidden:'true' });
-  if (b.img) box.append(el('img', { src:b.img, alt:'', width:56, height:56, loading:'lazy', decoding:'async' }));
+  if (b.img) box.append(el('img', { src:new URL('../' + b.img, import.meta.url).href, alt:'', width:56, height:56, loading:'lazy', decoding:'async' })); // 범용판(/my/)에서도 같은 그림(js/ 기준 경로)
   else box.textContent = b.emoji;
   return box;
 }
@@ -2125,7 +2125,7 @@ function goalTiles(ym, keys, ctx, future) {
   }));
 }
 function goalsCard() {
-  if (!S.owner || LOCAL) return null;
+  if (!S.owner) return null;
   const ctx = goalCtx(), now = today().slice(0, 7), next = nextMonth(now), prev = prevMonth(now);
   const mine = goalsOf(now), planned = goalsOf(next), before = goalsOf(prev);
   const res = (ym, keys) => keys.map((k) => ({ ...goalProgress(k, ctx, ym), label:goalLabel(k) }));

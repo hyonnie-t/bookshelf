@@ -129,5 +129,18 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     texts.forEach((t) => assert.ok(!/ㅎㅎ|\(\?\)|\.\.\.|…/.test(t), t));
   });
 
+  // 범용판(2026-11-24): 파일 백업·드라이브에서 받은 기록이 목표 칸을 지우지 않고, 이상한 값은 거른다. local.js는 브라우저 모듈이라 .mjs 사본으로
+  const os = require('os'), tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'goals-'));
+  fs.copyFileSync(path.join(REPO, 'js/local.js'), path.join(tmp, 'local.mjs'));
+  const { parseBackup } = await import('file:///' + path.join(tmp, 'local.mjs').replace(/\\/g, '/'));
+  const back = parseBackup(JSON.stringify({ app:'my-bookshelf', version:1, data:{ works:{}, meta:{ goals:{
+    '2026-12':{ g:['nonfic', 'th:역사', 'count:3', 'pile'], at:'2026-11-24', hack:1 },
+    '2026-13x':{ g:['nonfic'] }, '2027-01':{ g:['<b>', 5] }, '2027-02':'x',
+  } } } }));
+  fs.rmSync(tmp, { recursive:true, force:true });
+  ok('범용판 백업: 목표 칸 남김·거르기', () => {
+    assert.deepStrictEqual(back.meta.goals, { '2026-12':{ g:['nonfic', 'th:역사', 'count:3'], at:'2026-11-24' } });
+  });
+
   console.log(`목표 시험 ${n}개 통과`);
 })().catch((e) => { console.error(e); process.exit(1); });
