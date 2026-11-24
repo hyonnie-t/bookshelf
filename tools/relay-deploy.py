@@ -29,11 +29,24 @@ def current():
 
 
 def smoke():
-    q = urllib.parse.quote("작별하지 않는다")
-    with urllib.request.urlopen(f"{EXEC}?src=nl&q={q}", timeout=90) as r:
-        body = json.load(r)
+    # 국립중앙도서관이 바깥 사정으로 막힌 날(2026-11-24 upstream)도 배포가 저절로 되돌아가지 않게, 안 되면 예스24 ISBN으로 한 번 더 본다
+    body = {}
+    for src, q in (("nl", "작별하지 않는다"), ("y24", "9788936434120")):
+        with urllib.request.urlopen(f"{EXEC}?src={src}&q={urllib.parse.quote(q)}", timeout=90) as r:
+            body = json.load(r)
+        if body.get("ok") and body.get("books"):
+            print("점검 출처:", src)
+            break
+        print(f"점검 {src} 실패: error={body.get('error')}")
     if not body.get("ok") or not body.get("books"):
         return f"응답 이상: ok={body.get('ok')} error={body.get('error')}"
+    # 사진 읽기(doPost, 2026-11-24): 잘못된 mode는 열쇠·한도를 쓰지 않고 bad_mode로 돌아와야 한다
+    req = urllib.request.Request(EXEC, data=json.dumps({"mode": "x", "img": "QQ=="}).encode(), headers={"Content-Type": "text/plain"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        post = json.load(r)
+    print("사진 읽기 POST:", post.get("error"))
+    if post.get("error") != "bad_mode":
+        return f"doPost 응답 이상: {post}"
     b = body["books"][0]
     filled = {k: bool(b.get(k)) for k in ("title", "authors", "publisher", "year", "isbn")}
     print("첫 책 칸 채움:", filled, "/ 건수", len(body["books"]))
