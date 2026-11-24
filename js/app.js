@@ -38,7 +38,7 @@ const hasAll = (hay, q) => { const terms = (q || '').split(/\s+/).map(squeeze).f
 // 그래도 없을 때만 쓰는 찾기: 제목에 글자 순서만 맞으면 찾는다(«레슨케미» → 레슨 인 케미스트리). 짧은 말은 엉뚱한 책까지 잡으니 세 글자부터
 const titleInOrder = (w, q) => { const s = squeeze(q); if (s.length < 3) return false; let i = 0; for (const c of squeeze(w.t)) if (c === s[i]) i++; return i === s.length; };
 const movedTo = (id) => { let n = 0; while (D.moved.has(id) && n++ < 9) id = D.moved.get(id); return id; };
-const VIEWS = ['shelf', 'library', 'posts', 'recap'];
+const VIEWS = ['shelf', 'library', 'want', 'posts', 'recap'];
 const LIB_KINDS = [['all','전체'],['own','소장'],['out','빌려준 책'],['in','빌려 온 책'],['unread','아직 안 읽음']];
 const DEFAULT_WHERE = '내 책장';
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.edition === 'eink'; // 이북리더기 에디션은 움직임을 끈다
@@ -1650,8 +1650,8 @@ function renderRecap() {
     const threeYearsAgo = daysAgo(1096), halfYearAgo = daysAgo(182);
     const lastTouch = (w) => [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...(w.marks || []).map((m) => m.d), w.fd].filter((d) => d && d.length >= 7).sort().pop() || ''; // 연도만 적힌 날짜는 언제인지 몰라 뺀다
     const acts = [
-      D.lib.length ? ['소장하면 좋을 책', '4.5점 이상 줬는데 서재에 없어요', high.filter((w) => !ownedIds.has(w.id))] : null,
-      D.lib.length ? ['서재에서 정리해도 될 책', '서재에 있는데 2점 이하를 줬어요', low.filter((w) => ownedIds.has(w.id))] : null,
+      D.lib.some(isActive) ? ['소장하면 좋을 책', '4.5점 이상 줬는데 서재에 없어요', high.filter((w) => !ownedIds.has(w.id))] : null,
+      D.lib.some(isActive) ? ['서재에서 정리해도 될 책', '서재에 있는데 2점 이하를 줬어요', low.filter((w) => ownedIds.has(w.id))] : null,
       LOCAL ? null : ['서평으로 남겨 볼 책', '4.5점 이상 줬는데 서평이 없어요', high.filter((w) => !reviewsOf(w).length)],
       ['다시 읽어 볼 책', '4.5점 이상 줬고 3년 넘게 안 펼쳤어요', high.filter((w) => { const ds = new Set(doneRecs(w).map((r) => r.d).filter(Boolean)); return ds.size === 1 && lastTouch(w) && lastTouch(w) < threeYearsAgo; })],
       ry ? null : ['읽다 멈춘 책', '읽는 중인데 반년 넘게 기록이 없어요', list().filter((w) => w.k === 'book' && w.known && isReading(w) && lastTouch(w) && lastTouch(w) < halfYearAgo)],
@@ -2545,6 +2545,11 @@ function libSections(rows, sort) {
 }
 // 책 창 왼쪽의 서재 상태(글)와, «더 보기» 메뉴로 가는 서재 단추들(2026-11-14 단추 정리)
 function libBox(it, w) {
+  if (it && isWant(it)) { // 읽고 싶은 책에서 연 책(2026-11-24): 서재 상태 대신 담아 둔 날과 고치기만
+    const edit = el('button', { className:'copy', type:'button', textContent:'읽고 싶은 책 고치기' });
+    edit.onclick = () => openWantForm(it);
+    return { box:el('div', { className:'libbox' }, el('h3', { className:'sec', textContent:'읽고 싶은 책' }), el('p', { className:'libstate', textContent:[it.added ? `${it.added}에 담음` : '담아 둔 책', it.why].filter(Boolean).join(' · ') })), tools:[edit] };
+  }
   if (!it) {
     const add = el('button', { className:'copy', type:'button', textContent:'내 서재에 꽂기' });
     add.onclick = () => openLibForm(null, { work:w });
@@ -2594,6 +2599,156 @@ function moreMenu(items) {
   wrap.addEventListener('keydown', esc);
   menu.addEventListener('click', (e) => { if (e.target.closest('button, a')) set(false); });
   return wrap;
+}
+/* ---------- 읽고 싶은 책 (2026-11-24, 효니 쪽지 imwulqxkgfg99 «읽고 싶은 책도 저장해두면 좋을듯 … 이 탭에 넣어주면 좋겠어») ----------
+   내 서재와 같은 칸 library/{id}에 st:'want'로 둔다(로그인·백업·범용판 저장·드라이브 맞추기를 그대로 탄다). isActive가 false라 내 서재 화면·숫자·서재 도구에는 안 잡힌다.
+   «샀어요»는 st:'own', «빌렸어요»는 st:'in'+빌린 기록으로 바꿔 내 서재로 옮기고, «읽고 기록 남기기»는 읽은 책을 만들어 w로 잇는다(이어진 책을 다 읽으면 «읽은 책이 된 책»으로 접힌다).
+   제목이 같은 읽은 책이 이미 있으면 잇지 않아도 «읽은 책이 된 책»으로 친다. 공개 반영(tools/publish.js)은 library를 읽지 않아 늘 나만 보기다 */
+const isWant = (it) => it.st === 'want';
+const WANT_SORTS = [['recent','최근 담은'],['title','제목'],['theme','주제']];
+S.ws = 'recent'; S.wq = ''; S.wantDoneOpen = false;
+const bookKind = (w) => (w.k || 'book') === 'book';
+const wantDoneWork = (it) => { // 이 책을 다 읽은 읽은 책(없으면 null)
+  const w = it.w ? D.works.get(movedTo(it.w)) : null;
+  if (w) return countsRead(w) ? w : null;
+  const key = norm(it.t);
+  return key ? list().find((x) => x.known && bookKind(x) && norm(x.t) === key && countsRead(x)) || null : null;
+};
+const wantOwned = (it) => { const key = norm(it.t); return key ? D.lib.find((x) => isActive(x) && norm(x.t) === key) || null : null; };
+const wantReading = (it) => { const key = norm(it.t); return key ? list().find((x) => bookKind(x) && (x.id === movedTo(it.w || '') || norm(x.t) === key) && isReading(x)) || null : null; };
+function wantRow(it) {
+  const name = el('button', { className:'ledger-title', type:'button', textContent:it.t || '제목 없음' });
+  name.onclick = () => openWantForm(it);
+  const sw = el('span', { className:'sw' });
+  sw.style.background = themeVar(libThemes(it)[0] || '');
+  const done = wantDoneWork(it), have = !done && wantOwned(it), now = !done && wantReading(it);
+  const meta = [it.a, it.added ? `${it.added} 담음` : ''].filter(Boolean).join(' · ');
+  const tags = [have ? '서재에 있음' : '', now ? '읽는 중' : ''].filter(Boolean).map((t) => el('span', { className:'want-tag', textContent:t }));
+  return el('li', { className:'ledger-row want-row' + (done ? ' done' : '') },
+    el('div', { className:'ledger-main' }, el('div', { className:'want-head' }, sw, name, ...tags), meta ? el('div', { className:'when', textContent:meta }) : null, it.why ? el('p', { className:'want-why', textContent:it.why }) : null));
+}
+function renderWant() {
+  if (!S.owner) { $('wants').replaceChildren(); $('wantSort').replaceChildren(); $('wcount').textContent = ''; return; }
+  const all = D.lib.filter(isWant), open = all.filter((x) => !wantDoneWork(x)), done = all.filter((x) => wantDoneWork(x));
+  const hit = (it) => !S.wq || hasAll(squeeze([it.t, it.a, it.p, it.why, ...libThemes(it)].filter(Boolean).join(' ')), S.wq);
+  const rows = open.filter(hit), doneRows = done.filter(hit);
+  $('wcount').textContent = `${rows.length}권`;
+  $('wantSort').hidden = open.length < 2;
+  $('wantSort').replaceChildren(el('span', { className:'sort-label', textContent:'순서' }), ...WANT_SORTS.map(([k, label]) => {
+    const b = el('button', { className:'chip', type:'button', textContent:label });
+    b.setAttribute('aria-pressed', S.ws === k);
+    b.onclick = () => { S.ws = k; renderWant(); };
+    return b;
+  }));
+  const byTitle = (a, b) => KO.compare(leadTrim(a.t), leadTrim(b.t));
+  const rank = (it) => { const t = libThemes(it)[0]; return t ? (THEMES.findIndex((x) => x[0] === t) + 1) || 999 : 1e3; };
+  rows.sort(S.ws === 'title' ? byTitle : S.ws === 'theme' ? (a, b) => rank(a) - rank(b) || byTitle(a, b) : (a, b) => (b.added || '').localeCompare(a.added || '') || byTitle(a, b));
+  const kids = [];
+  if (!all.length) {
+    const add = el('button', { className:'btn', type:'button', textContent:'읽고 싶은 책 담기' }); add.onclick = () => openWantForm(null);
+    kids.push(el('div', { className:'empty' }, el('div', { textContent:'읽고 싶은 책을 담아 두면 여기 모여요. 산 책·빌린 책은 내 서재로, 다 읽은 책은 읽은 책으로 옮길 수 있어요.' }), el('div', { className:'actions' }, add)));
+  } else if (!rows.length && S.wq) {
+    const reset = el('button', { className:'btn', type:'button', textContent:'찾기 지우기' });
+    reset.onclick = () => { S.wq = ''; $('wq').value = ''; renderWant(); };
+    kids.push(el('div', { className:'empty' }, el('div', { textContent:'찾는 말에 맞는 책이 없어요.' }), reset));
+  } else if (rows.length) kids.push(el('ul', { className:'ledger-list want-list' }, rows.map(wantRow)));
+  else kids.push(el('p', { className:'warn', textContent:'담아 둔 책을 모두 읽었어요.' }));
+  if (doneRows.length) {
+    const box = el('details', { className:'ledger-part want-done', open:S.wantDoneOpen }, el('summary', { textContent:`읽은 책이 된 책 ${doneRows.length}` }), el('ul', { className:'ledger-list want-list' }, doneRows.sort(byTitle).map(wantRow)));
+    box.ontoggle = () => { S.wantDoneOpen = box.open; };
+    kids.push(box);
+  }
+  const old = list().filter((w) => w.k === 'wishlist').length; // 예전 아이폰 메모에서 온 «읽을 목록» 칸(읽은 책 탭 종류 «읽을 목록»)
+  if (old) {
+    const go = el('button', { className:'copy', type:'button', textContent:`옛 메모의 «읽을 목록» ${old}개 보기` });
+    go.onclick = () => { S.kind = 'wishlist'; S.q = ''; $('q').value = ''; show('shelf'); renderShelf(); };
+    kids.push(el('p', { className:'note' }, go));
+  }
+  $('wants').replaceChildren(...kids);
+  watch('.want-row');
+}
+const hitTitle = (id, title) => { const w = D.works.get(movedTo(id)); return !!w && norm(w.t) === norm(title); };
+// 담기·고치기 한 창. 고치기 창 아래 줄(formTools)에 «샀어요·빌렸어요·읽고 기록 남기기·빼기»를 둔다(목록 줄에 늘 보이는 단추를 늘리지 않는다)
+function openWantForm(it) {
+  const isNew = !it, seed = it || {};
+  let newId = '';
+  const t = el('input', { type:'text', required:true, value:seed.t || '' });
+  const a = el('input', { type:'text', value:seed.a || '' });
+  const p = el('input', { type:'text', value:seed.p || '' });
+  const why = el('textarea', { rows:3, maxLength:500, placeholder:'누가 추천했는지, 어디서 봤는지' });
+  why.value = seed.why || '';
+  const th = themeChecks(seed.th || []);
+  const note = el('small', { className:'auto-note', role:'status', hidden:true });
+  const check = () => { // 이미 읽었거나 서재에 있는 책이면 알려 준다(막지는 않는다)
+    const x = { t:t.value.trim(), w:seed.w || '' }, done = x.t && wantDoneWork(x), have = x.t && wantOwned(x);
+    note.hidden = !(done || have);
+    note.textContent = done ? `이미 읽은 책이에요(«${titleOf(done)}»). «읽은 책이 된 책»에 들어가요.` : have ? '내 서재에 이미 있는 책이에요.' : '';
+  };
+  t.addEventListener('input', check);
+  let pick = 0;
+  const kids = [bookLookup(async (b) => {
+    t.value = b.t; a.value = b.a || a.value; p.value = b.p || p.value; check();
+    if (th.values().length) return; // 주제가 비어 있을 때만(«내 서재에 꽂기»와 같은 규칙)
+    const mine = ++pick, got = await autoTheme(b, '');
+    if (mine === pick && got && !th.values().length) { th.set([got.th]); th.flash(got.th); }
+  }), field('제목', t), note, field('저자', a), field('출판사', p), field('왜 읽고 싶은지', why, '비워도 돼요. 나만 봐요'), field('주제', th)];
+  const save = async () => {
+    const title = t.value.trim();
+    if (!title) throw fail('제목을 적어 주세요');
+    if (D.lib.some((x) => isWant(x) && x.id !== seed.id && norm(x.t) === norm(title))) throw fail('이미 담아 둔 책이에요');
+    if (isNew && !newId) newId = await newLibId(); // 저장을 다시 눌러도 같은 칸에 쓰인다
+    const base = isNew ? { id:newId, st:'want', added:today(), loans:[], w:'' } : { ...it };
+    Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), th:th.values() });
+    if (why.value.trim()) base.why = why.value.trim(); else delete base.why;
+    if (!isNew && base.w && !hitTitle(base.w, title) && norm(title) !== norm(it.t)) base.w = ''; // 다른 책으로 바꾸면 예전 연결을 푼다
+    await saveLib(base, isNew ? '읽고 싶은 책에 담았어요' : '고쳤어요');
+    reshow();
+  };
+  if (it) {
+    const dropIfOwned = async () => { // 이미 서재에 있는 책(2026-11-24 검토 지적): 서재에 하나 더 꽂지 않고 읽고 싶은 책에서만 뺀다
+      const have = wantOwned(it);
+      if (!have) return false;
+      if (!await ask(`«${have.t}»은 이미 내 서재에 있어요. 서재 책은 그대로 두고 읽고 싶은 책에서만 뺄까요?`, '빼기')) return true;
+      try { await write(`library/${it.id}`, null); setPriv('library', it.id, null); refreshAll(); $('form').close(); toast('읽고 싶은 책에서 뺐어요'); } catch (e) { saveFailed(e); }
+      return true;
+    };
+    const bought = formBtn('샀어요', async () => {
+      if (await dropIfOwned()) return;
+      try { await saveLib({ ...it, st:'own', where:S.lastWhere || '', added:today() }, '내 서재에 꽂았어요'); $('form').close(); reshow(); } catch (e) { saveFailed(e); }
+    });
+    const borrowed = formBtn('빌렸어요', async () => { if (!await dropIfOwned()) openWantLoan(it); });
+    const read = formBtn('읽고 기록 남기기', async () => {
+      const w = wantDoneWork(it);
+      if (w) { $('form').close(); openBook(w.id); return; }
+      openBookForm(null, { pre:it });
+    });
+    const del = formBtn('빼기', async () => {
+      if (!await ask(`«${it.t}»을 읽고 싶은 책에서 뺄까요?`, '빼기')) return;
+      try {
+        await write(`library/${it.id}`, null);
+        setPriv('library', it.id, null);
+        refreshAll();
+        $('form').close();
+        if ($('sheet').open && S.cur && S.cur.lib === it.id) $('sheet').close();
+        toast('읽고 싶은 책에서 뺐어요');
+      } catch (e) { saveFailed(e); }
+    }, true);
+    kids.push(formTools(bought, borrowed, read, del));
+  }
+  showForm(isNew ? '읽고 싶은 책 담기' : '읽고 싶은 책 고치기', kids, save);
+  check();
+}
+// «빌렸어요»: 누구에게서·빌린 날·돌려줄 날을 받아 빌려 온 책(st:'in')으로 내 서재에 꽂는다
+function openWantLoan(it) {
+  const who = el('input', { type:'text', required:true });
+  who.setAttribute('list', 'peopleNames');
+  const d = el('input', { type:'date', value:today() }), due = el('input', { type:'date' });
+  const save = async () => {
+    if (!who.value.trim()) throw fail('누구에게서 빌렸는지 적어 주세요');
+    await saveLib({ ...it, st:'in', added:today(), loans:[...(it.loans || []), { dir:'in', who:who.value.trim(), d:d.value, due:due.value }] }, '빌려 온 책으로 내 서재에 꽂았어요');
+    reshow();
+  };
+  showForm(`«${it.t}» 빌렸어요`, [field('누구에게서', who, '도서관이면 도서관 이름'), nameList('peopleNames', D.lib.flatMap((x) => x.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due)], save);
 }
 async function saveLib(it, msg) {
   const data = JSON.parse(JSON.stringify(it));
@@ -2843,7 +2998,7 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderWant(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, nameHay, pub, qs, ms, ls, md, id, ...rest } = w; // ls(공개 한 줄 평, 2026-11-15)도 공개본에서 온 칸. qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다. md(달 묶음)·id는 rebuild가 늘 다시 만든다(2026-11-14)
@@ -3925,7 +4080,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
     await saveWork(base, isNew ? (base.unread ? '읽는 중인 책으로 꽂았어요' : '읽은 책에 꽂았어요') : '고쳤어요');
     if (retitled) { const tr = (D.priv.meta || {}).y24tried; if (tr && tr[base.id]) { await write(`meta/y24tried/${base.id}`, null).catch(() => {}); delete tr[base.id]; } SPINE.res.delete(base.id); }
     if (swapped || y24Moved || (retitled && !coverColors(w))) await markRecolor(w, title, base.y24); // 색을 못 찾은 책은 제목 오타를 고쳐도 다시 찾게
-    if (pre) { await saveLib({ ...pre, w:base.id }, '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
+    if (pre) { await saveLib({ ...pre, w:base.id }, pre.st === 'want' ? '읽고 싶은 책과 이었어요' : '읽은 책과 이었어요'); S.cur = { lib:pre.id }; }
     if ($('sheet').open) openBook(base.id, $('sheet').returnEl);
     else { // 다른 종류를 보고 있어도 꽂힌 걸 바로 보여 준다. 양식의 기록이 먼저 빠진 뒤 연다
       let tries = 0;
@@ -4192,15 +4347,16 @@ function leaveOwner() {
   $('sheet-body').replaceChildren(); $('form-body').replaceChildren();
   S.owner = false; S.user = null; D.priv = {}; S.cur = null; S.onlyMe = false; S.lf = 'all'; S.lq = ''; S.lastWhere = ''; S.pastOpen = false; $('lq').value = '';
   if (S.kind !== 'book') S.kind = 'book';
-  if (S.view === 'library') show('shelf');
+  S.wq = ''; $('wq').value = '';
+  if (S.view === 'library' || S.view === 'want') show('shelf');
   renderWho(); refreshAll();
 }
 function show(v, quiet) {
-  if ((v === 'library' && !S.owner) || (v === 'posts' && LOCAL)) return;
+  if (((v === 'library' || v === 'want') && !S.owner) || (v === 'posts' && LOCAL)) return;
   if (S.view !== v) scrollTo(0, 0); // 메뉴가 위에 붙어 있어 내려온 채로 탭을 바꿀 수 있다. 새 화면은 처음부터 보여 준다
   S.view = v;
   VIEWS.forEach((x) => { $(`view-${x}`).hidden = x !== v; $(`tab-${x}`).setAttribute('aria-selected', x === v); });
-  $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : '+ 책 추가';
+  $('addBook').textContent = v === 'library' ? '+ 내 서재에 꽂기' : v === 'want' ? '+ 읽고 싶은 책' : '+ 책 추가';
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
   if (v === 'shelf') balanceRacks(); // 숨은 동안 다시 그렸거나 창 폭이 바뀌었으면 폭을 못 쟀다. 보일 때 다시 잰다
   if (v === 'posts') watch('.rise');
@@ -4224,7 +4380,8 @@ $('foldTools').onclick = () => toggleFold('tools');
 syncFold();
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
-$('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : openBookForm(null));
+$('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : S.view === 'want' ? openWantForm(null) : openBookForm(null));
+$('wq').addEventListener('input', (e) => { S.wq = e.target.value.trim(); renderWant(); });
 $('addPost').onclick = () => openPostForm();
 $('form').addEventListener('click', (e) => { if (e.target === $('form')) $('form').close(); });
 $('form').addEventListener('close', () => {
