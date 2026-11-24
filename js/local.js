@@ -146,7 +146,7 @@ function cleanWork(w) {
   return o;
 }
 function cleanLib(b) {
-  return { t:str(b.t), a:str(b.a), p:str(b.p), w:safeKey(str(b.w)) ? str(b.w) : '', th:Array.isArray(b.th) ? b.th.filter((x) => typeof x === 'string').slice(0, 21) : [], st:b.st === 'in' ? 'in' : 'own', where:str(b.where), added:day(b.added),
+  return { t:str(b.t), a:str(b.a), p:str(b.p), w:safeKey(str(b.w)) ? str(b.w) : '', th:Array.isArray(b.th) ? b.th.filter((x) => typeof x === 'string').slice(0, 21) : [], st:b.st === 'in' || b.st === 'want' ? b.st : 'own', ...(str(b.why) ? { why:str(b.why).slice(0, 500) } : {}), where:str(b.where), added:day(b.added),
     loans:arr(b.loans).map((l) => { const o = { dir:l.dir === 'in' ? 'in' : 'out', who:str(l.who), d:day(l.d), due:day(l.due) }; if (day(l.back)) o.back = day(l.back); return o; }) };
 }
 const cleanMap = (m, f) => (isObj(m) ? Object.fromEntries(Object.entries(m).filter(([k, v]) => safeKey(k) && isObj(v)).map(([k, v]) => [k, f(v)])) : {});
