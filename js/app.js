@@ -1650,8 +1650,8 @@ function renderRecap() {
     const threeYearsAgo = daysAgo(1096), halfYearAgo = daysAgo(182);
     const lastTouch = (w) => [...w.recs.map((r) => r.d), ...w.notes.map((n) => n.d), ...(w.marks || []).map((m) => m.d), w.fd].filter((d) => d && d.length >= 7).sort().pop() || ''; // 연도만 적힌 날짜는 언제인지 몰라 뺀다
     const acts = [
-      D.lib.length ? ['소장하면 좋을 책', '4.5점 이상 줬는데 서재에 없어요', high.filter((w) => !ownedIds.has(w.id))] : null,
-      D.lib.length ? ['서재에서 정리해도 될 책', '서재에 있는데 2점 이하를 줬어요', low.filter((w) => ownedIds.has(w.id))] : null,
+      D.lib.some(isActive) ? ['소장하면 좋을 책', '4.5점 이상 줬는데 서재에 없어요', high.filter((w) => !ownedIds.has(w.id))] : null,
+      D.lib.some(isActive) ? ['서재에서 정리해도 될 책', '서재에 있는데 2점 이하를 줬어요', low.filter((w) => ownedIds.has(w.id))] : null,
       LOCAL ? null : ['서평으로 남겨 볼 책', '4.5점 이상 줬는데 서평이 없어요', high.filter((w) => !reviewsOf(w).length)],
       ['다시 읽어 볼 책', '4.5점 이상 줬고 3년 넘게 안 펼쳤어요', high.filter((w) => { const ds = new Set(doneRecs(w).map((r) => r.d).filter(Boolean)); return ds.size === 1 && lastTouch(w) && lastTouch(w) < threeYearsAgo; })],
       ry ? null : ['읽다 멈춘 책', '읽는 중인데 반년 넘게 기록이 없어요', list().filter((w) => w.k === 'book' && w.known && isReading(w) && lastTouch(w) && lastTouch(w) < halfYearAgo)],
@@ -2705,10 +2705,18 @@ function openWantForm(it) {
     reshow();
   };
   if (it) {
+    const dropIfOwned = async () => { // 이미 서재에 있는 책(2026-11-24 검토 지적): 서재에 하나 더 꽂지 않고 읽고 싶은 책에서만 뺀다
+      const have = wantOwned(it);
+      if (!have) return false;
+      if (!await ask(`«${have.t}»은 이미 내 서재에 있어요. 서재 책은 그대로 두고 읽고 싶은 책에서만 뺄까요?`, '빼기')) return true;
+      try { await write(`library/${it.id}`, null); setPriv('library', it.id, null); refreshAll(); $('form').close(); toast('읽고 싶은 책에서 뺐어요'); } catch (e) { saveFailed(e); }
+      return true;
+    };
     const bought = formBtn('샀어요', async () => {
+      if (await dropIfOwned()) return;
       try { await saveLib({ ...it, st:'own', where:S.lastWhere || '', added:today() }, '내 서재에 꽂았어요'); $('form').close(); reshow(); } catch (e) { saveFailed(e); }
     });
-    const borrowed = formBtn('빌렸어요', async () => openWantLoan(it));
+    const borrowed = formBtn('빌렸어요', async () => { if (!await dropIfOwned()) openWantLoan(it); });
     const read = formBtn('읽고 기록 남기기', async () => {
       const w = wantDoneWork(it);
       if (w) { $('form').close(); openBook(w.id); return; }
