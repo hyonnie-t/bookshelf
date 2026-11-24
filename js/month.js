@@ -90,7 +90,7 @@ const VACATION = ['01', '02', '07', '08'];
 
 // 효니 말투 한 달 평(효니위키 사람/효니-문체.md: 메모·인스타 감상 = 반말 평서 «~다».2026-11-17 효니 쪽지 «ㅎㅎ 남발»로 ㅎㅎ·(?)·말줄임 맺음은 쓰지 않는다.
 // 교훈 한 줄로 끊어 세우지 않고, 대구·«A가 아니라 B»·«~라는 것.» 맺음을 쓰지 않는다).
-// cur·prev = monthStats 결과, ctx = { avgAll:평소 별점 평균, ratedAll:평소 별점 수, themeVoice:{주제:[별명…]}, title:(w)=>제목 }
+// cur·prev = monthStats 결과, ctx = { avgAll:평소 별점 평균, ratedAll:평소 별점 수, themeVoice:{주제:[별명…]}, title:(w)=>제목, polite:범용판이면 «~요» 말투 }
 export function monthVoice(cur, prev, ctx = {}) {
   const title = ctx.title || ((w) => w.t || '');
   const seed = cur.ym;
@@ -141,7 +141,23 @@ export function monthVoice(cur, prev, ctx = {}) {
     next = cur.reading.length > 1 ? `읽다 만 책은 «${title(w)}» 말고도 ${cur.reading.length - 1}권이 더 있다.` : `읽다 만 책은 «${title(w)}» 한 권이다.`;
   }
   const quote = cur.quotes.length ? cur.quotes[hash(seed + 'q') % cur.quotes.length] : null;
+  if (ctx.polite) return { name, change:change.map(toPolite), habit:habit.map(toPolite), next:toPolite(next), quote };
   return { name, change, habit, next, quote };
+}
+
+// 범용판 말투(2026-11-24, 효니 답 «넣어» — 범용판 결산은 중립 말투로): 효니 메모 말투 «~다.»를 «~요.»로만 바꾼다(숫자·내용은 그대로).
+// 한 달 평의 문장 끝은 받침 ㅆ(읽었다·있다·남겼다…)·없다·많다·«…이다»·«n개.»·«n일.»뿐이다. 시험(tools/test-month.js)이 «다.»가 안 남는지 본다
+const jong = (ch) => { const c = ch.charCodeAt(0) - 0xAC00; return c >= 0 && c <= 11171 ? c % 28 : -1; };
+// 끝말 뒤에 «(3권 → 5권)» 같은 괄호가 붙은 문장도 있다
+const END = String.raw`(\([^)]*\))?\.(?=\s|$)`;
+export function toPolite(s) {
+  return String(s || '')
+    .replace(new RegExp(`([가-힣])이다${END}`, 'g'), (m, a, p = '') => `${a}${jong(a) > 0 ? '이에요' : '예요'}${p}.`)
+    .replace(new RegExp(`없다${END}`, 'g'), (m, p = '') => `없어요${p}.`)
+    .replace(new RegExp(`많다${END}`, 'g'), (m, p = '') => `많아요${p}.`)
+    .replace(new RegExp(`([가-힣])다${END}`, 'g'), (m, a, p = '') => (jong(a) === 20 ? `${a}어요${p}.` : m)) // 받침 ㅆ: 읽었다 → 읽었어요
+    .replace(/(\d+)개\.(?=\s|$)/g, '$1개예요.')
+    .replace(/(\d+)일\.(?=\s|$)/g, '$1일이에요.');
 }
 
 // 서재에서 고른 다음 책: 소장했는데 아직 다 읽지 않은 책 가운데 요즘 취향과 이어지는 책.
