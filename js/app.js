@@ -2762,7 +2762,7 @@ function openManyForm() {
   // 대출 화면 사진(2026-11-24): 도서관 앱 «대출 중» 화면 캡처를 고르면 제목을 줄로 더하고, 빌린 곳·반납일이 보이면 «빌려 온 책»으로 채운다
   const photoMsg = el('p', { className:'warn', role:'status', hidden:true });
   const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('대출 화면 사진으로 읽기', async (file, lab) => {
-    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(10~20초)';
+    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
     try {
       const r = await seePhoto('list', file), books = r.books || [];
       if (!books.length) { photoMsg.textContent = '사진에서 책 목록을 찾지 못했어요. 제목이 보이게 다시 캡처하거나 아래에 적어 주세요.'; return; }
@@ -3222,7 +3222,7 @@ function shrinkPhoto(file) {
 }
 async function seePhoto(mode, file) {
   const img = await shrinkPhoto(file);
-  const c = new AbortController(), t = setTimeout(() => c.abort(), 60000); // 제미나이가 읽는 데 10~20초 걸린다(2026-11-24 잼)
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 110000); // 보통 15초, 오래 쉰 뒤 첫 번째나 제미나이가 붐비면 60~75초(2026-11-24 배포된 중계로 잼)
   let r;
   try {
     // text/plain(기본)으로 보내야 미리 묻기(preflight) 없이 앱스크립트가 받는다
@@ -3311,7 +3311,7 @@ function bookLookup(apply) {
   // 바코드 사진(2026-11-24): 뒤표지 바코드를 찍으면 제미나이가 ISBN 숫자를 읽고, 그 번호로 찾는다
   const barcode = seeOn() ? photoPick('바코드', async (file, lab) => {
     const mine = ++run;
-    lab.classList.add('busy'); go.disabled = true; msg.hidden = false; msg.textContent = '바코드를 읽는 중이에요(10~20초)'; found.replaceChildren();
+    lab.classList.add('busy'); go.disabled = true; msg.hidden = false; msg.textContent = '바코드를 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; found.replaceChildren();
     try {
       const r = await seePhoto('isbn', file);
       if (mine !== run) return;
