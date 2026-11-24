@@ -66,7 +66,7 @@ function see_(body) {
       if (code !== 200) return { ok: false, error: 'upstream', status: code };
       var c = (JSON.parse(res.getContentText()).candidates || [])[0];
       var text = c && c.content && c.content.parts && c.content.parts[0] && c.content.parts[0].text;
-      return seeResult_(mode, JSON.parse(text || '{}'));
+      return seeResult_(mode, JSON.parse(String(text || '{}').replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ''))); // 드물게 붙는 코드 울타리를 뗀다(제미나이 검토 의견)
     } catch (err) { last = 'fetch'; } // 예외 메시지에 요청 정보가 섞일 수 있어 돌려주지 않는다
   }
   return { ok: false, error: last };
