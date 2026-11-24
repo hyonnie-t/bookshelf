@@ -1,4 +1,5 @@
 // 책장 앱의 책 찾기 중계(구글 앱스크립트 웹 앱). 이 파일은 키 없는 사본이고 실행본은 앱스크립트 프로젝트 «책장 책 찾기 중계»에 있다.
+// 사진 읽기(doPost, 2026-11-24)는 제미나이로 대출 화면 캡처의 책 목록·바코드 ISBN을 읽는다(아래 «사진 읽기»).
 // 출처 세 가지: src 없음 = 카카오 책 검색(효니 책장), src=nl = 국립중앙도서관 소장자료 검색(범용판, 2026-11-09 효니 결정), src=y24 = 예스24 Open API(2026-11-14).
 // 키는 프로젝트 설정 > 스크립트 속성 KAKAO_REST_KEY·NL_API_KEY·YES24_API_KEY에만 둔다. 찾는 말과 응답 본문을 로그에 남기지 않는다.
 // 배포: 웹 앱, 실행 사용자 «나», 액세스 «모든 사용자»(«Google 계정이 있는 모든 사용자»로 하면 로그인 화면이 와서 앱에서 읽지 못한다).
@@ -10,6 +11,85 @@ var DAILY_LIMIT = 3000; // 공개 주소라 출처마다 하루 호출 상한을
 function doGet(e) {
   var p = (e && e.parameter) || {};
   return json_(search_(p.q, p.src));
+}
+
+// 사진 읽기(2026-11-24, 출처: 효니 쪽지 «도서 웹앱에서 사진으로 인식하기», 효니 선택 «① 다(대출 화면 캡처·바코드 둘 다) ② 가(제미나이)»).
+// 앱이 POST(text/plain, 미리 묻기 요청이 안 생기게)로 {mode:'list'|'isbn', img:base64 JPEG}를 보낸다. 사진·응답 본문은 저장하거나 로그에 남기지 않는다.
+// 열쇠는 스크립트 속성 GEMINI_API_KEY, 모델은 GEMINI_MODEL(없으면 SEE_MODELS 순서로, 붐비거나 없는 모델이면 다음 것). 하루 상한 SEE_LIMIT.
+var SEE_LIMIT = 200;
+var SEE_MAX_IMG = 2800000; // base64 글자 수(약 2MB). 앱은 긴 변 1600px JPEG로 줄여 보낸다
+var SEE_MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+var SEE_PROMPTS = {
+  list: '이 사진은 도서관 대출 목록 화면(캡처나 사진)이다. 지금 빌린 책을 화면에 보이는 순서대로 모두 적어라.\n' +
+    '- t: 책 제목. «제목 : 부제»처럼 쌍점 뒤 부제가 붙어 있으면 앞의 제목만. 줄바꿈으로 끊긴 글자는 이어 붙인다. 화면에 없는 글자를 지어내지 않는다.\n' +
+    '- a: 저자. 화면에 저자가 보일 때만(부제가 «김화진 소설집»처럼 사람 이름 + 소설집·시집·에세이면 그 이름), 없으면 빈 글자.\n' +
+    '- due: 반납 예정일 YYYY-MM-DD. 줄바꿈으로 끊긴 날짜(2026-1 / 2-14)는 이어 읽는다. 없으면 빈 글자.\n' +
+    '- lib: 빌린 도서관 이름(예: 구로도서관). 없으면 빈 글자.\n' +
+    '책 목록이 아니면 books를 빈 배열로.',
+  isbn: '이 사진은 책 뒤표지의 바코드다. 바코드 위나 아래에 숫자로 인쇄된 ISBN(978 또는 979로 시작하는 13자리)을 읽어라. ' +
+    '하이픈·띄어쓰기는 빼고 숫자만. 바코드 옆의 작은 부가기호(5자리)는 넣지 않는다. 읽을 수 없으면 빈 글자.',
+};
+var SEE_SCHEMA = {
+  list: { type: 'OBJECT', properties: { books: { type: 'ARRAY', items: { type: 'OBJECT', properties: { t: { type: 'STRING' }, a: { type: 'STRING' }, due: { type: 'STRING' }, lib: { type: 'STRING' } }, required: ['t'] } } }, required: ['books'] },
+  isbn: { type: 'OBJECT', properties: { isbn: { type: 'STRING' } }, required: ['isbn'] },
+};
+
+function doPost(e) {
+  var body;
+  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'bad_body' }); }
+  return json_(see_(body));
+}
+
+function see_(body) {
+  var mode = body && body.mode, img = String((body && body.img) || '');
+  if (mode !== 'list' && mode !== 'isbn') return { ok: false, error: 'bad_mode' }; // «constructor» 같은 이름이 한도를 쓰지 않게(검토자 지적)
+  if (!img || !/^[A-Za-z0-9+/=]+$/.test(img)) return { ok: false, error: 'empty' };
+  if (img.length > SEE_MAX_IMG) return { ok: false, error: 'too_big' };
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('GEMINI_API_KEY');
+  if (!key) return { ok: false, error: 'no_key' };
+  if (!underLimit_(props, 'DAY_COUNT_SEE', SEE_LIMIT)) return { ok: false, error: 'limit' };
+  var models = props.getProperty('GEMINI_MODEL') ? [props.getProperty('GEMINI_MODEL')] : SEE_MODELS;
+  var last = 'fetch';
+  for (var i = 0; i < models.length; i++) {
+    try {
+      var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        headers: { 'x-goog-api-key': key },
+        payload: JSON.stringify({
+          contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: img } }, { text: SEE_PROMPTS[mode] }] }],
+          generationConfig: { responseMimeType: 'application/json', responseSchema: SEE_SCHEMA[mode], temperature: 0 },
+        }),
+      });
+      var code = res.getResponseCode();
+      if (code === 404 || code === 429 || code >= 500) { last = 'upstream'; continue; } // 없는 모델·한도·붐빔이면 다음 모델
+      if (code !== 200) return { ok: false, error: 'upstream', status: code };
+      var c = (JSON.parse(res.getContentText()).candidates || [])[0];
+      var text = c && c.content && c.content.parts && c.content.parts[0] && c.content.parts[0].text;
+      return seeResult_(mode, JSON.parse(String(text || '{}').replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ''))); // 드물게 붙는 코드 울타리를 뗀다(제미나이 검토 의견)
+    } catch (err) { last = 'fetch'; } // 예외 메시지에 요청 정보가 섞일 수 있어 돌려주지 않는다
+  }
+  return { ok: false, error: last };
+}
+
+// 모델 답을 앱이 믿을 수 있는 모양으로만 줄인다(글자 수 상한, 날짜 모양, ISBN 검사 숫자)
+function seeResult_(mode, o) {
+  var s = function (x, n) { return String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, n); };
+  if (mode === 'isbn') {
+    var d = String(o.isbn || '').replace(/[^0-9Xx]/g, '');
+    return { ok: true, isbn: isbnOk_(d) ? d : '' };
+  }
+  var books = (o.books || []).slice(0, 30).map(function (b) {
+    var due = s(b.due, 10);
+    return { t: s(b.t, 120), a: s(b.a, 80), due: /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : '', lib: s(b.lib, 40) };
+  }).filter(function (b) { return b.t; });
+  return { ok: true, books: books };
+}
+function isbnOk_(d) {
+  if (!/^97[89]\d{10}$/.test(d)) return false;
+  var sum = 0;
+  for (var i = 0; i < 12; i++) sum += Number(d[i]) * (i % 2 ? 3 : 1);
+  return (10 - (sum % 10)) % 10 === Number(d[12]);
 }
 
 function search_(raw, src) {
@@ -173,11 +253,11 @@ function splitPeople_(s) {
   return { authors: authors, translators: translators };
 }
 
-function underLimit_(props, name) {
+function underLimit_(props, name, limit) {
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   var saved = String(props.getProperty(name) || '').split('|');
   var n = saved[0] === today ? Number(saved[1]) || 0 : 0;
-  if (n >= DAILY_LIMIT) return false;
+  if (n >= (limit || DAILY_LIMIT)) return false;
   props.setProperty(name, today + '|' + (n + 1));
   return true;
 }

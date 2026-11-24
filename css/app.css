@@ -330,6 +330,15 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 .found span { font-size:.84rem; color:var(--muted); }
 .store-links { display:flex; flex-wrap:wrap; gap:var(--space-2); align-items:center; font-size:.84rem; color:var(--muted); }
 .lookup small { color:var(--muted); }
+/* 사진 읽기(2026-11-24): file 칸은 숨기고 label을 단추로. 읽는 동안 단추가 천천히 숨 쉰다(움직임 줄이기면 멈춤) */
+.sr-file { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.photo-pick { position:relative; flex:none; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+.photo-pick:focus-within { outline:2px solid currentColor; outline-offset:2px; }
+.photo-pick.busy { pointer-events:none; animation:photo-busy 1.2s ease-in-out infinite alternate; }
+@keyframes photo-busy { from { opacity:1; } to { opacity:.45; } }
+@media (prefers-reduced-motion:reduce) { .photo-pick.busy { animation:none; opacity:.6; } }
+.photo-box { display:grid; gap:var(--space-1); justify-items:start; padding:var(--space-2); border:1px dashed var(--line); border-radius:8px; }
+.photo-box small { color:var(--muted); }
 
 /* 겹치는 책 고치기 */
 .dup-sec { display:grid; gap:0; }

@@ -9,6 +9,7 @@ import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.
 import { seriesGroups, seriesIndex, keepTogether, seriesKey } from './series.js';
 import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillGroup, FILL_GROUPS, titleDiffers } from './fill-tool.js';
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
+import { isbnQuery, sameIsbn, mergeLines, loanGuess, fitSize, seeError } from './photo.js';
 import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
 import { activeMonths, monthStats, monthVoice, nextBooks, prevMonth, nextMonth, daysIn, monthQuestions, yearStats, yearVoice } from './month.js';
 import { goalCandidates, goalProgress, goalLabel, goalBadge, goalLine, pickGoals, parseGoal } from './goals.js';
@@ -2751,10 +2752,35 @@ function openManyForm() {
   }
   x.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 400); });
   const themeField = el('div', { className:'field' }, el('span', { textContent:'책마다 주제' }), box, el('small', { textContent:'비어 있는 책만 하나 골라 둬요. 읽은 책 → 같은 저자 책 → 도서관 분류(위에서 찾아 고른 책) 순이에요. 틀리면 바꿔 주세요.' }));
-  showForm('여러 권 한꺼번에 꽂기', [lookup, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('어느 칸에 꽂을까요', where, '비워도 돼요'), whereList()], async () => {
+  // 빌려 온 책 여러 권(2026-11-24, 사진 읽기와 같이): 한 창의 책은 모두 같은 곳·같은 날 빌린 것으로 꽂는다(«내 서재에 꽂기»의 빌려 온 책과 같은 모양)
+  const st = el('select', {}, el('option', { value:'own', textContent:'내 책' }), el('option', { value:'in', textContent:'빌려 온 책' }));
+  const who = el('input', { type:'text' }); who.setAttribute('list', 'peopleNames');
+  const d = el('input', { type:'date', value:today() }), due = el('input', { type:'date' });
+  const loanBox = el('div', { className:'sub-fields', hidden:true }, field('누구에게서', who, '도서관이면 도서관 이름'), nameList('peopleNames', D.lib.flatMap((b) => b.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due));
+  const whereField = field('어느 칸에 꽂을까요', where, '비워도 돼요');
+  st.onchange = () => { loanBox.hidden = st.value !== 'in'; whereField.hidden = st.value === 'in'; };
+  // 대출 화면 사진(2026-11-24): 도서관 앱 «대출 중» 화면 캡처를 고르면 제목을 줄로 더하고, 빌린 곳·반납일이 보이면 «빌려 온 책»으로 채운다
+  const photoMsg = el('p', { className:'warn', role:'status', hidden:true });
+  const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('대출 화면 사진으로 읽기', async (file, lab) => {
+    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
+    try {
+      const r = await seePhoto('list', file), books = r.books || [];
+      if (!books.length) { photoMsg.textContent = '사진에서 책 목록을 찾지 못했어요. 제목이 보이게 다시 캡처하거나 아래에 적어 주세요.'; return; }
+      const m = mergeLines(manyLines(x.value), books, new Set(D.lib.filter(isActive).map((b) => norm(b.t))));
+      x.value = m.lines.join('\n'); draw();
+      const g = loanGuess(books);
+      if (g.who || g.due) { st.value = 'in'; if (!who.value.trim()) who.value = g.who; if (!due.value) due.value = g.due; st.onchange(); }
+      photoMsg.textContent = [`${books.length}권을 읽었어요`, m.added ? `${m.added}권 더함` : '', m.already ? `이미 서재에 있는 ${m.already}권은 뺌` : '',
+        g.mixed ? '반납일이 책마다 달라 가장 많은 날을 넣었어요' : '', '제목이 맞는지 보고 꽂아 주세요. 빌린 날은 오늘로 넣었어요.'].filter(Boolean).join(' · ');
+    } catch (e) { photoMsg.textContent = e.userMsg || seeError(''); }
+    finally { lab.classList.remove('busy'); }
+  }), el('small', { textContent:'사진을 제미나이(구글)로 보내 제목·반납일만 읽어요. 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
+  showForm('여러 권 한꺼번에 꽂기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('구분', st), loanBox, whereField, whereList()].filter(Boolean), async () => {
     clearTimeout(timer); draw();
     const lines = manyLines(x.value);
     if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
+    const borrowed = st.value === 'in';
+    if (borrowed && !who.value.trim()) throw fail('누구에게서 빌렸는지 적어 주세요');
     if ([...picks.values()].some((p) => p.busy)) throw fail('주제를 찾는 중이에요. 잠깐 뒤에 다시 눌러 주세요');
     const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t)));
     const add = {};
@@ -2768,14 +2794,16 @@ function openManyForm() {
       if (!ids.has(norm(title))) ids.set(norm(title), await newLibId(ids.size));
       n++;
       const th = pk && pk.auto && pk.keep ? pk.keep : pk && pk.th ? [pk.th] : []; // 읽은 책 주제를 그대로 두면 둘째 주제까지 그대로
-      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : f ? f.a || '' : ''), p:hit ? hit.p || '' : f ? f.p || '' : '', w:hit ? hit.id : '', th, st:'own', where:where.value.trim(), added:today(), loans:[] };
+      add[ids.get(norm(title))] = { t:hit ? hit.t : title, a:author || (hit ? hit.a || '' : f ? f.a || '' : ''), p:hit ? hit.p || '' : f ? f.p || '' : '', w:hit ? hit.id : '', th, st:borrowed ? 'in' : 'own', where:borrowed ? '' : where.value.trim(), added:today(),
+        loans:borrowed ? [{ dir:'in', who:who.value.trim(), d:d.value, due:due.value }] : [] };
     }
     if (!n) throw fail('새로 꽂을 책이 없어요. 모두 이미 서재에 있어요.');
     await write('library', add, 'update');
     Object.entries(add).forEach(([id, v]) => setPriv('library', id, JSON.parse(JSON.stringify(v))));
-    S.lastWhere = where.value.trim(); S.lf = 'all';
+    if (!borrowed) S.lastWhere = where.value.trim();
+    S.lf = 'all';
     refreshAll();
-    toast([`${n}권 꽂았어요`, linked ? `읽은 책과 이은 책 ${linked}권` : '', skipped ? `이미 있는 책 ${skipped}권은 뺐어요` : ''].filter(Boolean).join(' · '));
+    toast([`${n}권 ${borrowed ? '빌려 온 책으로 ' : ''}꽂았어요`, linked ? `읽은 책과 이은 책 ${linked}권` : '', skipped ? `이미 있는 책 ${skipped}권은 뺐어요` : ''].filter(Boolean).join(' · '));
   }, '꽂기');
 }
 function openLoanForm(it, i) {
@@ -3175,6 +3203,42 @@ async function relayBooks(q, src) {
   if (!r.ok) throw new Error(r.error || 'relay');
   return (r.books || []).filter((b) => !(src === 'y24' && isSet(b.title || '')));
 }
+// 사진 읽기(2026-11-24, js/photo.js): 사진을 긴 변 1600px JPEG로 줄여 중계 doPost로 보내면 제미나이가 대출 목록(list)·바코드 ISBN(isbn)을 읽는다.
+// 효니 책장만(범용판은 남의 사진을 효니 열쇠로 제미나이에 보내지 않는다). 사진은 저장하지 않는다
+const seeOn = () => relayOn() && !LOCAL;
+function shrinkPhoto(file) {
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const { w, h } = fitSize(img.naturalWidth, img.naturalHeight);
+      const c = el('canvas', { width:w, height:h });
+      c.getContext('2d').drawImage(img, 0, 0, w, h); // 요즘 브라우저는 사진의 회전 정보를 그릴 때 따른다
+      URL.revokeObjectURL(url);
+      ok(c.toDataURL('image/jpeg', .85).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); no(fail('이 사진은 열 수 없어요. 다른 사진으로 해 주세요.')); };
+    img.src = url;
+  });
+}
+async function seePhoto(mode, file) {
+  const img = await shrinkPhoto(file);
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 110000); // 보통 15초, 오래 쉰 뒤 첫 번째나 제미나이가 붐비면 60~75초(2026-11-24 배포된 중계로 잼)
+  let r;
+  try {
+    // text/plain(기본)으로 보내야 미리 묻기(preflight) 없이 앱스크립트가 받는다
+    const res = await fetch(BOOK_RELAY, { method:'POST', body:JSON.stringify({ mode, img }), signal:c.signal });
+    r = await res.json();
+  } catch (e) { throw fail(seeError('')); } finally { clearTimeout(t); }
+  if (!r.ok) throw fail(seeError(r.error));
+  return r;
+}
+// 사진 고르기 단추(폰은 찍기·사진 보관함 중 고름). label 안에 숨긴 file 칸이라 단추처럼 누른다
+function photoPick(text, onFile) {
+  const input = el('input', { type:'file', accept:'image/*', className:'sr-file' });
+  const lab = el('label', { className:'btn ghost photo-pick' }, el('span', { textContent:text }), input);
+  input.onchange = () => { const f = input.files && input.files[0]; input.value = ''; if (f) onFile(f, lab); };
+  return lab;
+}
 // only: 한 출처만(책등 다시 찾기의 예스24 판 찾기)
 async function fromRelay(q, only) {
   const tries = [];
@@ -3186,9 +3250,11 @@ async function fromRelay(q, only) {
   // isbn·kdc는 주제 저절로 고르기에만 쓰고 저장하지 않는다. y24(상품 번호)는 책등 다시 찾기 후보에만 쓴다. from은 실제로 찾은 곳(빈 칸 채우기 표시용, 저장 안 함)
   return uniqueBooks(books.map((b) => ({ t:bookTitle(b.title), a:bookAuthors(b.authors, b.translators), p:tidy(b.publisher), y:b.year || '', isbn:isbnOf(b.isbn), kdc:b.kdc || '', kid:!!b.kid, y24:b.y24 || '', from })));
 }
-async function searchBooks(q) {
-  const enc = encodeURIComponent(q);
-  const fits = (b) => hasAll(squeeze(`${b.t} ${b.a}`), q); // 출판사는 넣지 않는다(«사피엔»이 출판사 이름만 맞는 책을 맞다고 보지 않게)
+async function searchBooks(raw) {
+  const isbn = isbnQuery(raw), q = isbn || raw; // ISBN(바코드 사진·직접 적기)이면 그 번호인 책만 맞는 책으로 친다(2026-11-24)
+  const enc = encodeURIComponent(isbn ? `isbn:${isbn}` : q);
+  // 구글 도서·오픈 라이브러리는 isbn 칸이 없지만 «isbn:번호»로 정확히 찾은 결과라 맞는 책으로 친다(검토자 지적 2026-11-24)
+  const fits = isbn ? (b) => b.isbn == null || sameIsbn(b, isbn) : (b) => hasAll(squeeze(`${b.t} ${b.a}`), q); // 출판사는 넣지 않는다(«사피엔»이 출판사 이름만 맞는 책을 맞다고 보지 않게)
   const sources = [
     relayOn() && (async () => {
       const rows = await fromRelay(q);
@@ -3242,9 +3308,23 @@ function bookLookup(apply) {
   };
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
+  // 바코드 사진(2026-11-24): 뒤표지 바코드를 찍으면 제미나이가 ISBN 숫자를 읽고, 그 번호로 찾는다
+  const barcode = seeOn() ? photoPick('바코드', async (file, lab) => {
+    const mine = ++run;
+    lab.classList.add('busy'); go.disabled = true; msg.hidden = false; msg.textContent = '바코드를 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; found.replaceChildren();
+    try {
+      const r = await seePhoto('isbn', file);
+      if (mine !== run) return;
+      if (!r.isbn) { msg.textContent = '바코드 숫자를 읽지 못했어요. 바코드 아래 숫자가 잘 보이게 다시 찍거나, 숫자를 찾는 칸에 적어 주세요.'; return; }
+      q.value = r.isbn; q.dispatchEvent(new Event('input')); // 서점 링크도 그 번호로
+      go.disabled = false;
+      await search();
+    } catch (e) { if (mine === run) msg.textContent = e.userMsg || seeError(''); }
+    finally { lab.classList.remove('busy'); if (mine === run) go.disabled = false; }
+  }) : null;
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small', { textContent:relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.' });
-  return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go), msg, found,
+  const note = el('small', { textContent:(relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.') + (barcode ? ' «바코드»는 사진을 제미나이(구글)로 보내 숫자만 읽어요. 책장에는 사진을 남기지 않아요.' : '') });
+  return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go, barcode), msg, found,
     el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
 
