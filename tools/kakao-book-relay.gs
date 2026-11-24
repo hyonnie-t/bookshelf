@@ -42,7 +42,7 @@ function doPost(e) {
 
 function see_(body) {
   var mode = body && body.mode, img = String((body && body.img) || '');
-  if (!SEE_PROMPTS[mode]) return { ok: false, error: 'bad_mode' };
+  if (mode !== 'list' && mode !== 'isbn') return { ok: false, error: 'bad_mode' }; // «constructor» 같은 이름이 한도를 쓰지 않게(검토자 지적)
   if (!img || !/^[A-Za-z0-9+/=]+$/.test(img)) return { ok: false, error: 'empty' };
   if (img.length > SEE_MAX_IMG) return { ok: false, error: 'too_big' };
   var props = PropertiesService.getScriptProperties();

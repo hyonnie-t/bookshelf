@@ -2774,7 +2774,7 @@ function openManyForm() {
         g.mixed ? '반납일이 책마다 달라 가장 많은 날을 넣었어요' : '', '제목이 맞는지 보고 꽂아 주세요. 빌린 날은 오늘로 넣었어요.'].filter(Boolean).join(' · ');
     } catch (e) { photoMsg.textContent = e.userMsg || seeError(''); }
     finally { lab.classList.remove('busy'); }
-  }), el('small', { textContent:'사진을 제미나이(구글)로 보내 제목·반납일만 읽고, 사진은 남기지 않아요.' }), photoMsg) : null;
+  }), el('small', { textContent:'사진을 제미나이(구글)로 보내 제목·반납일만 읽어요. 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
   showForm('여러 권 한꺼번에 꽂기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('구분', st), loanBox, whereField, whereList()].filter(Boolean), async () => {
     clearTimeout(timer); draw();
     const lines = manyLines(x.value);
@@ -3253,7 +3253,8 @@ async function fromRelay(q, only) {
 async function searchBooks(raw) {
   const isbn = isbnQuery(raw), q = isbn || raw; // ISBN(바코드 사진·직접 적기)이면 그 번호인 책만 맞는 책으로 친다(2026-11-24)
   const enc = encodeURIComponent(isbn ? `isbn:${isbn}` : q);
-  const fits = isbn ? (b) => sameIsbn(b, isbn) : (b) => hasAll(squeeze(`${b.t} ${b.a}`), q); // 출판사는 넣지 않는다(«사피엔»이 출판사 이름만 맞는 책을 맞다고 보지 않게)
+  // 구글 도서·오픈 라이브러리는 isbn 칸이 없지만 «isbn:번호»로 정확히 찾은 결과라 맞는 책으로 친다(검토자 지적 2026-11-24)
+  const fits = isbn ? (b) => b.isbn == null || sameIsbn(b, isbn) : (b) => hasAll(squeeze(`${b.t} ${b.a}`), q); // 출판사는 넣지 않는다(«사피엔»이 출판사 이름만 맞는 책을 맞다고 보지 않게)
   const sources = [
     relayOn() && (async () => {
       const rows = await fromRelay(q);
@@ -3322,7 +3323,7 @@ function bookLookup(apply) {
     finally { lab.classList.remove('busy'); if (mine === run) go.disabled = false; }
   }) : null;
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small', { textContent:(relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.') + (barcode ? ' «바코드»는 사진을 제미나이(구글)로 보내 숫자만 읽고 사진은 남기지 않아요.' : '') });
+  const note = el('small', { textContent:(relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.') + (barcode ? ' «바코드»는 사진을 제미나이(구글)로 보내 숫자만 읽어요. 책장에는 사진을 남기지 않아요.' : '') });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go, barcode), msg, found,
     el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
