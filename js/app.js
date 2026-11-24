@@ -2759,22 +2759,22 @@ function openManyForm() {
   const loanBox = el('div', { className:'sub-fields', hidden:true }, field('누구에게서', who, '도서관이면 도서관 이름'), nameList('peopleNames', D.lib.flatMap((b) => b.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due));
   const whereField = field('어느 칸에 꽂을까요', where, '비워도 돼요');
   st.onchange = () => { loanBox.hidden = st.value !== 'in'; whereField.hidden = st.value === 'in'; };
-  // 대출 화면 사진(2026-11-24): 도서관 앱 «대출 중» 화면 캡처를 고르면 제목을 줄로 더하고, 빌린 곳·반납일이 보이면 «빌려 온 책»으로 채운다
+  // 사진으로 읽기(2026-11-24, 저녁에 서점 구매 내역·책장 사진도): 도서관 앱 «대출 중» 화면 캡처를 고르면 제목을 줄로 더하고, 빌린 곳·반납일이 보이면 «빌려 온 책»으로 채운다
   const photoMsg = el('p', { className:'warn', role:'status', hidden:true });
-  const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('대출 화면 사진으로 읽기', async (file, lab) => {
+  const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('사진으로 읽기', async (file, lab) => {
     lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
     try {
       const r = await seePhoto('list', file), books = r.books || [];
-      if (!books.length) { photoMsg.textContent = '사진에서 책 목록을 찾지 못했어요. 제목이 보이게 다시 캡처하거나 아래에 적어 주세요.'; return; }
+      if (!books.length) { photoMsg.textContent = '사진에서 책 목록을 찾지 못했어요. 제목이 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
       const m = mergeLines(manyLines(x.value), books, new Set(D.lib.filter(isActive).map((b) => norm(b.t))));
       x.value = m.lines.join('\n'); draw();
       const g = loanGuess(books);
       if (g.who || g.due) { st.value = 'in'; if (!who.value.trim()) who.value = g.who; if (!due.value) due.value = g.due; st.onchange(); }
       photoMsg.textContent = [`${books.length}권을 읽었어요`, m.added ? `${m.added}권 더함` : '', m.already ? `이미 서재에 있는 ${m.already}권은 뺌` : '',
-        g.mixed ? '반납일이 책마다 달라 가장 많은 날을 넣었어요' : '', '제목이 맞는지 보고 꽂아 주세요. 빌린 날은 오늘로 넣었어요.'].filter(Boolean).join(' · ');
+        g.mixed ? '반납일이 책마다 달라 가장 많은 날을 넣었어요' : '', '제목이 맞는지 보고 꽂아 주세요.', g.who || g.due ? '빌린 날은 오늘로 넣었어요.' : ''].filter(Boolean).join(' · ');
     } catch (e) { photoMsg.textContent = e.userMsg || seeError(''); }
     finally { lab.classList.remove('busy'); }
-  }), el('small', { textContent:'사진을 제미나이(구글)로 보내 제목·반납일만 읽어요. 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
+  }), el('small', { textContent:'도서관 대출 화면, 서점 구매 내역 캡처, 책장 사진(한 칸씩 정면에서 가까이)을 읽어요. 사진을 제미나이(구글)로 보내 제목·저자·반납일만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
   showForm('여러 권 한꺼번에 꽂기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('구분', st), loanBox, whereField, whereList()].filter(Boolean), async () => {
     clearTimeout(timer); draw();
     const lines = manyLines(x.value);
