@@ -14,7 +14,7 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     W('d', { a:'박작가', th:['역사'], recs:[{ d:'2024-03-10', r:3 }] }),
     W('e', { a:'박작가', th:['역사'], recs:[{ d:'2024-02-10', r:3 }] }),
     W('f', { a:'최작가', th:['역사', '여성'], recs:[{ d:'2023-06-10', r:4.5 }] }),
-    W('g', { a:'정작가', th:['철학'], recs:[{ d:'2026-10-20', st:'unread' }] }), // 읽는 중
+    W('g', { a:'정작가', th:['철학'], recs:[{ d:'2026-08-20', st:'unread' }] }), // 읽는 중, 석 달 넘게 멈춤
     W('h', { a:'한작가', th:['과학·환경'], recs:[{ d:'2026-12-03', r:4 }, { d:'2026-10-01', st:'unread' }], marks:[{ d:'2026-12-04', q:'문장' }] }), // 12월에 다 읽은 비문학, 읽다 멈췄던 책, 쌓인 책
     W('i', { a:'김작가', th:['소설'], recs:[{ d:'2026-12-10' }] }), // 12월, 아는 작가
     W('j', { a:'새작가', th:['역사'], recs:[{ d:'2026-12-11' }, { d:'2020-01-01' }] }), // 다시 읽음 + 역사
@@ -107,6 +107,21 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     assert.ok(c.length >= 3);
     assert.ok(c.every((x) => x.label && x.why));
     assert.strictEqual(G.goalProgress('pile', { works:[], lib:[], today:'2026-11-24' }, '2026-12').n, 0);
+  });
+
+  ok('검토자 지적: 연도만 적힌 기록·오늘 뒤 날짜·지금 읽는 책', () => {
+    const ws = [
+      W('y', { a:'옛작가', th:['소설'], recs:[{ d:'2023' }] }), // 연도만: 읽은 책
+      W('n', { a:'옛작가', th:['역사'], recs:[{ d:'2026-12-02' }] }), // 12월, 아는 작가
+      W('fut', { a:'미래', th:['소설'], recs:[{ d:'2026-12-30', r:5 }] }), // 오늘 뒤 날짜만
+      W('now', { a:'지금', th:['철학'], recs:[{ d:'2026-11-20', st:'unread' }] }), // 지금 읽는 중
+    ];
+    const c2 = { ...ctx, works:ws, lib:[{ id:'L', t:'y', st:'own', w:'y', loans:[] }, { id:'M', t:'안 읽음', st:'own', loans:[] }] };
+    const cands = G.goalCandidates(c2, '2026-12');
+    assert.match(cands.find((x) => x.key === 'pile').why, /1권/); // y는 읽은 책
+    assert.ok(!cands.some((x) => x.key === 'reread'), '오늘 뒤 날짜 책은 다시 펼치기 후보 아님');
+    assert.ok(!cands.some((x) => x.key === 'finish'), '지금 읽는 책은 멈춘 책 아님');
+    assert.strictEqual(G.goalProgress('newAuthor', c2, '2026-12').n, 1); // fut만 새 작가, n은 아는 작가
   });
 
   ok('말투: ㅎㅎ·(?)·말줄임 없음', () => {

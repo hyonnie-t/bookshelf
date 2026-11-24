@@ -69,14 +69,16 @@ function pileBooks(ctx) {
   return (ctx.lib || []).filter((it) => {
     if (it.st !== 'own') return false;
     const w = byId.get(linkOf(ctx, it));
-    return !w || !doneRecs(w).some((r) => r.d <= t) && w.st !== 'done';
+    return !w || !readBefore(w, t + '~') && w.st !== 'done';
   });
 }
+// before 전에 다 읽은 기록이 있나. 연도만 적힌 날('2023')·날짜 없는 기록도 예전에 읽은 것으로 친다(검토자 지적 2026-11-24)
+const readBefore = (w, before) => (w.recs || []).some((r) => r.st !== 'unread' && String(r.d || '') < before);
 // 지금까지 읽은 첫 저자들(before 날짜 전에 다 읽은 책만)
 function authorsBefore(ctx, before) {
   const fa = ctx.firstAuthor || ((a) => String(a || '').split(',')[0].trim());
   const s = new Set();
-  ctx.works.filter(isBook).forEach((w) => { if (doneRecs(w).some((r) => r.d < before)) { const a = fa(w.a); if (a) s.add(a); } });
+  ctx.works.filter(isBook).forEach((w) => { if (readBefore(w, before)) { const a = fa(w.a); if (a) s.add(a); } });
   return s;
 }
 const bestRating = (w) => Math.max(-1, ...doneRecs(w).filter((r) => r.r != null).map((r) => r.r));
@@ -147,12 +149,15 @@ export function goalCandidates(ctx, ym) {
 
   // 다시 펼치기: 4.5점 이상, 한 번 읽음, 3년 넘음
   const cut3y = `${+t.slice(0, 4) - 3}${t.slice(4)}`;
-  const loved = books.filter((w) => bestRating(w) >= 4.5 && new Set(doneRecs(w).map((r) => r.d)).size === 1 && lastDone(w) < cut3y);
+  const loved = books.filter((w) => bestRating(w) >= 4.5 && new Set(doneRecs(w).map((r) => r.d)).size === 1 && lastDone(w) && lastDone(w) < cut3y); // lastDone이 빈 값(오늘 뒤 날짜만 있는 책)이면 빼기(검토자 지적)
+
   if (loved.length) add('reread', 1.3, `4.5점 이상 줬는데 3년 넘게 안 편 책이 ${loved.length}권`);
 
-  // 읽다 멈춘 책
-  const reading = ctx.reading ? ctx.works.filter((w) => isBook(w) && known(w) && ctx.reading(w)) : [];
-  if (reading.length) add('finish', reading.length >= 3 ? 2 : 1.4, `읽는 중으로 남은 책이 ${reading.length}권`);
+  // 읽다 멈춘 책: 읽는 중인데 두 달 넘게 기록이 없는 책(지금 읽고 있는 책은 «멈춘» 책이 아니다, 검토자 지적)
+  const cut2m = addMonths(nowYm, -2) + t.slice(7);
+  const lastTrace = (w) => [...(w.recs || []), ...(w.notes || []), ...(w.marks || [])].map((x) => x.d).filter((d) => DAY.test(d || '') && d <= t).sort().pop() || '';
+  const stalled = ctx.reading ? ctx.works.filter((w) => isBook(w) && known(w) && ctx.reading(w) && lastTrace(w) < cut2m) : [];
+  if (stalled.length) add('finish', stalled.length >= 3 ? 2 : 1.4, `두 달 넘게 손 안 댄 읽는 중인 책이 ${stalled.length}권`);
 
   // 서평: 마지막 서평 글
   const rp = (ctx.posts || []).filter((p) => p.k === 'review' && !p.blog && DAY.test(p.d || '') && p.d <= t).map((p) => p.d).sort();
