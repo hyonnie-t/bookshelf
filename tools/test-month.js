@@ -163,5 +163,19 @@ const load = (f) => import(`data:text/javascript;base64,${fs.readFileSync(path.j
     const body = app.slice(a, b).split('\n').filter((l) => !/^\s*(\/\/|\/\*)/.test(l)).join('\n');
     assert.ok(!/ㅎㅎ|\(\?\)|\.\.\.[`']|바빴다고|더라구요/.test(body), body.match(/.{0,30}(ㅎㅎ|\(\?\)|\.\.\.[`']|바빴다고|더라구요)/)?.[0]);
   });
+  ok('범용판 말투(toPolite): «~다.»가 안 남는다', () => {
+    assert.strictEqual(M.toPolite('9월보다 2권 더 읽었다(3권 → 5권).'), '9월보다 2권 더 읽었어요(3권 → 5권).');
+    assert.strictEqual(M.toPolite('다시 펼친 책도 1권 있었다. 한 번으로 안 끝나는 책이 있다.'), '다시 펼친 책도 1권 있었어요. 한 번으로 안 끝나는 책이 있어요.');
+    assert.strictEqual(M.toPolite('읽다 만 책은 «가» 한 권이다.'), '읽다 만 책은 «가» 한 권이에요.');
+    assert.strictEqual(M.toPolite('밑줄은 3개.'), '밑줄은 3개예요.');
+    assert.strictEqual(M.toPolite('기록을 남긴 날은 2일. 생각날 때마다 띄엄띄엄 남겼다.'), '기록을 남긴 날은 2일이에요. 생각날 때마다 띄엄띄엄 남겼어요.');
+    assert.strictEqual(M.toPolite('이번 달도 역사 책이 제일 많다.'), '이번 달도 역사 책이 제일 많아요.');
+    assert.strictEqual(M.toPolite('밑줄은 하나도 없다.'), '밑줄은 하나도 없어요.');
+    assert.strictEqual(M.toPolite('별점은 평소보다 짰다(평소 4.0점 → 3.0점).'), '별점은 평소보다 짰어요(평소 4.0점 → 3.0점).');
+    // 여러 달의 실제 한 달 평을 돌려 본다
+    const outs = ['2026-05', '2026-09', '2026-10', '2026-11'].flatMap((ym) => { const v = M.monthVoice(M.monthStats(works, ym, { known }), M.monthStats(works, M.prevMonth(ym), { known }), { avgAll:2, ratedAll:20, title:(w) => w.t, polite:true }); return [...v.change, ...v.habit, v.next].filter(Boolean); });
+    assert.ok(outs.length >= 3);
+    outs.forEach((t) => assert.ok(!/다(\([^)]*\))?\.(\s|$)/.test(t), `남은 반말: ${t}`));
+  });
   console.log(`통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });

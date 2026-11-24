@@ -160,6 +160,16 @@ function cleanData(d) {
     if (isObj(d.meta.notDup)) out.meta.notDup = Object.fromEntries(Object.keys(d.meta.notDup).filter((k) => /^[A-Za-z0-9_~-]{1,170}$/.test(k)).map((k) => [k, true]));
     // 책등 다시 찾기가 «사진 없음·맞는 판 없음»으로 확인해 둔 책(2026-11-14). 다음에 열 때 다시 찾지 않는다
     if (isObj(d.meta.y24tried)) out.meta.y24tried = Object.fromEntries(Object.entries(d.meta.y24tried).filter(([k, v]) => safeKey(k) && (v === 'noside' || v === 'nomatch')));
+    // 다음 달 독서 목표(2026-11-24): 달마다 목표 키 3개까지(키 모양만 걸러 두고 뜻은 js/goals.js parseGoal이 다시 본다)
+    if (isObj(d.meta.goals)) {
+      const goals = {};
+      Object.entries(d.meta.goals).forEach(([ym, v]) => {
+        if (!/^\d{4}-\d{2}$/.test(ym) || !isObj(v) || !Array.isArray(v.g)) return;
+        const g = v.g.filter((k) => typeof k === 'string' && /^[A-Za-z]{2,12}(:[^/\s]{1,20})?$/.test(k)).slice(0, 3);
+        if (g.length) goals[ym] = day(v.at) ? { g, at:day(v.at) } : { g };
+      });
+      if (Object.keys(goals).length) out.meta.goals = goals;
+    }
   }
   return out;
 }

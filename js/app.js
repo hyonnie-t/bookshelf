@@ -1552,7 +1552,7 @@ function renderRecap() {
   const when = ry ? `${ry}년` : '지금까지';
   /* 돌아보기 탭(2026-11-17 효니 쪽지 «살짝~ 돌아보기가 넘 많아서 탭을 나눠도 좋겠다»): 한눈에·결산·더 깊이. 볼 탭은 메모리에만(S.rt).
      결산 탭은 «전체»가 없고, 해를 안 골랐으면 가장 최근 해를 보인다(쪽지 «왜 2023 결산만 있어?»: 전엔 기간에서 해를 골라야만 떴다) */
-  const recOk = S.owner && !LOCAL && ys.length > 0, deepOk = S.owner;
+  const recOk = S.owner && ys.length > 0, deepOk = S.owner; // 범용판도 결산 탭(2026-11-24 효니 답 «넣어», 한 달 평은 «~요» 말투)
   const tab = S.rt === 'rec' && recOk ? 'rec' : S.rt === 'deep' && deepOk ? 'deep' : 'sum';
   const cy = tab === 'rec' ? (ry || ys[ys.length - 1]) : ry;
   const head = (text, only) => el('h2', {}, text, only ? ' ' : null, only ? privateTag() : null);
@@ -1660,7 +1660,7 @@ function renderRecap() {
   }
 
   const monthCard = tab === 'rec' ? monthReview(cy) : null; // 이달의 돌아보기(2026-11-16): 효니 책장 주인 화면만. 2026-11-17부터 결산 탭에서 접어 둔다
-  const nextCard = S.owner && !LOCAL ? nextBooksCard() : null;
+  const nextCard = S.owner ? nextBooksCard() : null;
   const yearRecap = tab === 'rec' ? yearReview(cy, allBooks.filter((w) => readYear(w) === cy), allBooks) : null; // 연말 결산(2026-11-16): 결산 탭 맨 위
 
   /* 해마다 */
@@ -1674,7 +1674,7 @@ function renderRecap() {
     el('div', { className:'ylabels' }, ys.map((y) => el('span', { textContent:"'" + y.slice(2) })))));
 
   /* 달력 */
-  const goalCard = S.owner && !LOCAL && !ry ? goalsCard() : null; // 다음 달 독서 목표(2026-11-24): 지금 기준이라 해를 고르면 숨긴다
+  const goalCard = S.owner && !ry ? goalsCard() : null; // 다음 달 독서 목표(2026-11-24, 범용판도 2026-11-24 효니 답 «내 토큰 쓰는 거면 말구»): 지금 기준이라 해를 고르면 숨긴다
   const T = { sum:[profile, actsCard, goalCard, nextCard, yearCard], rec:[yearRecap, monthCard], deep:[] }; // 탭마다 카드
   if (S.owner) {
     if (dated.length) {
@@ -1811,6 +1811,7 @@ function renderRecap() {
    효니 쪽지 «다른 독서 웹앱 기능 … 돌아보기 기능이 더 강화되면 좋겠음»(월간 분석·달 돌아보기·추천 책 사진), «효니 문체 더 들어가야할듯».
    계산·문장은 js/month.js. 효니 책장 주인 화면만(범용판·공개 화면 없음). 저장하는 칸이 없다(볼 달 S.rm은 메모리에만) */
 const bookThick = (w) => { const r = realOf(w); return r ? r.r * (r.mh || 210) : 0; }; // 책등 사진 비율 × 키(모르면 210mm) = 두께 mm
+const cardSign = () => (LOCAL ? ((D.priv.meta || {}).name || '').trim() || '나의 책장' : '@hyonnie_books · 효니의 책장'); // 결산 그림 아래 서명(범용판은 그 사람 책장 이름, 2026-11-24)
 const isKnown = (w) => !!w.known;
 function shownMonth(ry) {
   // 결산 탭(2026-11-17)은 늘 해를 넘기므로 그해 달만 고르고 넘긴다. 그해에 기록 남은 달이 없으면 월별 결산을 띄우지 않는다(다른 해 달이 뜨면 헷갈림)
@@ -1834,7 +1835,7 @@ function monthReview(ry) {
   const cur = monthStats(books, ym, { thick:bookThick, known:isKnown, reading:isReading });
   const pm = prevMonth(ym), prev = monthStats(books, pm, { thick:bookThick, known:isKnown, reading:isReading });
   const all = ratedRows(books.filter((w) => w.known && countsRead(w)));
-  const v = monthVoice(cur, prev, { avgAll:meanOf(all), ratedAll:all.length, themeVoice:THEME_VOICE, title:titleOf });
+  const v = monthVoice(cur, prev, { avgAll:meanOf(all), ratedAll:all.length, themeVoice:LOCAL ? null : THEME_VOICE, title:titleOf, polite:LOCAL }); // 범용판: 효니 별명 칭호 없이 «~요» 말투
   const at = ms.indexOf(ym), [y, m] = ym.split('-');
   const nav = (dir) => {
     const to = ms[at + dir];
@@ -1891,6 +1892,7 @@ function monthReview(ry) {
   const doneWs = cur.done.map((x) => x.w), sent = doneWs.filter((w) => geulOf(w.id)).length;
   const geul = el('button', { className:'btn ghost msave', type:'button', textContent:sent ? `결산 글감 고르기 · 보낸 책 ${sent}권` : '결산 글감 고르기' });
   geul.onclick = () => openGeulForm(doneWs, `${y}년 ${+m}월 결산 글감`);
+  if (LOCAL) geul.hidden = true; // 글감 서랍은 효니 볼트 쪽 일이라 범용판엔 없다
   return foldCard('month', `${y}년 ${+m}월 · 다 읽은 책 ${cur.doneN}권 · ${v.name}`, el('div', { className:'card span2 month-card' },
     el('h2', {}, '월별 결산 ', privateTag()),
     el('div', { className:'mhead' }, nav(-1), pick, nav(1)),
@@ -1973,7 +1975,7 @@ async function monthCanvas(cur, v, photos) {
   g.fillStyle = C.ink; g.font = `500 32px ${body}`; g.textBaseline = 'top';
   g.fillText(fitText(g, v.change[0] || v.habit[0] || '', W0 - pad * 2), pad, floor + 52);
   g.fillStyle = C.muted; g.font = `500 26px ${body}`;
-  g.fillText('@hyonnie_books · 효니의 책장', pad, H0 - pad - 26);
+  g.fillText(cardSign(), pad, H0 - pad - 26);
   return { cv, hidden:cur.doneN - shown.length };
 }
 const fitText = (g, s, max) => { let t = String(s); while (t.length > 1 && g.measureText(t).width > max) t = t.slice(0, -2) + '…'; return t; };
@@ -2084,7 +2086,7 @@ async function yearCanvas(cur, v, photos) {
   const floor = 1160;
   await drawShelf(g, shelf, { pad, W0, floor, maxH:Math.max(200, floor - y - 24), photos, C, body });
   g.fillStyle = C.muted; g.font = `500 26px ${body}`; g.textBaseline = 'top';
-  g.fillText('@hyonnie_books · 효니의 책장', pad, H0 - pad - 26);
+  g.fillText(cardSign(), pad, H0 - pad - 26);
   return { cv, hidden:cur.books.filter(isOnlyMe).length };
 }
 // 서재에서 고른 다음 책: 소장했는데 아직 안 읽은 책 가운데 요즘(지난 1년) 읽는 책과 이어지는 책
@@ -2105,14 +2107,14 @@ function nextBooksCard() {
 
 /* ---------- 다음 달 독서 목표 (2026-11-24) ----------
    효니 쪽지 «다음 달 독서 목표 제안 … 기존에 내가 독서 빙고에서 했던 것들 … 빈틈을 제공하거나 새로운 독서목표를 통한 리프레시 및 동기부여».
-   계산은 js/goals.js. 효니 책장 주인 화면만(범용판·공개 화면 없음). 저장 칸은 비공개 meta/goals/{YYYY-MM} = {g:[목표 키], at}.
+   계산은 js/goals.js. 주인 화면만(공개 화면 없음). 범용판도 같은 카드(2026-11-24 효니 답 «내 토큰 쓰는 거면 말구»: 계산만 해서 토큰·서버를 안 씀, 서평 목표만 빠짐). 저장 칸은 비공개 meta/goals/{YYYY-MM} = {g:[목표 키], at}.
    이룬 정도는 저장하지 않고 그때그때 기록에서 센다(합치기·기록 고치기를 해도 따로 맞출 게 없다) */
 const goalsOf = (ym) => { const v = ((D.priv.meta || {}).goals || {})[ym]; return v && Array.isArray(v.g) ? v.g.filter((k) => parseGoal(k)) : []; };
-const goalCtx = () => ({ works:list(), lib:D.lib, posts:D.posts, today:today(), known:isKnown, reading:isReading, firstAuthor:firstAuthorOf, libWork:(it) => (it.w ? movedTo(it.w) : '') });
+const goalCtx = () => ({ works:list(), lib:D.lib, posts:LOCAL ? [] : D.posts, today:today(), known:isKnown, reading:isReading, firstAuthor:firstAuthorOf, libWork:(it) => (it.w ? movedTo(it.w) : '') });
 function goalBadgeEl(key, on) {
   const b = goalBadge(key);
   const box = el('span', { className:'goal-badge' + (on === false ? ' off' : '') + (b.img ? '' : ' emo'), ariaHidden:'true' });
-  if (b.img) box.append(el('img', { src:b.img, alt:'', width:56, height:56, loading:'lazy', decoding:'async' }));
+  if (b.img) box.append(el('img', { src:new URL('../' + b.img, import.meta.url).href, alt:'', width:56, height:56, loading:'lazy', decoding:'async' })); // 범용판(/my/)에서도 같은 그림(js/ 기준 경로)
   else box.textContent = b.emoji;
   return box;
 }
@@ -2125,7 +2127,7 @@ function goalTiles(ym, keys, ctx, future) {
   }));
 }
 function goalsCard() {
-  if (!S.owner || LOCAL) return null;
+  if (!S.owner) return null;
   const ctx = goalCtx(), now = today().slice(0, 7), next = nextMonth(now), prev = prevMonth(now);
   const mine = goalsOf(now), planned = goalsOf(next), before = goalsOf(prev);
   const res = (ym, keys) => keys.map((k) => ({ ...goalProgress(k, ctx, ym), label:goalLabel(k) }));
