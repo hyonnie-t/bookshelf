@@ -11,6 +11,7 @@ import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillG
 import { coverNorm, spineFit, splitTargets, triedWhy, spineResult, groupResults, triedPatch, triedClear, pickedSpines } from './spine-tool.js';
 import { isReading, isNotRead, readState, countsRead, canMarkReading, canMarkNot, settleRecs, setReading, hasDoneRec, lastUnreadAt, readingPatch } from './reading.js';
 import { activeMonths, monthStats, monthVoice, nextBooks, prevMonth, nextMonth, daysIn, monthQuestions, yearStats, yearVoice } from './month.js';
+import { goalCandidates, goalProgress, goalLabel, goalBadge, goalLine, pickGoals, parseGoal } from './goals.js';
 
 const LOCAL = document.documentElement.dataset.mode === 'local'; // 범용판(/my/): 로그인 없이 기기에 저장
 const fb = LOCAL ? local : remote;
@@ -27,7 +28,7 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 const validCode = (c) => /^[A-Za-z0-9_-]{5,}$/.test(c);
 const igUrl = (c) => `https://www.instagram.com/p/${c}/`;
 
-const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'', rq:0, rqm:'', rt:'sum' };
+const S = { kind:'book', theme:'', q:'', hideUnknown:true, onlyIg:false, onlyMe:false, pKind:'review', pq:'', pShown:PAGE, owner:false, user:null, view:'shelf', lf:'all', lq:'', ls:'theme', cur:null, lastWhere:'', order:'new', ry:'', drill:'', drillN:20, rOpen:'', rMore:[], voice:0, rm:'', rq:0, rqm:'', rt:'sum', gshift:0 };
 const D = { pub:null, blog:[], spines:{}, y24:{}, y24miss:{}, works:new Map(), posts:[], byWork:new Map(), priv:{}, lib:[], moved:new Map() };
 // 합쳐서 빠진 책의 id를 남긴 책의 id로 바꾼다. 서평·서재 연결을 고쳐 쓰지 않아 되돌리기가 쉽다
 // 찾기: 띄어쓰기와 문장부호를 무시하고, 여러 낱말은 순서와 상관없이 모두 들어 있으면 찾는다
@@ -1673,7 +1674,8 @@ function renderRecap() {
     el('div', { className:'ylabels' }, ys.map((y) => el('span', { textContent:"'" + y.slice(2) })))));
 
   /* 달력 */
-  const T = { sum:[profile, actsCard, nextCard, yearCard], rec:[yearRecap, monthCard], deep:[] }; // 탭마다 카드
+  const goalCard = S.owner && !LOCAL && !ry ? goalsCard() : null; // 다음 달 독서 목표(2026-11-24): 지금 기준이라 해를 고르면 숨긴다
+  const T = { sum:[profile, actsCard, goalCard, nextCard, yearCard], rec:[yearRecap, monthCard], deep:[] }; // 탭마다 카드
   if (S.owner) {
     if (dated.length) {
       const mc = {};
@@ -2099,6 +2101,93 @@ function nextBooksCard() {
       b.onclick = () => openLib(it.id, b);
       return b;
     }))));
+}
+
+/* ---------- 다음 달 독서 목표 (2026-11-24) ----------
+   효니 쪽지 «다음 달 독서 목표 제안 … 기존에 내가 독서 빙고에서 했던 것들 … 빈틈을 제공하거나 새로운 독서목표를 통한 리프레시 및 동기부여».
+   계산은 js/goals.js. 효니 책장 주인 화면만(범용판·공개 화면 없음). 저장 칸은 비공개 meta/goals/{YYYY-MM} = {g:[목표 키], at}.
+   이룬 정도는 저장하지 않고 그때그때 기록에서 센다(합치기·기록 고치기를 해도 따로 맞출 게 없다) */
+const goalsOf = (ym) => { const v = ((D.priv.meta || {}).goals || {})[ym]; return v && Array.isArray(v.g) ? v.g.filter((k) => parseGoal(k)) : []; };
+const goalCtx = () => ({ works:list(), lib:D.lib, posts:D.posts, today:today(), known:isKnown, reading:isReading, firstAuthor:firstAuthorOf, libWork:(it) => (it.w ? movedTo(it.w) : '') });
+function goalBadgeEl(key, on) {
+  const b = goalBadge(key);
+  const box = el('span', { className:'goal-badge' + (on === false ? ' off' : '') + (b.img ? '' : ' emo'), ariaHidden:'true' });
+  if (b.img) box.append(el('img', { src:b.img, alt:'', width:56, height:56, loading:'lazy', decoding:'async' }));
+  else box.textContent = b.emoji;
+  return box;
+}
+// 정해 둔 달의 목표 칸: 배지는 이루면 색이 들어온다(빙고 도장처럼)
+function goalTiles(ym, keys, ctx, future) {
+  return el('div', { className:'goal-tiles' }, keys.map((k) => {
+    const p = goalProgress(k, ctx, ym), on = future ? null : p.done;
+    const sub = future ? '그달이 되면 기록에서 세요' : p.done ? `이뤘어요 ${p.n}/${p.need}` : `${p.n}/${p.need}`;
+    return el('div', { className:'goal-tile' + (p.done && !future ? ' done' : '') }, goalBadgeEl(k, on), el('span', { className:'goal-t' }, el('strong', { textContent:goalLabel(k) }), el('small', { textContent:sub })));
+  }));
+}
+function goalsCard() {
+  if (!S.owner || LOCAL) return null;
+  const ctx = goalCtx(), now = today().slice(0, 7), next = nextMonth(now), prev = prevMonth(now);
+  const mine = goalsOf(now), planned = goalsOf(next), before = goalsOf(prev);
+  const res = (ym, keys) => keys.map((k) => ({ ...goalProgress(k, ctx, ym), label:goalLabel(k) }));
+  const kids = [], lines = [];
+  if (before.length) lines.push(goalLine(res(prev, before), prev));
+  if (mine.length) kids.push(el('h3', { className:'recap-sec', textContent:`${+now.slice(5)}월 목표 · 이번 달` }), goalTiles(now, mine, ctx, false));
+  const cands = goalCandidates(ctx, next);
+  let line;
+  if (planned.length) {
+    kids.push(el('h3', { className:'recap-sec', textContent:`${+next.slice(5)}월 목표` }), goalTiles(next, planned, ctx, true));
+    line = `${+next.slice(5)}월 목표 ${planned.length}개 정함`;
+  } else {
+    const shown = pickGoals(cands, S.gshift || 0);
+    kids.push(el('h3', { className:'recap-sec', textContent:`${+next.slice(5)}월에 해 볼 만한 것` }),
+      el('div', { className:'goal-tiles' }, shown.map((c) => el('div', { className:'goal-tile' }, goalBadgeEl(c.key), el('span', { className:'goal-t' }, el('strong', { textContent:c.label }), el('small', { textContent:c.why }))))));
+    line = shown.length ? `제안 ${shown.length}개 · ${shown[0].label}` : '';
+  }
+  if (mine.length && !planned.length) { const r = res(now, mine); line = `${+now.slice(5)}월 목표 ${r.filter((x) => x.done).length}/${r.length}`; }
+  const more = el('button', { className:'copy', type:'button', textContent:'다른 목표 보기' });
+  more.onclick = () => { S.gshift = ((S.gshift || 0) + 1) % Math.max(1, Math.ceil(cands.length / 3)); renderRecap(); const c = $('recap').querySelector('.goal-card'); if (c) c.classList.add('turned'); };
+  const pick = el('button', { className:'copy', type:'button', textContent:planned.length || mine.length ? '목표 고치기' : '목표로 정하기' });
+  pick.onclick = () => openGoalForm(cands);
+  const card = el('div', { className:'card span2 goal-card' }, el('h2', {}, '다음 달 독서 목표 ', privateTag()),
+    el('p', { className:'sub', textContent:'독서 빙고처럼 한 달에 해 볼 일을 골라요. 내 기록에서 빈 곳을 먼저 찾았어요' }),
+    lines.length ? el('div', { className:'goal-lines' }, lines.map((t) => el('p', { textContent:t }))) : null,
+    kids,
+    el('div', { className:'actions goal-actions' }, planned.length ? null : more, pick));
+  return foldCard('goals', line, card);
+}
+// 목표 정하기: 달 고르기 → 후보를 체크(3개까지) → 한 번에 저장. 다 풀고 저장하면 그달 목표를 지운다
+function openGoalForm(cands) {
+  const now = today().slice(0, 7), next = nextMonth(now);
+  const sel = el('select', { ariaLabel:'목표를 정할 달' }, [[next, `다음 달 (${+next.slice(5)}월)`], [now, `이번 달 (${+now.slice(5)}월)`]].map(([v, t]) => el('option', { value:v, textContent:t })));
+  if (!goalsOf(next).length && goalsOf(now).length) sel.value = now; // 이번 달 목표만 있으면 그걸 고치러 온 것
+  const count = el('small', { role:'status' });
+  const listBox = el('div', { className:'checks goal-checks' });
+  let boxes = [];
+  const sync = () => { const n = boxes.filter((c) => c.checked).length; count.textContent = n > 3 ? `고른 목표 ${n}개 · 3개까지 골라 주세요` : `고른 목표 ${n}개`; };
+  const draw = () => {
+    const ym = sel.value, saved = goalsOf(ym);
+    const keys = [...new Set([...saved, ...cands.map((c) => c.key)])];
+    const why = Object.fromEntries(cands.map((c) => [c.key, c.why]));
+    const top = new Set(pickGoals(cands, S.gshift || 0).map((c) => c.key));
+    boxes = keys.map((k) => { const c = el('input', { type:'checkbox', checked:saved.length ? saved.includes(k) : top.has(k) }); c.dataset.k = k; c.addEventListener('change', sync); return c; });
+    listBox.replaceChildren(...keys.map((k, i) => el('label', { className:'check goal-check' }, boxes[i], goalBadgeEl(k), el('span', { className:'goal-t' }, el('strong', { textContent:goalLabel(k) }), why[k] ? el('small', { textContent:why[k] }) : null))));
+    sync();
+  };
+  sel.onchange = draw;
+  draw();
+  showForm('독서 목표 정하기', [el('small', { textContent:'세 개까지 골라요. 이룬 정도는 그달 기록(다 읽은 책·서재·밑줄·서평)에서 저절로 세요. 다 풀고 저장하면 그달 목표가 지워져요.' }),
+    el('label', { className:'goal-month' }, '달 ', sel), count, listBox], async () => {
+    const ym = sel.value, g = boxes.filter((c) => c.checked).map((c) => c.dataset.k), was = goalsOf(ym);
+    if (g.length > 3) throw fail('목표는 3개까지 골라 주세요');
+    if (g.join('|') === was.join('|')) throw fail('바뀐 게 없어요. 목표를 고르거나 풀어 주세요');
+    if (!g.length && !await ask(`${+ym.slice(5)}월 목표를 지울까요?`, '지우기', true)) return 'stay';
+    const val = g.length ? { g, at:today() } : null;
+    await write(`meta/goals/${ym}`, val);
+    const m = D.priv.meta = D.priv.meta || {}, all = m.goals = { ...(m.goals || {}) };
+    if (val) all[ym] = val; else delete all[ym];
+    renderRecap();
+    toast(g.length ? `${+ym.slice(5)}월 목표 ${g.length}개를 정했어요` : `${+ym.slice(5)}월 목표를 지웠어요`);
+  }, '한 번에 저장');
 }
 
 /* ---------- 낱말 지도 ---------- */

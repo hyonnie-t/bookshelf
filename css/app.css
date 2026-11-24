@@ -686,6 +686,27 @@ html[data-mode="local"] .who { order:3; margin-top:var(--space-2); }
 .act-list { display:grid; }
 .act-list .drill-slot { grid-column:1 / -1; }
 @media (min-width:900px) { .act-list { grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:var(--space-4); } .act-list .act:nth-of-type(2) { border-top:0; } }
+/* 다음 달 독서 목표(2026-11-24): 빙고 칸처럼 배지 + 목표. 이루면 배지에 색이 들어온다 */
+.goal-tiles { display:grid; gap:var(--space-2); grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); margin-bottom:var(--space-3); }
+.goal-tile { display:flex; align-items:center; gap:var(--space-2); padding:var(--space-2); border:1px solid var(--line); border-radius:12px; background:var(--surface); min-width:0; }
+.goal-tile.done { border-color:color-mix(in srgb, var(--accent) 55%, var(--line)); background:color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.goal-t { display:grid; min-width:0; }
+.goal-t strong { overflow-wrap:anywhere; }
+.goal-t small { color:var(--muted); font-size:.82rem; overflow-wrap:anywhere; }
+.goal-badge { flex:none; display:grid; place-items:center; width:56px; height:56px; border-radius:50%; font-size:1.6rem; transition:filter .3s ease, opacity .3s ease; }
+.goal-badge img { width:56px; height:56px; display:block; }
+.goal-badge.emo { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); border:2px dashed color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.goal-badge.off { filter:grayscale(1); opacity:.45; }
+.goal-tile.done .goal-badge { animation:goalStamp .45s cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes goalStamp { from { transform:scale(.6) rotate(-12deg); } to { transform:none; } }
+.goal-lines p { margin:0 0 var(--space-2); }
+.goal-actions { flex-wrap:wrap; gap:var(--space-2); }
+.goal-card.turned .goal-tiles { animation:drillIn .22s ease both; }
+.goal-checks { display:grid; gap:var(--space-1); }
+.goal-check { display:flex; align-items:center; gap:var(--space-2); min-height:48px; }
+.goal-check .goal-badge, .goal-check .goal-badge img { width:40px; height:40px; font-size:1.2rem; }
+.goal-month { display:flex; align-items:center; gap:var(--space-2); }
+@media (prefers-reduced-motion:reduce) { .goal-tile.done .goal-badge, .goal-card.turned .goal-tiles { animation:none; } .goal-badge { transition:none; } }
 .voice-btn { margin:-6px 0 var(--space-3); }
 .profile.voiced .profile-head, .profile.voiced .profile-lines { animation:drillIn .22s ease both; }
 .rfold { padding:0; scroll-margin-top:56px; }
