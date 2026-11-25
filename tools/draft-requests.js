@@ -50,13 +50,21 @@ const pageNum = (p) => { const m = /\d+/.exec(p || ''); return m ? +m[0] : Infin
 const star = (r) => (r == null || r === '' ? '' : `별점 ${r}`);
 
 // 요청 하나의 상태: 다 씀 = Firebase done이 있거나, 이 PC 기록에 같은 요청 날짜(at)로 남김
+const stamp = (d) => (d.n ? `n${d.n}` : `at${d.at || ''}`);
+function doneOf(key, d, record) { const rec = record[key]; return d.done ? { at: d.done.at, dir: d.done.dir, where: '앱' } : rec && (rec.stamp ? rec.stamp === stamp(d) : !d.n && rec.at === d.at) ? { at: rec.doneAt, dir: rec.dir, where: '이 PC' } : null; }
+// 합쳐서 같은 책이 된 요청은 하나로(쓸 곳 합집합, 덧붙인 말 이어 붙임, 날짜는 늦은 쪽). 다 씀은 모든 요청이 다 썼을 때만
 function requests(priv, record) {
   const works = priv.works || {}, list = ((priv.meta || {}).toDraft) || {};
-  return Object.entries(list).filter(([, d]) => d && typeof d === 'object').map(([key, d]) => {
-    const id = movedTo(works, key), w = works[id] && !works[id].del ? works[id] : null; // 책장에서 뺀 책(del, into 없음)은 재료를 만들지 않는다
-    const rec = record[key];
-    const done = d.done ? { at: d.done.at, dir: d.done.dir, where: '앱' } : rec && rec.at === d.at ? { at: rec.doneAt, dir: rec.dir, where: '이 PC' } : null;
-    return { key, id, w, d, done };
+  const by = new Map();
+  Object.entries(list).filter(([, d]) => d && typeof d === 'object').forEach(([key, d]) => { const id = movedTo(works, key); if (!by.has(id)) by.set(id, []); by.get(id).push([key, d]); });
+  return [...by.entries()].map(([id, kd]) => {
+    const w = works[id] && !works[id].del ? works[id] : null; // 책장에서 뺀 책(del, into 없음)은 재료를 만들지 않는다
+    const late = kd.reduce((x, y) => (String(y[1].at || '').localeCompare(String(x[1].at || '')) > 0 ? y : x));
+    const own = kd.find(([k]) => k === id) || late;
+    const memo = [...new Set(kd.map(([, x]) => tidy(x.memo)).filter(Boolean))].join(' / ');
+    const d = { ...late[1], to: ['blog', 'insta'].filter((t) => kd.some(([, x]) => (x.to || []).includes(t))), memo };
+    const dones = kd.map(([k, x]) => doneOf(k, x, record));
+    return { key: own[0], keys: kd.map(([k]) => k), id, w, d, done: dones.every(Boolean) ? dones[0] : null };
   }).sort((a, b) => String(a.d.at || '').localeCompare(String(b.d.at || '')));
 }
 
@@ -136,23 +144,24 @@ function main() {
   if (has('--done')) {
     if (!doneId) throw new Error('--done 뒤에 책id를 주세요');
     const priv = fbGet();
-    const r = requests(priv, record).find((x) => x.key === doneId || x.id === doneId);
+    const r = requests(priv, record).find((x) => x.keys.includes(doneId) || x.id === doneId);
     if (!r) throw new Error('그 책id의 초안 요청이 없어요');
     const dir = opt('--dir', folderName((r.w && r.w.t) || r.d.t));
-    record[r.key] = { at: r.d.at, doneAt: TODAY, dir };
+    const list = (priv.meta || {}).toDraft || {};
+    r.keys.forEach((k) => { record[k] = { at: list[k].at, stamp: stamp(list[k]), doneAt: TODAY, dir }; });
     fs.writeFileSync(RECORD, JSON.stringify(record, null, 1));
-    if (has('--mark') && !opt('--file')) fbMarkDone(r.key, { at: TODAY, dir });
+    if (has('--mark') && !opt('--file')) r.keys.forEach((k) => fbMarkDone(k, { at: TODAY, dir }));
     console.log(`다 씀 기록: ${(r.w && r.w.t) || r.d.t} → ${dir}${has('--mark') ? ' (앱에도 «초안 나옴» 표시)' : ' (이 PC 기록만, 앱 표시는 --mark)'}`);
     return;
   }
   const priv = fbGet();
   const all = requests(priv, record);
   const want = opt('--id');
-  const list = all.filter((r) => (has('--all') || !r.done) && (!want || r.key === want || r.id === want));
+  const list = all.filter((r) => (has('--all') || !r.done) && (!want || r.keys.includes(want) || r.id === want));
   console.log(`초안 요청 ${all.length}개 · 기다림 ${all.filter((r) => !r.done).length}개${want ? ` · 고른 책 ${list.length}개` : ''}`);
   list.forEach((r, i) => {
     const s = stuffOf(priv, r), name = folderName((r.w && r.w.t) || r.d.t), dir = path.join(OUT, name);
-    console.log(`${i + 1}. «${(r.w && r.w.t) || r.d.t}» 책id ${r.id}${r.id !== r.key ? `(요청은 합쳐서 빠진 ${r.key})` : ''} · 요청 ${r.d.at} · ${(r.d.to || []).map((t) => TO_NAME[t] || t).join('·')}${tidy(r.d.memo) ? ' · 덧붙인 말 있음' : ''}${r.done ? ` · 다 씀(${r.done.where} ${r.done.at || ''})` : ''}`);
+    console.log(`${i + 1}. «${(r.w && r.w.t) || r.d.t}» 책id ${r.id}${r.keys.some((k) => k !== r.id) ? `(합쳐서 빠진 책 요청 포함 ${r.keys.length}개)` : ''} · 요청 ${r.d.at} · ${(r.d.to || []).map((t) => TO_NAME[t] || t).join('·')}${tidy(r.d.memo) ? ' · 덧붙인 말 있음' : ''}${r.done ? ` · 다 씀(${r.done.where} ${r.done.at || ''})` : ''}`);
     console.log(`   재료: ${counts(s)}${r.w ? '' : ' · 책장에 없는 책(지웠을 수 있음)'}`);
     console.log(`   폴더: ${dir} — ${folderState(dir)}`);
     if (has('--make') && r.w) {

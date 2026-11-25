@@ -752,10 +752,16 @@ function openGeulForm(books, why) {
 const DRAFT_TO = [['blog', '블로그 서평'], ['insta', '인스타 캡션']];
 const draftAll = () => (D.priv.meta || {}).toDraft || {};
 const draftKeys = (id) => Object.keys(draftAll()).filter((k) => movedTo(k) === id);
-const draftOf = (id) => { const k = draftKeys(id)[0]; return k ? draftAll()[k] : null; };
+const draftOf = (id) => {
+  const ds = draftKeys(id).map((k) => draftAll()[k]).filter(Boolean);
+  if (ds.length < 2) return ds[0] || null;
+  const late = (x, y) => String(x.at || '').localeCompare(String(y.at || '')) >= 0 ? x : y;
+  const memo = [...new Set(ds.map((d) => tidy(d.memo)).filter(Boolean))].join(' / ').slice(0, 300);
+  return { ...ds.reduce(late), to:DRAFT_TO.map(([k]) => k).filter((k) => ds.some((d) => (d.to || []).includes(k))), ...(memo ? { memo } : {}), done:ds.every((d) => d.done) ? ds.reduce(late).done || ds.find((d) => d.done).done : undefined };
+};
 const draftOff = (id) => Object.fromEntries(draftKeys(id).map((k) => [k, null]));
 const draftToText = (d) => (d.to || []).map((t) => (DRAFT_TO.find((x) => x[0] === t) || [, t])[1]).join('·');
-const draftState = (d) => d.done ? `초안 나옴 ${d.done.at || ''}`.trim() : `요청함 ${d.at || ''}`.trim();
+const draftState = (d) => d.done ? `초안 나옴 ${d.done.at || ''}`.trim() : `기다림 · ${d.at || ''} 요청`;
 // 초안 재료: 글이 있는 기록·밑줄·메모·인스타 서평(블로그 글은 앞부분만 있어 안 셈)
 const draftStuff = (w) => ({ 기록:w.recs.filter((r) => tidy(r.l) || tidy(r.b)).length, 밑줄:w.marks.length, 메모:w.notes.length, '인스타 서평':reviewsOf(w).filter((p) => !p.blog).length });
 async function saveDraft(patch, msg) {
@@ -775,12 +781,12 @@ function openDraftForm(w) {
   ];
   if (cur) kids.push(el('p', { className:'only-state' }, el('span', { className:'only-tag', textContent:draftState(cur) }), el('small', { textContent:cur.done ? `${cur.done.dir || '블로그 폴더'}에 있어요. 다시 저장하면 새로 요청해요.` : `쓸 곳: ${draftToText(cur)}` })));
   kids.push(el('div', { className:'field' }, el('span', { textContent:'쓸 곳' }), el('div', { className:'checks' }, boxes)), field('덧붙일 말', memo, '예: 도서 제공 글, 빼 줬으면 하는 이야기'));
-  if (cur) kids.push(formTools(formBtn('요청 빼기', async () => { await saveDraft(draftOff(w.id), '초안 요청 목록에서 뺐어요'); $('form').close(); if ($('sheet').open) reshow(); }, true)));
+  if (cur) kids.push(formTools(formBtn('요청 빼기', async () => { try { await saveDraft(draftOff(w.id), '초안 요청 목록에서 뺐어요'); $('form').close(); if ($('sheet').open) reshow(); } catch (e) { saveFailed(e); } }, true)));
   showForm(cur ? '블로그·인스타 초안 요청 고치기' : '블로그·인스타 초안 요청', kids, async () => {
     const to = boxes.map((b) => b.querySelector('input')).filter((c) => c.checked).map((c) => c.value);
     if (!to.length) throw fail('블로그나 인스타 중 하나는 골라 주세요');
     if (!total) throw fail('쓸 재료가 없어요. 기록이나 밑줄을 먼저 남겨 주세요');
-    const val = { t:titleOf(w), a:w.a || '', at:today(), to };
+    const val = { t:titleOf(w), a:w.a || '', at:today(), n:Date.now(), to };
     if (tidy(memo.value)) val.memo = memo.value.trim().slice(0, 300);
     await saveDraft({ ...draftOff(w.id), [w.id]:val }, cur ? '초안 요청을 다시 남겼어요' : '초안 요청 목록에 넣었어요. Claude에게 «초안 요청 확인해줘»라고 말해 주세요');
     if ($('sheet').open) reshow();
@@ -795,25 +801,28 @@ function syncDraftBtn() {
   b.textContent = all.length ? `초안 요청 목록 ${open ? `· 기다림 ${open}` : `${all.length}`}` : '초안 요청 목록';
 }
 function openDraftList() {
-  const rows = Object.entries(draftAll()).filter(([, d]) => d).sort((x, y) => String(y[1].at || '').localeCompare(String(x[1].at || '')));
+  const byBook = new Map();
+  Object.entries(draftAll()).forEach(([k, d]) => { if (!d) return; const id = movedTo(k); if (!byBook.has(id)) byBook.set(id, []); byBook.get(id).push(k); });
+  const rows = [...byBook.entries()].map(([id, keys]) => [id, (D.works.get(id) ? draftOf(id) : null) || draftAll()[keys[0]], keys]).sort((x, y) => String(y[1].at || '').localeCompare(String(x[1].at || '')));
   if (!rows.length) { showForm('초안 요청 목록', [el('p', { className:'warn', textContent:'남긴 초안 요청이 없어요. 책 창 «⋯ 더 보기 → 블로그·인스타 초안 요청»으로 남겨요.' })]); return; }
-  const boxes = rows.map(([k]) => { const c = el('input', { type:'checkbox' }); c.dataset.id = k; return c; });
+  const boxes = rows.map(([, , keys]) => { const c = el('input', { type:'checkbox' }); c.dataset.keys = keys.join(' '); return c; });
   const count = el('small', { role:'status' });
   const sync = () => { count.textContent = `뺄 요청 ${boxes.filter((c) => c.checked).length}개`; };
-  const doneAll = el('button', { className:'copy', type:'button', textContent:'초안 나온 것 모두 고르기' });
-  doneAll.onclick = () => { boxes.forEach((c, i) => { c.checked = !!rows[i][1].done; }); sync(); };
+  const doneAll = rows.some((r) => r[1].done) ? el('button', { className:'copy', type:'button', textContent:'초안 나온 것 모두 고르기' }) : null;
+  if (doneAll) doneAll.onclick = () => { boxes.forEach((c, i) => { c.checked = !!rows[i][1].done; }); sync(); };
   boxes.forEach((c) => c.addEventListener('change', sync)); sync();
-  const list = el('div', { className:'checks geul-list' }, rows.map(([k, d], i) => {
-    const w = D.works.get(movedTo(k));
+  const list = el('div', { className:'checks geul-list' }, rows.map(([id, d], i) => {
+    const w = D.works.get(id);
     return el('label', { className:'check' }, boxes[i], el('span', { textContent:w ? titleOf(w) : d.t || '지운 책' }), el('small', { textContent:[draftState(d), draftToText(d)].filter(Boolean).join(' · ') }));
   }));
-  showForm('초안 요청 목록', [el('small', { textContent:'책장에서 남긴 블로그·인스타 초안 요청이에요. «기다림»은 Claude가 아직 안 쓴 요청이고, Claude에게 «초안 요청 확인해줘»라고 하면 써요. 고른 요청은 목록에서 빠져요(쓴 초안 파일은 그대로).' }), el('div', { className:'actions' }, doneAll, count), list], async () => {
-    const patch = Object.fromEntries(boxes.filter((c) => c.checked).map((c) => [c.dataset.id, null]));
+  showForm('초안 요청 목록', [el('small', { textContent:'책장에서 남긴 블로그·인스타 초안 요청이에요. «기다림»은 Claude가 아직 안 쓴 요청이고, Claude에게 «초안 요청 확인해줘»라고 하면 써요(월요일 주간 정리 때도 써요). 고른 요청은 목록에서 빠져요(쓴 초안 파일은 그대로).' }), el('div', { className:'actions' }, doneAll, count), list], async () => {
+    const patch = Object.fromEntries(boxes.filter((c) => c.checked).flatMap((c) => c.dataset.keys.split(' ').map((k) => [k, null])));
+    const n = boxes.filter((c) => c.checked).length;
     if (!Object.keys(patch).length) throw fail('뺄 요청을 골라 주세요');
-    await saveDraft(patch, `${Object.keys(patch).length}개 뺐어요`);
+    await saveDraft(patch, `${n}개 뺐어요`);
   }, '고른 요청 빼기');
 }
-const linePubOn =() => !LOCAL && !!(D.priv.meta || {}).linePub;
+const linePubOn = () => !LOCAL && !!(D.priv.meta || {}).linePub;
 const linePubShows = (w) => linePubOn() && w.k === 'book' && !isOnlyMe(w);
 // 지금 켜면 올라갈 한 줄 평 수(대략: 이미 공개된 책만 센다. 실제 수는 공개 반영 때 정해진다)
 const lineCount = () => { let n = 0, b = 0; list().forEach((w) => { if (!w.pub || w.k !== 'book' || isOnlyMe(w)) return; const k = w.recs.filter((r) => tidy(r.l) && r.lp !== false && tidy(r.l).length <= 200).length; if (k) { n += k; b++; } }); return { n, b }; };

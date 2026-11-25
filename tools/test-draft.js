@@ -46,6 +46,19 @@ const text = T.materialText(r1, s);
 assert.ok(text.includes('비밀본문QWE') && text.includes('(5쪽)') && text.includes('도서 제공'));
 assert.ok(text.indexOf('m1') < 0 && text.indexOf('첫 번째') < text.indexOf('두 번째'));
 
+// 같은 날 «다 씀 → 다시 요청»: 요청 시각 n이 다르면 다시 기다림(검토자 재현 2026-11-25)
+const sameDay = { works: priv.works, meta: { toDraft: { a1: { t: '가짜 책', at: '2026-11-25', n: 2000, to: ['blog'] } } } };
+assert.strictEqual(T.requests(sameDay, { a1: { at: '2026-11-25', stamp: 'n1000', doneAt: '2026-11-25' } })[0].done, null);
+assert.ok(T.requests(sameDay, { a1: { at: '2026-11-25', stamp: 'n2000', doneAt: '2026-11-25' } })[0].done);
+// 합치기 전 두 책 모두 요청: 한 책 요청 하나로(쓸 곳 합집합, 덧붙인 말 둘 다), 둘 다 다 써야 다 씀
+const two = { works: priv.works, meta: { toDraft: { old: { at: '2026-11-20', to: ['insta'], memo: '가' }, a1: { at: '2026-11-22', to: ['blog'], memo: '나' } } } };
+const tw = T.requests(two, {});
+assert.strictEqual(tw.length, 1);
+assert.deepStrictEqual(tw[0].d.to, ['blog', 'insta']);
+assert.strictEqual(tw[0].d.memo, '가 / 나');
+assert.strictEqual(tw[0].key, 'a1');
+assert.strictEqual(T.requests(two, { old: { at: '2026-11-20', stamp: 'at2026-11-20' } })[0].done, null, '하나만 다 쓰면 기다림');
+
 // CLI: 목록 출력에 기록 내용이 안 나오고, --make는 덮어쓰지 않는다
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'draft-test-'));
 const file = path.join(tmp, 'priv.json'), out = path.join(tmp, 'out'), rec = path.join(tmp, 'rec.json');
