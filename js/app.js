@@ -2452,13 +2452,15 @@ function libSpine(it) {
     b.style.backgroundColor = themeVar(libThemes(it)[0]);
     b.append(spineText(title.length > room ? title.slice(0, room - 1) + '…' : title));
   } else return null; // 색 책등 보기에서 이어지지 않은 책은 납작한 색면이 같은 굵기라 그대로
-  const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : '소장';
+  const status = libStatus(it, l);
   b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
   b.title = [title, status].join(' · ');
   b.dataset.lib = it.id;
   b.onclick = () => pullOut(b, () => openLib(it.id, b));
   return el('div', { className:'lslot' }, b);
 }
+// 책등에 붙는 상태 글(읽고 싶은 책 책등 보기 2026-11-25도 같이 씀)
+const libStatus = (it, l) => (it.st === 'want' ? ['읽고 싶은 책', wantOwned(it) ? '서재에 있음' : '', wantReading(it) ? '읽는 중' : ''].filter(Boolean).join(' · ') : it.st === 'in' ? (l ? `${fromWho(l.who)} 빌려 온 책` : '빌렸다가 돌려준 책') : '소장');
 function caseBook(it) {
   const l = openLoan(it), out = !!l && l.dir === 'out';
   if (S.lv === 'spine' && !out) { const s = libSpine(it); if (s) return s; }
@@ -2475,7 +2477,7 @@ function caseBook(it) {
   if (!out) b.style.backgroundColor = themeVar(th[0]);
   b.append(spineText(label));
   if (sub) b.append(el('small', { textContent:sub }));
-  const status = it.st === 'in' ? `${fromWho(l.who)} 빌려 온 책` : out ? `${l.who}에게 빌려줌` : '소장';
+  const status = out ? `${l.who}에게 빌려줌` : libStatus(it, l);
   b.setAttribute('aria-label', [title, it.a, status].filter(Boolean).join(', '));
   b.title = [title, status].join(' · ');
   b.dataset.lib = it.id;
@@ -2689,6 +2691,9 @@ function moreMenu(items) {
 const isWant = (it) => it.st === 'want';
 const WANT_SORTS = [['recent','최근 담은'],['title','제목'],['theme','주제']];
 S.ws = 'recent'; S.wq = ''; S.wantDoneOpen = false;
+const WANT_VIEWS = [['spine','책등'],['list','목록']], WANTVIEW_KEY = LOCAL ? 'myshelf-wantview' : 'shelf-wantview'; // 기기별, 기본 책등(2026-11-25)
+S.wv = 'spine';
+try { if (localStorage.getItem(WANTVIEW_KEY) === 'list') S.wv = 'list'; } catch (e) {}
 const bookKind = (w) => (w.k || 'book') === 'book';
 const wantDoneWork = (it) => { // 이 책을 다 읽은 읽은 책(없으면 null)
   const w = it.w ? D.works.get(movedTo(it.w)) : null;
@@ -2715,13 +2720,15 @@ function renderWant() {
   const hit = (it) => !S.wq || hasAll(squeeze([it.t, it.a, it.p, it.why, ...libThemes(it)].filter(Boolean).join(' ')), S.wq);
   const rows = open.filter(hit), doneRows = done.filter(hit);
   $('wcount').textContent = `${rows.length}권`;
-  $('wantSort').hidden = open.length < 2;
-  $('wantSort').replaceChildren(el('span', { className:'sort-label', textContent:'순서' }), ...WANT_SORTS.map(([k, label]) => {
+  $('wantSort').hidden = !open.length;
+  const chips = (pairs, on, set) => pairs.map(([k, label]) => {
     const b = el('button', { className:'chip', type:'button', textContent:label });
-    b.setAttribute('aria-pressed', S.ws === k);
-    b.onclick = () => { S.ws = k; renderWant(); };
+    b.setAttribute('aria-pressed', on === k);
+    b.onclick = () => { set(k); renderWant(); };
     return b;
-  }));
+  });
+  $('wantSort').replaceChildren(el('span', { className:'sort-label', textContent:'순서' }), ...chips(WANT_SORTS, S.ws, (k) => { S.ws = k; }),
+    el('span', { className:'sort-label', textContent:'보기' }), ...chips(WANT_VIEWS, S.wv, (k) => { S.wv = k; try { localStorage.setItem(WANTVIEW_KEY, k); } catch (e) {} }));
   const byTitle = (a, b) => KO.compare(leadTrim(a.t), leadTrim(b.t));
   const rank = (it) => { const t = libThemes(it)[0]; return t ? (THEMES.findIndex((x) => x[0] === t) + 1) || 999 : 1e3; };
   rows.sort(S.ws === 'title' ? byTitle : S.ws === 'theme' ? (a, b) => rank(a) - rank(b) || byTitle(a, b) : (a, b) => (b.added || '').localeCompare(a.added || '') || byTitle(a, b));
@@ -2733,7 +2740,8 @@ function renderWant() {
     const reset = el('button', { className:'btn', type:'button', textContent:'찾기 지우기' });
     reset.onclick = () => { S.wq = ''; $('wq').value = ''; renderWant(); };
     kids.push(el('div', { className:'empty' }, el('div', { textContent:'찾는 말에 맞는 책이 없어요.' }), reset));
-  } else if (rows.length) kids.push(el('ul', { className:'ledger-list want-list' }, rows.map(wantRow)));
+  } else if (rows.length && S.wv === 'spine') kids.push(...wantShelves(rows));
+  else if (rows.length) kids.push(el('ul', { className:'ledger-list want-list' }, rows.map(wantRow)));
   else kids.push(el('p', { className:'warn', textContent:'담아 둔 책을 모두 읽었어요.' }));
   if (doneRows.length) {
     const box = el('details', { className:'ledger-part want-done', open:S.wantDoneOpen }, el('summary', { textContent:`읽은 책이 된 책 ${doneRows.length}` }), el('ul', { className:'ledger-list want-list' }, doneRows.sort(byTitle).map(wantRow)));
@@ -2748,6 +2756,20 @@ function renderWant() {
   }
   $('wants').replaceChildren(...kids);
   watch('.want-row');
+  watch('#wants .lib-group.shelf');
+}
+// 책등 보기(2026-11-25, 출처: 효니 쪽지 imwvj33gfq61c «읽고 싶은 책도 그 책 등으로 보이게 해주는 게 나을 거 같은 데»): 내 서재 책등 보기와 같은 책등(caseBook).
+// 순서가 «주제»면 주제 칸마다, 아니면 고른 순서대로 한 선반. 다 읽은 책(«읽은 책이 된 책»)은 아래 목록 그대로. 책등을 누르면 책 창(«읽고 싶은 책 고치기»)
+function wantShelves(rows) {
+  const groups = new Map();
+  rows.forEach((it) => { const k = S.ws === 'theme' ? libThemes(it)[0] || NO_THEME : '담아 둔 책'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
+  return [...groups].map(([name, books]) => {
+    const h2 = el('h2');
+    if (S.ws === 'theme') { const sw = el('span', { className:'sw' }); sw.style.background = themeVar(name === NO_THEME ? '' : name); h2.append(sw); }
+    h2.append(name);
+    return el('section', { className:'lib-group shelf' }, el('div', { className:'shelf-head' }, h2, el('span', { textContent:`${books.length}권` })),
+      el('div', { className:'case fit' }, books.map(caseBook)));
+  });
 }
 const hitTitle = (id, title) => { const w = D.works.get(movedTo(id)); return !!w && norm(w.t) === norm(title); };
 // 담기·고치기 한 창. 고치기 창 아래 줄(formTools)에 «샀어요·빌렸어요·읽고 기록 남기기·빼기»를 둔다(목록 줄에 늘 보이는 단추를 늘리지 않는다)
@@ -2819,6 +2841,72 @@ function openWantForm(it) {
   }
   showForm(isNew ? '읽고 싶은 책 담기' : '읽고 싶은 책 고치기', kids, save);
   check();
+}
+// 여러 권 한꺼번에 담기(2026-11-25, 출처: 효니 쪽지 imwvj33gfq61c «사진찍어서 인식 하는 기능»): «여러 권 한꺼번에 꽂기»와 같은 «제목 / 저자» 줄 + 책 찾기 + 사진으로 읽기(표지·책 추천 글·서점 화면).
+// 저장은 한 번에 library/{id} st:'want'. 이미 담은 책은 빼고, 이미 읽은 책·서재에 있는 책은 목록에 표시만(담으면 «읽은 책이 된 책»·«서재에 있음»으로 보인다). 주제는 같은 저자 책이 있을 때만(네트워크 안 씀)
+function openWantMany() {
+  const x = el('textarea', { rows:8, placeholder:'한 줄에 한 권씩 적어 주세요\n이방인 / 알베르 카뮈\n코스모스' });
+  const ids = new Map(), found = new Map();
+  const box = el('ul', { className:'many-list', hidden:true });
+  const wanted = () => new Set(D.lib.filter(isWant).map((b) => norm(b.t)));
+  function draw() {
+    const have = wanted(), seen = new Set(), rows = [];
+    for (const line of manyLines(x.value)) {
+      const { title, author } = manySplit(line), k = norm(title);
+      if (!title || seen.has(k)) continue;
+      seen.add(k);
+      const probe = { t:title }, done = wantDoneWork(probe), own = wantOwned(probe);
+      const note = have.has(k) ? '이미 담아 둬서 빼요' : done ? '이미 읽은 책이에요' : own ? '내 서재에 있는 책이에요' : '';
+      rows.push(el('li', { className:'many-row' }, el('div', { className:'many-name' }, el('strong', { textContent:title }), author ? el('span', { textContent:author }) : null), note ? el('small', { className:'auto-note', textContent:note }) : null));
+    }
+    box.replaceChildren(...rows);
+    box.hidden = !rows.length;
+  }
+  let timer = 0;
+  x.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 400); });
+  const lookup = bookLookup((b) => {
+    found.set(norm(b.t), b);
+    const lines = manyLines(x.value), line = b.a ? `${b.t} / ${b.a}` : b.t;
+    const at = lines.findIndex((l) => norm(manySplit(l).title) === norm(b.t));
+    if (at < 0) lines.push(line); else if (!manySplit(lines[at]).author) lines[at] = line;
+    x.value = lines.join('\n');
+    draw();
+  }, { photo:false });
+  const photoMsg = el('p', { className:'warn', role:'status', hidden:true });
+  const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('사진으로 읽기', async (file, lab) => {
+    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
+    try {
+      const books = (await seeCover(file, 'list')).books;
+      if (!books.length) { photoMsg.textContent = '사진에서 책 제목을 찾지 못했어요. 제목이 잘 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
+      const m = mergeLines(manyLines(x.value), books, wanted());
+      x.value = m.lines.join('\n'); draw();
+      photoMsg.textContent = [`${books.length}권을 읽었어요`, m.added ? `${m.added}권 더함` : '', m.already ? `이미 담아 둔 ${m.already}권은 뺌` : '', '제목이 맞는지 보고 담아 주세요.'].filter(Boolean).join(' · ');
+    } catch (e) { photoMsg.textContent = e.userMsg || seeError(''); }
+    finally { lab.classList.remove('busy'); }
+  }), el('small', { textContent:'책 표지(여러 권도), 서점·책 추천 글 캡처, 책 목록 화면을 읽어요. 사진을 제미나이(구글)로 보내 제목·저자만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
+  const why = el('textarea', { rows:2, maxLength:500, placeholder:'누가 추천했는지, 어디서 봤는지' });
+  showForm('여러 권 한꺼번에 담기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요'), box, field('왜 읽고 싶은지', why, '모든 책에 같이 적혀요. 비워도 돼요')].filter(Boolean), async () => {
+    clearTimeout(timer); draw();
+    const lines = manyLines(x.value);
+    if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
+    const have = wanted(), shelf = themeShelf(''), add = {};
+    let n = 0, skipped = 0;
+    for (const line of lines) {
+      const { title, author } = manySplit(line), k = norm(title);
+      if (!title || have.has(k)) { skipped++; continue; }
+      have.add(k);
+      const f = found.get(k), a = author || (f ? f.a || '' : ''), got = a ? pickTheme({ a, th:[] }, shelf, '', false) : null;
+      if (!ids.has(k)) ids.set(k, await newLibId(ids.size)); // 저장을 다시 눌러도 같은 줄은 같은 칸에
+      const it = { t:title, a, p:f ? f.p || '' : '', th:got ? [got.th] : [], st:'want', added:today(), loans:[], w:'' };
+      if (why.value.trim()) it.why = why.value.trim();
+      add[ids.get(k)] = it; n++;
+    }
+    if (!n) throw fail('새로 담을 책이 없어요. 모두 이미 담아 둔 책이에요.');
+    await write('library', add, 'update');
+    Object.entries(add).forEach(([id, v]) => setPriv('library', id, JSON.parse(JSON.stringify(v))));
+    refreshAll();
+    toast([`${n}권 담았어요`, skipped ? `이미 담아 둔 책 ${skipped}권은 뺐어요` : ''].filter(Boolean).join(' · '));
+  }, '담기');
 }
 // «빌렸어요»: 누구에게서·빌린 날·돌려줄 날을 받아 빌려 온 책(st:'in')으로 내 서재에 꽂는다
 function openWantLoan(it) {
@@ -3466,8 +3554,14 @@ async function seePhoto(mode, file) {
     const res = await fetch(BOOK_RELAY, { method:'POST', body:JSON.stringify({ mode, img }), signal:c.signal });
     r = await res.json();
   } catch (e) { throw fail(seeError('')); } finally { clearTimeout(t); }
-  if (!r.ok) throw fail(seeError(r.error));
+  if (!r.ok) { const e = fail(seeError(r.error)); e.code = r.error; throw e; }
   return r;
+}
+// 표지·추천 글 사진(mode cover, 2026-11-25). 중계가 아직 옛 판(cover 모름 → bad_mode)이면 old 모드로 한 번 더 읽는다
+async function seeCover(file, old) {
+  try { return await seePhoto('cover', file); } catch (e) { if (e.code !== 'bad_mode') throw e; }
+  const r = await seePhoto(old, file);
+  return { isbn:r.isbn || '', books:r.books || [], old:true };
 }
 // 사진 고르기 단추(폰은 찍기·사진 보관함 중 고름). label 안에 숨긴 file 칸이라 단추처럼 누른다
 function photoPick(text, onFile) {
@@ -3517,7 +3611,7 @@ async function searchBooks(raw) {
   return { rows:loose, failed:failed && !loose.length, loose:!!loose.length };
 }
 const STORES = [['교보문고', 'https://search.kyobobook.co.kr/search?keyword='], ['알라딘', 'https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Book&SearchWord=']];
-function bookLookup(apply) {
+function bookLookup(apply, { photo = true } = {}) { // photo:false = 창에 «사진으로 읽기»가 따로 있어 «사진» 단추를 두 번 보이지 않게(여러 권 한꺼번에 담기)
   const q = el('input', { type:'search', maxLength:100, placeholder:'제목이나 저자로 찾기', ariaLabel:'인터넷에서 책 찾기' });
   const go = el('button', { className:'btn ghost', type:'button', textContent:'찾기' });
   const found = el('ul', { className:'found' });
@@ -3545,22 +3639,30 @@ function bookLookup(apply) {
   };
   go.onclick = search;
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
-  // 바코드 사진(2026-11-24): 뒤표지 바코드를 찍으면 제미나이가 ISBN 숫자를 읽고, 그 번호로 찾는다
-  const barcode = seeOn() ? photoPick('바코드', async (file, lab) => {
+  // 사진(2026-11-24 바코드 → 2026-11-25 표지·추천 글까지, 출처: 효니 쪽지 imwvj33gfq61c «바코드로만 인식 되는 거야 사진찍어서 인식 하는 기능은 안 들어간 거 같애»):
+  // 바코드가 보이면 ISBN으로, 아니면 표지·책등·추천 글에서 읽은 제목으로 찾는다. 여러 권이면 고를 단추를 보인다
+  const barcode = seeOn() && photo ? photoPick('사진', async (file, lab) => {
     const mine = ++run;
-    lab.classList.add('busy'); go.disabled = true; msg.hidden = false; msg.textContent = '바코드를 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; found.replaceChildren();
+    lab.classList.add('busy'); go.disabled = true; msg.hidden = false; msg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; found.replaceChildren();
+    const find = async (word) => { q.value = word; q.dispatchEvent(new Event('input')); go.disabled = false; await search(); }; // 서점 링크도 그 말로
     try {
-      const r = await seePhoto('isbn', file);
+      const r = await seeCover(file, 'isbn');
       if (mine !== run) return;
-      if (!r.isbn) { msg.textContent = '바코드 숫자를 읽지 못했어요. 바코드 아래 숫자가 잘 보이게 다시 찍거나, 숫자를 찾는 칸에 적어 주세요.'; return; }
-      q.value = r.isbn; q.dispatchEvent(new Event('input')); // 서점 링크도 그 번호로
-      go.disabled = false;
-      await search();
+      if (r.isbn) { await find(r.isbn); return; }
+      const books = r.books;
+      if (!books.length) { msg.textContent = r.old ? '바코드 숫자를 읽지 못했어요. 바코드 아래 숫자가 잘 보이게 다시 찍거나, 찾는 칸에 적어 주세요.' : '사진에서 책 제목이나 바코드를 찾지 못했어요. 표지 제목이 잘 보이게 다시 찍거나 찾는 칸에 적어 주세요.'; return; }
+      if (books.length === 1) { await find(books[0].t); return; }
+      msg.textContent = `사진에서 ${books.length}권을 읽었어요. 찾을 책을 눌러 주세요.`;
+      found.replaceChildren(...books.slice(0, 12).map((b) => {
+        const pick = el('button', { type:'button' }, el('strong', { textContent:b.t }), el('span', { textContent:b.a ? `${b.a} · 이 제목으로 찾기` : '이 제목으로 찾기' }));
+        pick.onclick = () => find(b.t);
+        return el('li', {}, pick);
+      }));
     } catch (e) { if (mine === run) msg.textContent = e.userMsg || seeError(''); }
     finally { lab.classList.remove('busy'); if (mine === run) go.disabled = false; }
   }) : null;
   // 찾는 말이 실제로 가는 곳만 적는다
-  const note = el('small', { textContent:(relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.') + (barcode ? ' «바코드»는 사진을 제미나이(구글)로 보내 숫자만 읽어요. 책장에는 사진을 남기지 않아요.' : '') });
+  const note = el('small', { textContent:(relayOn() ? `찾는 말만 구글 앱스크립트를 거쳐 ${RELAY_NAME}으로 보내요(예스24에 없거나 안 되면 ${BACKUP_NAME}). 거기서 못 찾으면 구글 도서와 오픈 라이브러리로도 보내요. 내 기록은 보내지 않아요.` : '찾는 말만 구글 도서와 오픈 라이브러리로 보내요. 내 기록은 보내지 않아요.') + (barcode ? ' «사진»은 표지·바코드·책 추천 글 사진을 제미나이(구글)로 보내 제목·저자·바코드 숫자만 읽어요. 책장에는 사진을 남기지 않아요.' : '') });
   return el('div', { className:'lookup' }, el('div', { className:'lookup-row' }, q, go, barcode), msg, found,
     el('div', { className:'store-links' }, el('span', { textContent:'서점에서 찾기' }), links), note);
 }
@@ -4492,6 +4594,7 @@ $('foldTools').onclick = () => toggleFold('tools');
 syncFold();
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
+$('wantMany').onclick = () => openWantMany();
 $('addBook').onclick = () => (S.view === 'library' ? openLibForm(null) : S.view === 'want' ? openWantForm(null) : openBookForm(null));
 $('wq').addEventListener('input', (e) => { S.wq = e.target.value.trim(); renderWant(); });
 $('addPost').onclick = () => openPostForm();

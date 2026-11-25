@@ -256,8 +256,8 @@ dialog { max-height:min(88dvh,46rem); overflow-y:auto; }
 .lib-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:2px var(--space-3); }
 .lib-tools .row { min-width:0; align-items:center; }
 .sort-label { flex:none; color:var(--muted); font-size:.86rem; margin-right:2px; }
-#libSort { flex-wrap:wrap; align-items:center; } /* 꽂는 순서 + 보기(책등/납작, 2026-11-15): 폰에서 «보기»가 화면 밖으로 숨지 않게 다음 줄로 */
-#libSort .sort-label + .chip ~ .sort-label { margin-left:var(--space-2); }
+#libSort,#wantSort { flex-wrap:wrap; align-items:center; } /* 꽂는 순서 + 보기(책등/납작, 2026-11-15): 폰에서 «보기»가 화면 밖으로 숨지 않게 다음 줄로 */
+#libSort .sort-label + .chip ~ .sort-label,#wantSort .sort-label + .chip ~ .sort-label { margin-left:var(--space-2); }
 .shelf-head h2 .sw { display:inline-block; width:.6em; height:.6em; border-radius:2px; margin-right:var(--space-2); vertical-align:.06em; }
 /* 주제 칸: 몇 권 안 되는 칸은 옆으로 나란히 놓아 빈 선반이 길게 이어지지 않게 한다 */
 #cases.by-theme { display:flex; flex-wrap:wrap; align-items:flex-start; column-gap:var(--space-3); }

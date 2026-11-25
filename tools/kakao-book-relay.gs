@@ -14,7 +14,7 @@ function doGet(e) {
 }
 
 // 사진 읽기(2026-11-24, 출처: 효니 쪽지 «도서 웹앱에서 사진으로 인식하기», 효니 선택 «① 다(대출 화면 캡처·바코드 둘 다) ② 가(제미나이)»).
-// 앱이 POST(text/plain, 미리 묻기 요청이 안 생기게)로 {mode:'list'|'isbn', img:base64 JPEG}를 보낸다. 사진·응답 본문은 저장하거나 로그에 남기지 않는다.
+// 앱이 POST(text/plain, 미리 묻기 요청이 안 생기게)로 {mode:'list'|'isbn'|'cover', img:base64 JPEG}를 보낸다. 사진·응답 본문은 저장하거나 로그에 남기지 않는다.
 // 열쇠는 스크립트 속성 GEMINI_API_KEY, 모델은 GEMINI_MODEL(없으면 SEE_MODELS 순서로, 붐비거나 없는 모델이면 다음 것). 하루 상한 SEE_LIMIT.
 var SEE_LIMIT = 200;
 var SEE_MAX_IMG = 2800000; // base64 글자 수(약 2MB). 앱은 긴 변 1600px JPEG로 줄여 보낸다
@@ -32,10 +32,17 @@ var SEE_PROMPTS = {
     '책 목록이 아니면 books를 빈 배열로.',
   isbn: '이 사진은 책 뒤표지의 바코드다. 바코드 위나 아래에 숫자로 인쇄된 ISBN(978 또는 979로 시작하는 13자리)을 읽어라. ' +
     '하이픈·띄어쓰기는 빼고 숫자만. 바코드 옆의 작은 부가기호(5자리)는 넣지 않는다. 읽을 수 없으면 빈 글자.',
+  // 2026-11-25: 표지·추천 글 사진(출처: 효니 쪽지 imwvj33gfq61c «바코드로만 인식 되는 거야 사진찍어서 인식 하는 기능은 안 들어간 거 같애»). 책 찾기 «사진»·읽고 싶은 책 «여러 권 한꺼번에 담기»가 쓴다
+  cover: '이 사진에는 책이 나온다. 책 앞표지·뒤표지·책등(한 권 또는 여러 권), 서점 상품 화면, 책을 소개하거나 추천하는 글·SNS·광고 캡처, 책 목록 화면 중 하나다.\n' +
+    '- isbn: 뒤표지 바코드 근처에 978 또는 979로 시작하는 13자리 ISBN 숫자가 보이면 숫자만(하이픈·띄어쓰기 빼고, 옆의 부가기호 5자리 빼고). 없으면 빈 글자.\n' +
+    '- books: 사진에 나온 책을 모두(가장 크게 나온 책부터). t 제목: «제목 : 부제»면 앞의 제목만, [도서]·(양장)·(리커버) 같은 표시는 뺀다. 표지의 홍보 문구·띠지 문구·수상 표시·총서 이름·출판사 이름은 제목이 아니다. ' +
+    'a 저자: 보일 때만, 옮긴이·«지음»·«글» 같은 말은 빼고 이름만, 없으면 빈 글자. 제목을 확실히 읽을 수 없는 책은 넣지 않는다. 화면에 없는 글자를 지어내지 않는다.\n' +
+    '책이 없으면 isbn은 빈 글자, books는 빈 배열.',
 };
 var SEE_SCHEMA = {
   list: { type: 'OBJECT', properties: { books: { type: 'ARRAY', items: { type: 'OBJECT', properties: { t: { type: 'STRING' }, a: { type: 'STRING' }, due: { type: 'STRING' }, lib: { type: 'STRING' } }, required: ['t'] } } }, required: ['books'] },
   isbn: { type: 'OBJECT', properties: { isbn: { type: 'STRING' } }, required: ['isbn'] },
+  cover: { type: 'OBJECT', properties: { isbn: { type: 'STRING' }, books: { type: 'ARRAY', items: { type: 'OBJECT', properties: { t: { type: 'STRING' }, a: { type: 'STRING' } }, required: ['t'] } } }, required: ['books'] },
 };
 
 function doPost(e) {
@@ -46,7 +53,7 @@ function doPost(e) {
 
 function see_(body) {
   var mode = body && body.mode, img = String((body && body.img) || '');
-  if (mode !== 'list' && mode !== 'isbn') return { ok: false, error: 'bad_mode' }; // «constructor» 같은 이름이 한도를 쓰지 않게(검토자 지적)
+  if (mode !== 'list' && mode !== 'isbn' && mode !== 'cover') return { ok: false, error: 'bad_mode' }; // «constructor» 같은 이름이 한도를 쓰지 않게(검토자 지적)
   if (!img || !/^[A-Za-z0-9+/=]+$/.test(img)) return { ok: false, error: 'empty' };
   if (img.length > SEE_MAX_IMG) return { ok: false, error: 'too_big' };
   var props = PropertiesService.getScriptProperties();
@@ -82,6 +89,11 @@ function seeResult_(mode, o) {
   if (mode === 'isbn') {
     var d = String(o.isbn || '').replace(/[^0-9Xx]/g, '');
     return { ok: true, isbn: isbnOk_(d) ? d : '' };
+  }
+  if (mode === 'cover') {
+    var c = String(o.isbn || '').replace(/[^0-9Xx]/g, '');
+    var found = (o.books || []).slice(0, 60).map(function (b) { return { t: s(b.t, 120), a: s(b.a, 80) }; }).filter(function (b) { return b.t; });
+    return { ok: true, isbn: isbnOk_(c) ? c : '', books: found };
   }
   var books = (o.books || []).slice(0, 60).map( // 책장 한 칸·구매 내역 한 쪽은 30권을 넘을 수 있다(2026-11-24 저녁)
 function (b) {
