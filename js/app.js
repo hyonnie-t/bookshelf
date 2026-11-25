@@ -797,7 +797,9 @@ function syncDraftBtn() {
   const b = $('draftList');
   if (!b) return;
   b.hidden = LOCAL;
-  const all = Object.values(draftAll()), open = all.filter((d) => d && !d.done).length;
+  // 합쳐서 같은 책이 된 요청은 한 권으로 센다(목록·책 창과 같은 기준, 2026-11-25 재검토 지적)
+  const ids = [...new Set(Object.keys(draftAll()).filter((k) => draftAll()[k]).map(movedTo))];
+  const all = ids.map((id) => (D.works.get(id) ? draftOf(id) : null) || draftAll()[draftKeys(id)[0]]).filter(Boolean), open = all.filter((d) => !d.done).length;
   b.textContent = all.length ? `초안 요청 목록 ${open ? `· 기다림 ${open}` : `${all.length}`}` : '초안 요청 목록';
 }
 function openDraftList() {
