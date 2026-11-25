@@ -744,6 +744,86 @@ function openGeulForm(books, why) {
     renderRecap();
   }, '한 번에 저장');
 }
+/* 블로그·인스타 초안 요청(2026-11-25, 효니 말 «연동 기능도 넣어 주면 좋겠다» → «책장 기록 → 초안 만들기»). 앱은 글을 쓰지 않는다.
+   비공개 칸 meta/toDraft/{책id} = {t 제목, a 저자, at 요청한 날, to:['blog','insta'], memo?, done?:{at, dir}}만 남기고,
+   Claude가 «초안 요청 확인해줘»를 받으면 tools/draft-requests.js가 이 칸과 그 책의 기록·밑줄·메모·인스타 글을 읽어
+   클로드작업\산출물\블로그글\블로그\<제목>\에 블로그 초안과 인스타 캡션을 따로 쓴다. done은 Claude 쪽이 쓴다. 범용판에는 없다.
+   합쳐서 빠진 책으로 남긴 요청은 글감 서랍처럼 movedTo로 남긴 책을 따라간다 */
+const DRAFT_TO = [['blog', '블로그 서평'], ['insta', '인스타 캡션']];
+const draftAll = () => (D.priv.meta || {}).toDraft || {};
+const draftKeys = (id) => Object.keys(draftAll()).filter((k) => movedTo(k) === id);
+const draftOf = (id) => {
+  const ds = draftKeys(id).map((k) => draftAll()[k]).filter(Boolean);
+  if (ds.length < 2) return ds[0] || null;
+  const late = (x, y) => String(x.at || '').localeCompare(String(y.at || '')) >= 0 ? x : y;
+  const memo = [...new Set(ds.map((d) => tidy(d.memo)).filter(Boolean))].join(' / ').slice(0, 300);
+  return { ...ds.reduce(late), to:DRAFT_TO.map(([k]) => k).filter((k) => ds.some((d) => (d.to || []).includes(k))), ...(memo ? { memo } : {}), done:ds.every((d) => d.done) ? ds.reduce(late).done || ds.find((d) => d.done).done : undefined };
+};
+const draftOff = (id) => Object.fromEntries(draftKeys(id).map((k) => [k, null]));
+const draftToText = (d) => (d.to || []).map((t) => (DRAFT_TO.find((x) => x[0] === t) || [, t])[1]).join('·');
+const draftState = (d) => d.done ? `초안 나옴 ${d.done.at || ''}`.trim() : `기다림 · ${d.at || ''} 요청`;
+// 초안 재료: 글이 있는 기록·밑줄·메모·인스타 서평(블로그 글은 앞부분만 있어 안 셈)
+const draftStuff = (w) => ({ 기록:w.recs.filter((r) => tidy(r.l) || tidy(r.b)).length, 밑줄:w.marks.length, 메모:w.notes.length, '인스타 서평':reviewsOf(w).filter((p) => !p.blog).length });
+async function saveDraft(patch, msg) {
+  await write('meta/toDraft', patch, 'update');
+  const m = D.priv.meta = D.priv.meta || {}, g = m.toDraft = { ...(m.toDraft || {}) };
+  Object.entries(patch).forEach(([id, v]) => { if (v === null) delete g[id]; else g[id] = v; });
+  syncDraftBtn();
+  toast(msg);
+}
+function openDraftForm(w) {
+  const cur = draftOf(w.id), stuff = draftStuff(w), total = Object.values(stuff).reduce((a, b) => a + b, 0);
+  const boxes = DRAFT_TO.map(([k, name]) => { const c = el('input', { type:'checkbox', checked:cur ? (cur.to || []).includes(k) : true }); c.value = k; return el('label', { className:'check' }, c, ' ' + name); });
+  const memo = el('textarea', { rows:3, maxLength:300, value:cur && cur.memo ? cur.memo : '', placeholder:'Claude에게 덧붙일 말(없어도 돼요)' });
+  const kids = [
+    el('small', { textContent:'이 책의 기록·밑줄·메모·인스타 서평으로 Claude가 블로그 서평 초안과 인스타 캡션을 따로 써요. 앱이 바로 글을 쓰지는 않고 요청만 남겨요. Claude에게 «초안 요청 확인해줘»라고 하면 그때 써서 클로드작업 산출물 블로그 폴더에 둬요. 발행은 안 해요.' }),
+    el('p', { className:'draft-stuff', textContent:'쓸 재료: ' + (Object.entries(stuff).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(' · ') || '없음') }),
+  ];
+  if (cur) kids.push(el('p', { className:'only-state' }, el('span', { className:'only-tag', textContent:draftState(cur) }), el('small', { textContent:cur.done ? `${cur.done.dir || '블로그 폴더'}에 있어요. 다시 저장하면 새로 요청해요.` : `쓸 곳: ${draftToText(cur)}` })));
+  kids.push(el('div', { className:'field' }, el('span', { textContent:'쓸 곳' }), el('div', { className:'checks' }, boxes)), field('덧붙일 말', memo, '예: 도서 제공 글, 빼 줬으면 하는 이야기'));
+  if (cur) kids.push(formTools(formBtn('요청 빼기', async () => { try { await saveDraft(draftOff(w.id), '초안 요청 목록에서 뺐어요'); $('form').close(); if ($('sheet').open) reshow(); } catch (e) { saveFailed(e); } }, true)));
+  showForm(cur ? '블로그·인스타 초안 요청 고치기' : '블로그·인스타 초안 요청', kids, async () => {
+    const to = boxes.map((b) => b.querySelector('input')).filter((c) => c.checked).map((c) => c.value);
+    if (!to.length) throw fail('블로그나 인스타 중 하나는 골라 주세요');
+    if (!total) throw fail('쓸 재료가 없어요. 기록이나 밑줄을 먼저 남겨 주세요');
+    const val = { t:titleOf(w), a:w.a || '', at:today(), n:Date.now(), to };
+    if (tidy(memo.value)) val.memo = memo.value.trim().slice(0, 300);
+    await saveDraft({ ...draftOff(w.id), [w.id]:val }, cur ? '초안 요청을 다시 남겼어요' : '초안 요청 목록에 넣었어요. Claude에게 «초안 요청 확인해줘»라고 말해 주세요');
+    if ($('sheet').open) reshow();
+  }, cur ? '다시 요청' : '요청 남기기');
+}
+// 관리 «초안 요청 목록»: 남긴 요청을 모아 보고, 고른 것을 한 번에 뺀다(다 쓴 요청 정리)
+function syncDraftBtn() {
+  const b = $('draftList');
+  if (!b) return;
+  b.hidden = LOCAL;
+  // 합쳐서 같은 책이 된 요청은 한 권으로 센다(목록·책 창과 같은 기준, 2026-11-25 재검토 지적)
+  const ids = [...new Set(Object.keys(draftAll()).filter((k) => draftAll()[k]).map(movedTo))];
+  const all = ids.map((id) => (D.works.get(id) ? draftOf(id) : null) || draftAll()[draftKeys(id)[0]]).filter(Boolean), open = all.filter((d) => !d.done).length;
+  b.textContent = all.length ? `초안 요청 목록 ${open ? `· 기다림 ${open}` : `${all.length}`}` : '초안 요청 목록';
+}
+function openDraftList() {
+  const byBook = new Map();
+  Object.entries(draftAll()).forEach(([k, d]) => { if (!d) return; const id = movedTo(k); if (!byBook.has(id)) byBook.set(id, []); byBook.get(id).push(k); });
+  const rows = [...byBook.entries()].map(([id, keys]) => [id, (D.works.get(id) ? draftOf(id) : null) || draftAll()[keys[0]], keys]).sort((x, y) => String(y[1].at || '').localeCompare(String(x[1].at || '')));
+  if (!rows.length) { showForm('초안 요청 목록', [el('p', { className:'warn', textContent:'남긴 초안 요청이 없어요. 책 창 «⋯ 더 보기 → 블로그·인스타 초안 요청»으로 남겨요.' })]); return; }
+  const boxes = rows.map(([, , keys]) => { const c = el('input', { type:'checkbox' }); c.dataset.keys = keys.join(' '); return c; });
+  const count = el('small', { role:'status' });
+  const sync = () => { count.textContent = `뺄 요청 ${boxes.filter((c) => c.checked).length}개`; };
+  const doneAll = rows.some((r) => r[1].done) ? el('button', { className:'copy', type:'button', textContent:'초안 나온 것 모두 고르기' }) : null;
+  if (doneAll) doneAll.onclick = () => { boxes.forEach((c, i) => { c.checked = !!rows[i][1].done; }); sync(); };
+  boxes.forEach((c) => c.addEventListener('change', sync)); sync();
+  const list = el('div', { className:'checks geul-list' }, rows.map(([id, d], i) => {
+    const w = D.works.get(id);
+    return el('label', { className:'check' }, boxes[i], el('span', { textContent:w ? titleOf(w) : d.t || '지운 책' }), el('small', { textContent:[draftState(d), draftToText(d)].filter(Boolean).join(' · ') }));
+  }));
+  showForm('초안 요청 목록', [el('small', { textContent:'책장에서 남긴 블로그·인스타 초안 요청이에요. «기다림»은 Claude가 아직 안 쓴 요청이고, Claude에게 «초안 요청 확인해줘»라고 하면 써요(월요일 주간 정리 때도 써요). 고른 요청은 목록에서 빠져요(쓴 초안 파일은 그대로).' }), el('div', { className:'actions' }, doneAll, count), list], async () => {
+    const patch = Object.fromEntries(boxes.filter((c) => c.checked).flatMap((c) => c.dataset.keys.split(' ').map((k) => [k, null])));
+    const n = boxes.filter((c) => c.checked).length;
+    if (!Object.keys(patch).length) throw fail('뺄 요청을 골라 주세요');
+    await saveDraft(patch, `${n}개 뺐어요`);
+  }, '고른 요청 빼기');
+}
 const linePubOn = () => !LOCAL && !!(D.priv.meta || {}).linePub;
 const linePubShows = (w) => linePubOn() && w.k === 'book' && !isOnlyMe(w);
 // 지금 켜면 올라갈 한 줄 평 수(대략: 이미 공개된 책만 센다. 실제 수는 공개 반영 때 정해진다)
@@ -1257,7 +1337,9 @@ function renderTome(w, item, from) {
     if (w.k === 'book') { addMark = el('button', { className:'btn', type:'button', textContent:'밑줄 더하기' }); addMark.onclick = () => openMarkForm(w); }
     let geul = null; // 글감 서랍(2026-11-15): 범용판 없음, 한 권씩은 여기서, 여러 권은 돌아보기 «다음 할 일»에서
     if (!LOCAL && w.known) { const on = !!geulOf(w.id); geul = el('button', { className:'copy', type:'button', textContent:on ? '글감 서랍에서 빼기' : '글감 서랍에 넣기' }); geul.onclick = () => saveGeul(on ? geulOff(w.id) : { [w.id]:geulVal(w, '책 창에서 고름') }, on ? '글감 서랍 보낼 목록에서 뺐어요' : '글감 서랍 보낼 목록에 넣었어요').then(() => { if ($('sheet').open) reshow(); }).catch(saveFailed); }
-    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, geul, ...lib.tools])));
+    let draftBtn = null; // 블로그·인스타 초안 요청(2026-11-25): 범용판 없음, 제목 확인된 책만
+    if (!LOCAL && w.known) { const d = draftOf(w.id); draftBtn = el('button', { className:'copy', type:'button', textContent:!d ? '블로그·인스타 초안 요청' : d.done ? '블로그·인스타 초안 다시 요청' : `블로그·인스타 초안 요청 고치기(${d.at || '요청함'})` }); draftBtn.onclick = () => openDraftForm(w); }
+    left.push(el('div', { className:'actions' }, addRec, addMark), el('div', { className:'actions sub' }, editBook, moreMenu([merge, unmerge, spineBtn, w.pub ? share : null, geul, draftBtn, ...lib.tools])));
   } else if (S.owner && lib.tools.length) left.push(el('div', { className:'actions sub' }, lib.tools)); // 서재에만 있는 책: 서재 단추는 그대로
   else if (w.pub) left.push(el('div', { className:'memo-foot share' }, share));
   // 표지: 앞면은 책등과 같은 색, 뒷면은 왼쪽 면과 같은 종이. 펼칠 때와 덮을 때만 보인다
@@ -2998,7 +3080,7 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderWant(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderWant(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); syncDraftBtn(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, nameHay, pub, qs, ms, ls, md, id, ...rest } = w; // ls(공개 한 줄 평, 2026-11-15)도 공개본에서 온 칸. qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다. md(달 묶음)·id는 rebuild가 늘 다시 만든다(2026-11-14)
@@ -3867,6 +3949,7 @@ function openReadTool() {
   draw();
 }
 if ($('readStates')) $('readStates').onclick = openReadTool;
+if ($('draftList')) $('draftList').onclick = openDraftList;
 /* 주제 더 붙이기(2026-11-15, 효니 쪽지 «주제 카테고리 대표 하나만 체크하는데 해당하는 주제 여러 개 체크할 수 있도록 -> 전수 조사 필요»).
    주제(th)는 처음부터 여러 개를 담는 칸이라 저장 구조는 그대로다. 이미 있는 책 전부를 Claude가 살펴 더할 주제를 data/theme-suggest.json에 두었다
    (s[id] = [주제…, 확신 'h'|'m'], 공개 책만 why[id]. 서재에만 있는 책은 id 앞에 'lib:'). 열면 «결과 모아 보기 → 고르기 → 한 번에 저장».
