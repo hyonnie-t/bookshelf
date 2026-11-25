@@ -1227,7 +1227,7 @@ function renderTome(w, item, from) {
       marksInOrder(w).forEach((m) => body.push(markRow(w, m)));
     }
     if (w.notes.length) {
-      body.push(el('h3', { className:'sec' }, `아이폰 메모 ${w.notes.length}`, baseOnlyTag()));
+      body.push(el('h3', { className:'sec' }, `메모 ${w.notes.length}`, baseOnlyTag()));
       w.notes.forEach((n, i) => body.push(el('div', { className:'memo' + (S.justMemo === `${w.id}:${i}` ? ' just' : '') },
         el('div', { className:'when' }, [n.d, n.v, n.g ? '내용으로 이 책에 연결함' : '', n.s === 'want' ? '읽고 싶음' : n.s === 'reading' ? '읽는 중' : ''].filter(Boolean).join(' · ') || '날짜 없음', visTag(n.pub === true)),
         n.b ? el('p', { className:'post-text', textContent:n.b }) : el('p', { className:'line none', textContent:n.l || '본문 없음' }),
@@ -4103,8 +4103,11 @@ function openRecForm(w, i) {
   const pub = pubBox(r), lp = lineBox(w, i >= 0 ? r : null);
   const del = i >= 0 ? formBtn('지우기', () => delRec(w, i, () => $('form').close()), true) : null;
   const move = i >= 0 ? moveBtn(w, 'recs', (cur) => cur.recs.indexOf(r) >= 0 ? cur.recs.indexOf(r) : cur.recs.findIndex((x) => JSON.stringify(x) === JSON.stringify(r))) : null;
-  const kids = [field('날짜', d), field('별점', rt), st, field('한 줄 평', l), lp, field('기록', b), pub, formTools(move, del)].filter(Boolean);
+  const fRt = field('별점', rt), fL = field('한 줄 평', l), fB = field('기록', b);
+  const mode = i < 0 ? recModeSegs([fRt, st, fL, lp].filter(Boolean), fB) : null; // 감상만 남기기(2026-11-25): 새로 더할 때만
+  const kids = [mode, field('날짜', d), fRt, st, fL, lp, fB, pub, formTools(move, del)].filter(Boolean);
   const save = async () => {
+    if (mode && mode.memo()) return saveMemoOnly(w, b, d, pub);
     const body = b.value.trim() || l.value.trim(); // 공개되는 글: 본문, 비면 한 줄 평(tools/publish.js와 같음)
     await pubCheck(pub, r.pub === true, body, 'recs', w);
     const next = setPub({ ...r, d:d.value, r:rt.value === '' ? null : +rt.value, l:l.value.trim(), b:b.value.trim() }, pub);
@@ -4117,6 +4120,32 @@ function openRecForm(w, i) {
   };
   // 공개·지우기는 이 창 아래에 있다(2026-11-14)
   showForm(i >= 0 ? '기록 고치기' : '기록 더하기', kids, save);
+}
+/* 감상만 남기기(2026-11-25, 효니 물음 «감상평만 더할 때 별점·한 줄 평 비워도 돼?»): «기록 더하기» 창 위 두 칸 고르기.
+   «감상만 남기기»는 recs가 아니라 notes에 새 메모로 넣어 다 읽은 책 수·결산·독서 목표·읽기 상태에 안 잡힌다. 새 저장 칸은 없고
+   메모 고치기·보관·옮기기·공개 반영(ms)·찾기·낱말·결산 «기록을 남긴 날»은 기존 notes 흐름 그대로. 범용판은 메모를 안 남겨(local.js cleanWork) 숨긴다 */
+function recModeSegs(recOnly, fB) {
+  if (LOCAL) return null;
+  const box = el('div', { className:'segs', role:'radiogroup', ariaLabel:'무엇을 남길까요' }, [['rec', '읽은 기록'], ['memo', '감상만 남기기']].map(([v, t]) => el('label', { className:'seg' }, el('input', { type:'radio', name:'recmode', value:v, checked:v === 'rec' }), el('span', { textContent:t }))));
+  const hint = el('small', { className:'rec-mode-hint', textContent:'메모로 남겨요. 읽기 상태·다 읽은 책 수·결산은 그대로예요.', hidden:true });
+  const label = fB.querySelector('span'), wrap = el('div', { className:'rec-mode' }, box, hint);
+  const memo = () => (box.querySelector('input:checked') || {}).value === 'memo';
+  box.addEventListener('change', () => { const m = memo(); recOnly.forEach((n) => { n.hidden = m; }); hint.hidden = !m; label.textContent = m ? '감상' : '기록'; });
+  wrap.memo = memo;
+  return wrap;
+}
+async function saveMemoOnly(w, b, d, pub) {
+  const text = b.value.replace(/\r\n?/g, '\n').trim();
+  if (!text) throw fail('감상을 적어 주세요.');
+  if (memoBusy) throw fail('저장하는 중이에요. 잠시 뒤 다시 눌러 주세요.');
+  const cur = D.works.get(w.id) || w; // 창을 연 뒤 바뀌었을 수 있어 최신 칸에 더한다
+  await pubCheck(pub, false, text, 'notes', cur);
+  const used = new Set([...cur.notes, ...(cur.archived || [])].map((x) => x.id));
+  let id = Date.now(); while (used.has(id)) id++; // 다른 메모처럼 숫자 id(고치기·옮기기가 id로 같은 메모를 찾는다)
+  const note = setPub({ id, d:d.value || today(), b:text, l:text.split('\n')[0].trim().slice(0, 60), len:text.length }, pub);
+  S.justMemo = `${w.id}:${cur.notes.length}`;
+  try { await memoSave({ ...cur, notes:[...cur.notes, note] }, '감상을 메모로 남겼어요'); }
+  finally { setTimeout(() => { S.justMemo = ''; }, 0); }
 }
 function bookPicker(required, exceptId) {
   const opts = list().filter((w) => w.t && w.id !== exceptId).sort((a, b) => a.t.localeCompare(b.t, 'ko'));
