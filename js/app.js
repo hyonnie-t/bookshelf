@@ -529,13 +529,13 @@ function setEdition(id) {
   if (id === 'base') delete document.documentElement.dataset.edition; else document.documentElement.dataset.edition = id;
   syncBarColor();
   repaintSpines();
-  if (spineView === 'real' && wasEink !== (id === 'eink')) { if (D.works.size) renderShelf(); if (D.lib.length) renderLibrary(); } // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
+  if (spineView === 'real' && wasEink !== (id === 'eink')) { if (D.works.size) renderShelf(); if (D.lib.length) { renderLibrary(); renderWant(); } } // 이북리더기는 흑백 색 책등이라 실물 그림 책장을 다시 꽂는다
 }
 function setSpineView(v) {
   if (spineView === v) return;
   spineView = v;
   if (D.works.size) renderShelf();
-  if (D.lib.length) renderLibrary(); // 내 서재 책등 보기도 같은 실물/색 책등을 따른다
+  if (D.lib.length) { renderLibrary(); renderWant(); } // 내 서재·읽고 싶은 책 책등 보기도 같은 실물/색 책등을 따른다
 }
 function openEditionForm() {
   const was = curEdition();
@@ -2876,8 +2876,13 @@ function openWantMany() {
   const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('사진으로 읽기', async (file, lab) => {
     lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
     try {
-      const books = (await seeCover(file, 'list')).books;
-      if (!books.length) { photoMsg.textContent = '사진에서 책 제목을 찾지 못했어요. 제목이 잘 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
+      const r = await seeCover(file, 'list');
+      let books = r.books;
+      if (!books.length && r.isbn) { // 바코드만 읽힌 사진(검토자 지적 2026-11-25): 그 번호로 찾아 맞는 첫 책을 줄로 더한다
+        const hit = (await searchBooks(r.isbn)).rows.find((b) => sameIsbn(b, r.isbn) || b.isbn == null);
+        if (hit) books = [{ t:hit.t, a:hit.a || '' }];
+      }
+      if (!books.length) { photoMsg.textContent = r.isbn ? `바코드(${r.isbn})는 읽었지만 그 번호의 책을 찾지 못했어요. 위 찾는 칸에 제목을 적어 주세요.` : '사진에서 책 제목을 찾지 못했어요. 제목이 잘 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
       const m = mergeLines(manyLines(x.value), books, wanted());
       x.value = m.lines.join('\n'); draw();
       photoMsg.textContent = [`${books.length}권을 읽었어요`, m.added ? `${m.added}권 더함` : '', m.already ? `이미 담아 둔 ${m.already}권은 뺌` : '', '제목이 맞는지 보고 담아 주세요.'].filter(Boolean).join(' · ');
@@ -3033,7 +3038,7 @@ function openManyForm() {
     if (at < 0) lines.push(line); else if (!manySplit(lines[at]).author) lines[at] = line; // 제목만 적어 둔 줄은 저자를 붙인다
     x.value = lines.join('\n');
     draw();
-  });
+  }, { label:'표지·바코드' }); // 아래 «사진으로 읽기»(대출 화면·구매 내역)와 이름이 겹치지 않게(2026-11-25)
   const pickSig = (k, author) => `${norm(author)}|${found.has(k) ? 1 : 0}`; // 저자를 나중에 붙이거나 책 찾기로 고르면 다시 고른다
   const choose = async (k, author) => { // 주제가 정해지지 않은 줄 하나에 주제를 고른다
     const f = found.get(k), info = f ? { ...f, a:author || f.a } : { a:author };
@@ -3611,7 +3616,7 @@ async function searchBooks(raw) {
   return { rows:loose, failed:failed && !loose.length, loose:!!loose.length };
 }
 const STORES = [['교보문고', 'https://search.kyobobook.co.kr/search?keyword='], ['알라딘', 'https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Book&SearchWord=']];
-function bookLookup(apply, { photo = true } = {}) { // photo:false = 창에 «사진으로 읽기»가 따로 있어 «사진» 단추를 두 번 보이지 않게(여러 권 한꺼번에 담기)
+function bookLookup(apply, { photo = true, label = '사진' } = {}) { // photo:false = 창에 «사진으로 읽기»가 따로 있어 «사진» 단추를 두 번 보이지 않게(여러 권 한꺼번에 담기)
   const q = el('input', { type:'search', maxLength:100, placeholder:'제목이나 저자로 찾기', ariaLabel:'인터넷에서 책 찾기' });
   const go = el('button', { className:'btn ghost', type:'button', textContent:'찾기' });
   const found = el('ul', { className:'found' });
@@ -3641,7 +3646,7 @@ function bookLookup(apply, { photo = true } = {}) { // photo:false = 창에 «�
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }); // 양식이 저장되지 않게
   // 사진(2026-11-24 바코드 → 2026-11-25 표지·추천 글까지, 출처: 효니 쪽지 imwvj33gfq61c «바코드로만 인식 되는 거야 사진찍어서 인식 하는 기능은 안 들어간 거 같애»):
   // 바코드가 보이면 ISBN으로, 아니면 표지·책등·추천 글에서 읽은 제목으로 찾는다. 여러 권이면 고를 단추를 보인다
-  const barcode = seeOn() && photo ? photoPick('사진', async (file, lab) => {
+  const barcode = seeOn() && photo ? photoPick(label, async (file, lab) => {
     const mine = ++run;
     lab.classList.add('busy'); go.disabled = true; msg.hidden = false; msg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; found.replaceChildren();
     const find = async (word) => { q.value = word; q.dispatchEvent(new Event('input')); go.disabled = false; await search(); }; // 서점 링크도 그 말로
