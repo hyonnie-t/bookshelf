@@ -346,6 +346,16 @@ html[data-mode="local"] .who .me { flex:1 1 100%; }
 @media (prefers-reduced-motion:reduce) { .photo-pick.busy { animation:none; opacity:.6; } }
 .photo-box { display:grid; gap:var(--space-1); justify-items:start; padding:var(--space-2); border:1px dashed var(--line); border-radius:8px; }
 .photo-box small { color:var(--muted); }
+/* 사진에서 읽은 책 고르기(2026-11-26, photoChoices): 체크 목록 + «고른 n권 더하기». 간격은 8pt 토큰 */
+.photo-picks { display:grid; gap:var(--space-2); width:100%; animation:drillIn .25s ease-out; }
+.pick-list { list-style:none; margin:0; padding:0; display:grid; gap:var(--space-1); max-height:40vh; overflow:auto; }
+.pick-row { display:flex; gap:var(--space-2); align-items:flex-start; min-height:40px; padding:var(--space-1) 0; border-bottom:1px solid var(--line); cursor:pointer; }
+.pick-row input { flex:none; width:20px; height:20px; margin:2px 0 0; }
+.pick-row .many-name { display:grid; gap:var(--space-1); min-width:0; }
+.pick-row .many-name span, .pick-row .auto-note { color:var(--muted); }
+.pick-row.off { cursor:default; opacity:.6; }
+.pick-tools { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+@media (prefers-reduced-motion:reduce) { .photo-picks { animation:none; } }
 
 /* 겹치는 책 고치기 */
 .dup-sec { display:grid; gap:0; }

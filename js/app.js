@@ -2872,23 +2872,22 @@ function openWantMany() {
     x.value = lines.join('\n');
     draw();
   }, { photo:false });
-  const photoMsg = el('p', { className:'warn', role:'status', hidden:true });
+  const photoMsg = el('p', { className:'warn', role:'status', hidden:true }), picksBox = el('div');
   const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('사진으로 읽기', async (file, lab) => {
-    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
+    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; picksBox.replaceChildren();
     try {
-      const r = await seeCover(file, 'list');
-      let books = r.books;
-      if (!books.length && r.isbn) { // 바코드만 읽힌 사진(검토자 지적 2026-11-25): 그 번호로 찾아 맞는 첫 책을 줄로 더한다
-        const hit = (await searchBooks(r.isbn)).rows.find((b) => sameIsbn(b, r.isbn) || b.isbn == null);
-        if (hit) books = [{ t:hit.t, a:hit.a || '' }];
-      }
-      if (!books.length) { photoMsg.textContent = r.isbn ? `바코드(${r.isbn})는 읽었지만 그 번호의 책을 찾지 못했어요. 위 찾는 칸에 제목을 적어 주세요.` : '사진에서 책 제목을 찾지 못했어요. 제목이 잘 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
-      const m = mergeLines(manyLines(x.value), books, wanted());
-      x.value = m.lines.join('\n'); draw();
-      photoMsg.textContent = [`${books.length}권을 읽었어요`, m.added ? `${m.added}권 더함` : '', m.already ? `이미 담아 둔 ${m.already}권은 뺌` : '', '제목이 맞는지 보고 담아 주세요.'].filter(Boolean).join(' · ');
+      const books = await photoBooks(file);
+      if (!books.length) { photoMsg.textContent = books.isbn ? `바코드(${books.isbn})는 읽었지만 그 번호의 책을 찾지 못했어요. 위 찾는 칸에 제목을 적어 주세요.` : '사진에서 책 제목을 찾지 못했어요. 제목이 잘 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
+      const have = wanted();
+      photoMsg.textContent = `사진에서 ${books.length}권을 읽었어요. 담을 책을 골라 «더하기»를 눌러 주세요.`;
+      picksBox.replaceChildren(photoChoices(books, (b) => { const p = { t:b.t }; return have.has(norm(b.t)) ? ['이미 담아 둔 책이에요', true] : wantDoneWork(p) ? ['이미 읽은 책이에요', false] : wantOwned(p) ? ['내 서재에 있는 책이에요', false] : ['', false]; }, (picked) => {
+        const m = mergeLines(manyLines(x.value), picked, have);
+        x.value = m.lines.join('\n'); draw();
+        photoMsg.textContent = [m.added ? `${m.added}권을 목록에 더했어요` : '새로 더한 책은 없어요', '제목이 맞는지 보고 담아 주세요.'].join(' · ');
+      }));
     } catch (e) { photoMsg.textContent = e.userMsg || seeError(''); }
     finally { lab.classList.remove('busy'); }
-  }), el('small', { textContent:'책 표지(여러 권도), 서점·책 추천 글 캡처, 책 목록 화면을 읽어요. 사진을 제미나이(구글)로 보내 제목·저자만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
+  }), el('small', { textContent:'책 표지(여러 권도), 서점·책 추천 글 캡처, 책 목록 화면을 읽어요. 읽은 책 중 고른 책만 아래 목록에 더해요. 사진을 제미나이(구글)로 보내 제목·저자만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg, picksBox) : null;
   const why = el('textarea', { rows:2, maxLength:500, placeholder:'누가 추천했는지, 어디서 봤는지' });
   showForm('여러 권 한꺼번에 담기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요'), box, field('왜 읽고 싶은지', why, '모든 책에 같이 적혀요. 비워도 돼요')].filter(Boolean), async () => {
     clearTimeout(timer); draw();
@@ -2972,7 +2971,7 @@ function openLibForm(it, { work } = {}) {
     const loanBox = el('div', { className:'sub-fields', hidden:true }, field('누구에게서', who), nameList('peopleNames', D.lib.flatMap((x) => x.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due));
     const whereField = field('어느 칸에 꽂을까요', where, '집, 교무실처럼 적으면 칸이 나뉘어요. 비워도 돼요');
     st.onchange = () => { loanBox.hidden = st.value !== 'in'; whereField.hidden = st.value === 'in'; };
-    kids.push(field('구분', st), loanBox, whereField, whereList());
+    kids.push(field('구분', st), loanMsg, loanBox, whereField, whereList());
   } else if (it.st === 'own') kids.push(field('어느 칸에 꽂을까요', where), whereList());
   kids.push(field('주제', th, '책등 색이 이 주제로 정해져요'));
   // 이어진 읽은 책(2026-11-14 연결 점검): 전에는 연결을 풀 단추가 없고, 제목 오타만 고쳐도 연결이 지워졌다
@@ -3038,7 +3037,7 @@ function openManyForm() {
     if (at < 0) lines.push(line); else if (!manySplit(lines[at]).author) lines[at] = line; // 제목만 적어 둔 줄은 저자를 붙인다
     x.value = lines.join('\n');
     draw();
-  }, { label:'표지·바코드' }); // 아래 «사진으로 읽기»(대출 화면·구매 내역)와 이름이 겹치지 않게(2026-11-25)
+  }, { photo:false }); // 2026-11-26: 사진 단추는 아래 «사진으로 읽기» 하나(전에는 «표지·바코드»가 따로 있어 헷갈렸다, 출처: 효니 말 «둘 차이는 뭐야?»)
   const pickSig = (k, author) => `${norm(author)}|${found.has(k) ? 1 : 0}`; // 저자를 나중에 붙이거나 책 찾기로 고르면 다시 고른다
   const choose = async (k, author) => { // 주제가 정해지지 않은 줄 하나에 주제를 고른다
     const f = found.get(k), info = f ? { ...f, a:author || f.a } : { a:author };
@@ -3089,22 +3088,39 @@ function openManyForm() {
   const loanBox = el('div', { className:'sub-fields', hidden:true }, field('누구에게서', who, '도서관이면 도서관 이름'), nameList('peopleNames', D.lib.flatMap((b) => b.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due));
   const whereField = field('어느 칸에 꽂을까요', where, '비워도 돼요');
   st.onchange = () => { loanBox.hidden = st.value !== 'in'; whereField.hidden = st.value === 'in'; };
-  // 사진으로 읽기(2026-11-24, 저녁에 서점 구매 내역·책장 사진도): 도서관 앱 «대출 중» 화면 캡처를 고르면 제목을 줄로 더하고, 빌린 곳·반납일이 보이면 «빌려 온 책»으로 채운다
+  // 사진으로 읽기(2026-11-24 대출 화면 → 저녁에 서점 구매 내역·책장 사진 → 2026-11-26 표지·바코드와 하나로, 출처: 효니 말 «사진으로 읽기는 기능을 안 하고 … 여러 권을 인식한 다음에 선택을 할 수 있게»).
+  // 제목은 표지 방식(cover, 표지·책등·목록 화면 다 읽고 빠름)으로 읽어 고르기 목록을 보인다. 목록 방식(list)은 빌린 곳·반납일만 보려고 같이 보내고,
+  // 늦게 와도(2026-11-26 잴 때 291초) 기다리지 않는다. 대출 화면이면 그때 «빌려 온 책»으로 채운다
   const photoMsg = el('p', { className:'warn', role:'status', hidden:true });
+  const loanMsg = el('p', { className:'warn', role:'status', hidden:true });
+  const picksBox = el('div');
+  let photoRun = 0;
   const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('사진으로 읽기', async (file, lab) => {
-    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)';
+    const mine = ++photoRun;
+    lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; picksBox.replaceChildren();
+    const loanInfo = seePhoto('list', file).catch(() => null);
     try {
-      const r = await seePhoto('list', file), books = r.books || [];
-      if (!books.length) { photoMsg.textContent = '사진에서 책 목록을 찾지 못했어요. 제목이 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
-      const m = mergeLines(manyLines(x.value), books, new Set(D.lib.filter(isActive).map((b) => norm(b.t))));
-      x.value = m.lines.join('\n'); draw();
-      const g = loanGuess(books);
-      if (g.who || g.due) { st.value = 'in'; if (!who.value.trim()) who.value = g.who; if (!due.value) due.value = g.due; st.onchange(); }
-      photoMsg.textContent = [`${books.length}권을 읽었어요`, m.added ? `${m.added}권 더함` : '', m.already ? `이미 서재에 있는 ${m.already}권은 뺌` : '',
-        g.mixed ? '반납일이 책마다 달라 가장 많은 날을 넣었어요' : '', '제목이 맞는지 보고 꽂아 주세요.', g.who || g.due ? '빌린 날은 오늘로 넣었어요.' : ''].filter(Boolean).join(' · ');
-    } catch (e) { photoMsg.textContent = e.userMsg || seeError(''); }
-    finally { lab.classList.remove('busy'); }
-  }), el('small', { textContent:'도서관 대출 화면, 서점 구매 내역 캡처, 책장 사진(한 칸씩 정면에서 가까이)을 읽어요. 사진을 제미나이(구글)로 보내 제목·저자·반납일만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg) : null;
+      const books = await photoBooks(file);
+      if (mine !== photoRun) return;
+      if (!books.length) { photoMsg.textContent = books.isbn ? `바코드(${books.isbn})는 읽었지만 그 번호의 책을 찾지 못했어요. 위 찾는 칸에 제목을 적어 주세요.` : '사진에서 책 제목을 찾지 못했어요. 제목이 잘 보이게 다시 찍거나 아래에 적어 주세요.'; return; }
+      const have = new Set(D.lib.filter(isActive).map((b) => norm(b.t)));
+      photoMsg.textContent = `사진에서 ${books.length}권을 읽었어요. 꽂을 책을 골라 «더하기»를 눌러 주세요.`;
+      picksBox.replaceChildren(photoChoices(books, (b) => (have.has(norm(b.t)) ? ['이미 서재에 있어요', true] : ['', false]), (picked) => {
+        const m = mergeLines(manyLines(x.value), picked, have);
+        x.value = m.lines.join('\n'); draw();
+        photoMsg.textContent = [m.added ? `${m.added}권을 목록에 더했어요` : '새로 더한 책은 없어요', m.filled ? `${m.filled}권은 저자를 붙였어요` : '', '제목이 맞는지 보고 꽂아 주세요.'].filter(Boolean).join(' · ');
+      }));
+      loanInfo.then((l) => {
+        if (mine !== photoRun || !l || !l.books) return;
+        const g = loanGuess(l.books);
+        if (!(g.who || g.due) || st.value === 'in') return; // 이미 «빌려 온 책»으로 바꿔 두었으면 손대지 않는다
+        st.value = 'in'; if (!who.value.trim()) who.value = g.who; if (!due.value) due.value = g.due; st.onchange();
+        loanMsg.hidden = false;
+        loanMsg.textContent = ['대출 화면이라 «빌려 온 책»으로 채웠어요', g.mixed ? '반납일이 책마다 달라 가장 많은 날을 넣었어요' : '', '빌린 날은 오늘로 넣었어요.'].filter(Boolean).join(' · ');
+      });
+    } catch (e) { if (mine === photoRun) photoMsg.textContent = e.userMsg || seeError(''); }
+    finally { if (mine === photoRun) lab.classList.remove('busy'); }
+  }), el('small', { textContent:'책 표지(여러 권도)·바코드, 책장 책등, 도서관 대출 화면, 서점 구매 내역 캡처를 읽어요. 읽은 책 중 고른 책만 아래 목록에 더해요. 사진을 제미나이(구글)로 보내 제목·저자·반납일만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg, picksBox) : null;
   showForm('여러 권 한꺼번에 꽂기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('구분', st), loanBox, whereField, whereList()].filter(Boolean), async () => {
     clearTimeout(timer); draw();
     const lines = manyLines(x.value);
@@ -3567,6 +3583,36 @@ async function seeCover(file, old) {
   try { return await seePhoto('cover', file); } catch (e) { if (e.code !== 'bad_mode') throw e; }
   const r = await seePhoto(old, file);
   return { isbn:r.isbn || '', books:r.books || [], old:true };
+}
+// 여러 권 창의 사진 읽기(2026-11-26): 표지 방식으로 읽고, 바코드만 읽힌 사진은 그 번호로 찾은 첫 책을 한 권으로(검토자 지적 2026-11-25). 돌려주는 배열의 isbn = 읽은 바코드
+async function photoBooks(file) {
+  const r = await seeCover(file, 'list');
+  let books = (r.books || []).filter((b) => b && b.t);
+  if (!books.length && r.isbn) {
+    const hit = (await searchBooks(r.isbn)).rows.find((b) => sameIsbn(b, r.isbn) || b.isbn == null);
+    if (hit) books = [{ t:hit.t, a:hit.a || '' }];
+  }
+  books.isbn = r.isbn || '';
+  return books;
+}
+// 사진에서 읽은 책 고르기(2026-11-26, 출처: 효니 말 «여러권이 인식은 되고(목록 나열) 그 중에서 한 권씩 찾아서 입력을 해야함»): 체크 목록 → «고른 n권 더하기» 한 번.
+// skip(b) → [표시 글, 고를 수 없음]. 이미 있는 책은 끈 채로 보이고, 더한 뒤에는 목록을 닫는다
+function photoChoices(books, skip, onAdd) {
+  const rows = books.map((b) => { const [why, off] = skip(b); return { b, why, c:el('input', { type:'checkbox', checked:!off, disabled:off }) }; });
+  const add = el('button', { className:'btn', type:'button' });
+  const all = el('button', { className:'copy', type:'button', textContent:'모두 고르기' });
+  const none = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
+  const upd = () => { const n = rows.filter((r) => r.c.checked).length; add.textContent = n ? `고른 ${n}권 더하기` : '고른 책이 없어요'; add.disabled = !n; };
+  rows.forEach((r) => { r.c.onchange = upd; });
+  all.onclick = () => { rows.forEach((r) => { if (!r.c.disabled) r.c.checked = true; }); upd(); };
+  none.onclick = () => { rows.forEach((r) => { r.c.checked = false; }); upd(); };
+  const wrap = el('div', { className:'photo-picks' },
+    el('ul', { className:'pick-list' }, rows.map((r) => el('li', {}, el('label', { className:'pick-row' + (r.c.disabled ? ' off' : '') }, r.c,
+      el('span', { className:'many-name' }, el('strong', { textContent:r.b.t }), r.b.a ? el('span', { textContent:r.b.a }) : null, r.why ? el('small', { className:'auto-note', textContent:r.why }) : null))))),
+    el('div', { className:'pick-tools' }, add, all, none));
+  add.onclick = () => { const picked = rows.filter((r) => r.c.checked).map((r) => r.b); wrap.remove(); onAdd(picked); };
+  upd();
+  return wrap;
 }
 // 사진 고르기 단추(폰은 찍기·사진 보관함 중 고름). label 안에 숨긴 file 칸이라 단추처럼 누른다
 function photoPick(text, onFile) {
