@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path'), assert = require('assert');
 const REPO = path.join(__dirname, '..');
 (async () => {
-  const { kdcTheme, authorTheme, pickTheme, firstAuthorOf } = await import(`data:text/javascript;base64,${fs.readFileSync(path.join(REPO, 'js/kdc.js')).toString('base64')}`);
+  const { kdcTheme, authorTheme, pickTheme, firstAuthorOf, sameBook } = await import(`data:text/javascript;base64,${fs.readFileSync(path.join(REPO, 'js/kdc.js')).toString('base64')}`);
   const app = fs.readFileSync(path.join(REPO, 'js/app.js'), 'utf8');
   const THEMES = JSON.parse(app.match(/const THEMES = (\[.*?\]);/)[1].replace(/'/g, '"')).map((x) => x[0]);
   let n = 0;
@@ -50,6 +50,23 @@ const REPO = path.join(__dirname, '..');
   });
   ok('근거가 없으면 비워 둠', () => {
     assert.strictEqual(pickTheme({ id:'x', a:'', th:[] }, shelf, ''), null);
+  });
+  ok('제목으로 찾은 결과에서 같은 책 고르기(2026-11-26)', () => {
+    const rows = [
+      { t:'가나다 라마바', a:'홍길동', isbn:'9780000000001', kdc:'' },
+      { t:'하루 한 장 내 삶에 새기는 무엇', a:'다른 사람', isbn:'9780000000002' },
+      { t:'내 삶에 새기는 무엇', a:'', isbn:'9780000000003' },
+      { t:'메리 제인의 모험', a:'호프 자런', isbn:'9780000000004' },
+      { t:'분류도 번호도 없음', a:'누구', isbn:'', kdc:'' },
+    ];
+    assert.strictEqual(sameBook(rows, '가나다라마바', '홍길동 지음').isbn, '9780000000001'); // 띄어쓰기·«지음»
+    assert.strictEqual(sameBook(rows, '가나다 라마바', '김철수'), null); // 저자가 다르면 안 받음
+    assert.strictEqual(sameBook(rows, '내 삶에 새기는 무엇', '아서').isbn, '9780000000003'); // 같은 제목이 앞, 저자 빈 결과는 받음
+    assert.strictEqual(sameBook(rows, '페리 제인의 모험', '호프 자런').isbn, '9780000000004'); // 사진 읽기 오타 한 글자
+    assert.strictEqual(sameBook(rows, '페리 제인의 모험', ''), null); // 저자를 모르면 오타 짝은 안 받음
+    assert.strictEqual(sameBook(rows, '분류도 번호도 없음', '누구'), null); // 쓸모없는 결과는 뺌
+    assert.strictEqual(sameBook([], '아무 책', ''), null);
+    assert.strictEqual(sameBook(rows, '가', ''), null);
   });
   console.log(`test-kdc 통과 ${n}개`);
 })().catch((e) => { console.error(e); process.exit(1); });
