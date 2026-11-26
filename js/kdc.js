@@ -57,6 +57,33 @@ export function authorTheme(work, shelf) {
   return best ? { th:best[0], n } : null;
 }
 
+// 제목으로 찾은 결과에서 같은 책 고르기(2026-11-26, 출처: 효니 쪽지 imwxit2ptqkxv «여러 권 찾기 … 주제가 안 찾아짐»).
+// 여러 권 꽂기에서 직접 적거나 사진으로 읽은 줄도 도서관 분류로 주제를 고르려고 쓴다. rows: [{t, a, isbn, kdc}].
+// 제목이 같거나(띄어쓰기·문장부호 무시) 한쪽이 다른 쪽을 품거나(부제·«하루 한 장»), 한두 글자만 다르면(사진 읽기 오타 «페리/메리») 같은 제목으로 본다.
+// 저자를 알면 첫 저자도 맞아야 하고, 제목이 한두 글자 다를 때는 저자를 알 때만 받는다. 분류나 ISBN이 없는 결과는 쓸모가 없어 뺀다
+const sq = (s) => String(s || '').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
+function near(p, q) { // 글자 하나 바꾸기·넣기·빼기를 두 번까지
+  if (Math.abs(p.length - q.length) > 2 || Math.min(p.length, q.length) < 4) return false;
+  let prev = Array.from({ length:q.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= p.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= q.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (p[i - 1] === q[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[q.length] <= 2;
+}
+export function sameBook(rows, title, author) {
+  const t = sq(title), fa = sq(firstAuthorOf(author));
+  if (t.length < 2) return null;
+  const auOk = (a) => { const b = sq(firstAuthorOf(a)); return !fa || !b || b === fa || b.includes(fa) || fa.includes(b); };
+  const useful = (rows || []).filter((r) => r && (r.kdc || r.isbn) && auOk(r.a));
+  const exact = useful.find((r) => sq(r.t) === t);
+  if (exact) return exact;
+  const part = useful.find((r) => { const u = sq(r.t); return u.length >= 2 && t.length >= 3 && (u.includes(t) || t.includes(u)); });
+  if (part) return part;
+  return fa ? useful.find((r) => sq(r.a) && near(sq(r.t), t)) || null : null;
+}
+
 // 고르기: 이미 주제가 있으면 null(건드리지 않음). 결과 {th, why, from:'author'|'kdc'}
 export function pickTheme(work, shelf, kdc, kid) {
   if (work && (work.th || []).length) return null;

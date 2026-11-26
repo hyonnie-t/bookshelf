@@ -4,7 +4,7 @@ import * as local from './local.js';
 import { hasText, suggest, wordStats } from './guess.js';
 import { spineColor, SAMPLE_COVERS } from './spine.js';
 import { buildWordIndex, layoutGraph, narrowIndex, relatedWords, wordDoc, wordGraph, WORD_KINDS } from './words.js';
-import { pickTheme, authorTheme, firstAuthorOf } from './kdc.js';
+import { pickTheme, authorTheme, firstAuthorOf, sameBook } from './kdc.js';
 import { mergePlan, undoPlan, dupCount, movedCounts, seriesPair } from './merge.js';
 import { seriesGroups, seriesIndex, keepTogether, seriesKey } from './series.js';
 import { bareTitle, relayChain, SRC_NAME, pickSource, needNext, judgeFill, fillGroup, FILL_GROUPS, titleDiffers } from './fill-tool.js';
@@ -3015,7 +3015,9 @@ function openLibForm(it, { work } = {}) {
   showForm(isNew ? '내 서재에 꽂기' : '서재 정보 고치기', kids, save);
 }
 // 여러 권 한꺼번에 꽂기(2026-11-14 주제 저절로): 책 찾기로 고른 책은 줄을 더하고, 책마다 주제를 하나 골라 둔다.
-// 읽은 책과 이어지면 그 주제, 아니면 같은 저자 책 → 도서관 분류(책 찾기로 고른 책만, ISBN으로 국립중앙도서관) 순. 고른 주제는 아래 목록에서 바꾼다
+// 읽은 책과 이어지면 그 주제, 아니면 같은 저자 책 → 도서관 분류(ISBN으로 국립중앙도서관) 순. 고른 주제는 아래 목록에서 바꾼다
+// 2026-11-26: 직접 적거나 사진으로 읽은 줄도 제목·저자로 한 번 찾아 같은 책(js/kdc.js sameBook)의 분류를 쓴다. 전에는 책 찾기로 고른 줄만 분류를 봐서
+// 사진으로 읽은 새 책은 모두 «주제는 못 골랐어요»였다(출처: 효니 쪽지 imwxit2ptqkxv «여러 권 찾기 오류 주제가 안 찾아짐»)
 const manySplit = (line) => { const [rawT, ...rest] = line.split(/\s+\/\s+/); return { title:rawT.trim(), author:rest.join(' / ').trim() }; }; // AC/DC처럼 제목 속 빗금은 자르지 않는다
 const manyLines = (v) => v.split('\n').map((s) => s.trim()).filter(Boolean);
 function openManyForm() {
@@ -3039,14 +3041,27 @@ function openManyForm() {
     draw();
   }, { photo:false }); // 2026-11-26: 사진 단추는 아래 «사진으로 읽기» 하나(전에는 «표지·바코드»가 따로 있어 헷갈렸다, 출처: 효니 말 «둘 차이는 뭐야?»)
   const pickSig = (k, author) => `${norm(author)}|${found.has(k) ? 1 : 0}`; // 저자를 나중에 붙이거나 책 찾기로 고르면 다시 고른다
-  const choose = async (k, author) => { // 주제가 정해지지 않은 줄 하나에 주제를 고른다
-    const f = found.get(k), info = f ? { ...f, a:author || f.a } : { a:author };
-    const pk = { th:'', why:'', auto:true, sig:pickSig(k, author), busy:!!(f && (f.kdc || f.isbn) && (f.kdc || relayOn())) };
+  const choose = async (k, author, title) => { // 주제가 정해지지 않은 줄 하나에 주제를 고른다
+    const f = found.get(k);
+    let info = f ? { ...f, a:author || f.a } : { a:author };
+    const byTitle = !f && relayOn() && squeeze(title).length >= 2; // 직접 적은 줄·사진으로 읽은 줄: 제목으로 찾아 본다
+    const pk = { th:'', why:'', auto:true, sig:pickSig(k, author), busy:byTitle || !!(f && (f.kdc || f.isbn) && (f.kdc || relayOn())) };
     picks.set(k, pk);
     const sync = pickTheme({ a:info.a, th:[] }, shelf(), info.kdc || '', info.kid);
     if (sync || !pk.busy) { Object.assign(pk, { th:sync ? sync.th : '', why:sync ? sync.why : '', busy:false, just:!!sync }); return; }
-    const got = await autoTheme(info, '');
-    if (picks.get(k) !== pk || !pk.auto) return; // 그사이 손으로 골랐거나 줄을 지웠다
+    const gone = () => picks.get(k) !== pk || !pk.auto; // 그사이 손으로 골랐거나 줄을 지웠거나 저자를 고쳤다
+    if (byTitle) {
+      await new Promise((ok) => setTimeout(ok, 800)); // 치는 중인 제목마다 찾지 않게 잠깐 기다린다
+      if (gone()) return;
+      const q = [title, firstAuthorOf(author)].filter(Boolean).join(' ');
+      const look = async () => sameBook(await fromRelay(q), title, author) || (author ? sameBook(await fromRelay(title), title, author) : null); // 저자 표기가 달라 못 찾으면 제목만으로
+      // 중계가 느려도 «꽂기»를 오래 막지 않게 20초에서 그만둔다(그 줄은 «못 골랐어요»)
+      const hit = await Promise.race([look().catch(() => null), new Promise((ok) => setTimeout(() => ok(null), 20000))]);
+      if (gone()) return;
+      info = hit ? { ...hit, a:author || hit.a } : null;
+    }
+    const got = info ? await autoTheme(info, '') : null;
+    if (gone()) return;
     Object.assign(pk, { th:got ? got.th : '', why:got ? got.why : '', busy:false, just:!!got });
     const row = shown.get(k); // 목록을 통째로 다시 그리면 다른 줄에 열어 둔 고르기 칸이 닫혀 그 줄만 고친다
     if (row) { row.sel.value = pk.th; row.note.textContent = noteText(pk); if (pk.just) { row.sel.classList.add('just'); pk.just = false; } }
@@ -3064,7 +3079,7 @@ function openManyForm() {
       const hit = readMatch(title, author);
       if (!picks.has(k) && hit && hit.th.length) picks.set(k, { th:hit.th[0], why:'읽은 책의 주제', auto:true, keep:hit.th });
       const old = picks.get(k);
-      if (!old || (old.auto && !old.keep && old.sig !== pickSig(k, author))) choose(k, author);
+      if (!old || (old.auto && !old.keep && old.sig !== pickSig(k, author))) choose(k, author, title);
       const pk = picks.get(k);
       const sel = el('select', { ariaLabel:`«${title}» 주제` }, el('option', { value:'', textContent:'주제 없음' }), ...THEMES.map(([t]) => el('option', { value:t, textContent:t })));
       sel.value = pk.th;
@@ -3080,7 +3095,7 @@ function openManyForm() {
     box.hidden = !rows.length;
   }
   x.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 400); });
-  const themeField = el('div', { className:'field' }, el('span', { textContent:'책마다 주제' }), box, el('small', { textContent:'비어 있는 책만 하나 골라 둬요. 읽은 책 → 같은 저자 책 → 도서관 분류(위에서 찾아 고른 책) 순이에요. 틀리면 바꿔 주세요.' }));
+  const themeField = el('div', { className:'field' }, el('span', { textContent:'책마다 주제' }), box, el('small', { textContent:'비어 있는 책만 하나 골라 둬요. 읽은 책 → 같은 저자 책 → 도서관 분류(제목으로 찾아 봐요) 순이에요. 틀리면 바꿔 주세요.' }));
   // 빌려 온 책 여러 권(2026-11-24, 사진 읽기와 같이): 한 창의 책은 모두 같은 곳·같은 날 빌린 것으로 꽂는다(«내 서재에 꽂기»의 빌려 온 책과 같은 모양)
   const st = el('select', {}, el('option', { value:'own', textContent:'내 책' }), el('option', { value:'in', textContent:'빌려 온 책' }));
   const who = el('input', { type:'text' }); who.setAttribute('list', 'peopleNames');
