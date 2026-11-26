@@ -2971,7 +2971,7 @@ function openLibForm(it, { work } = {}) {
     const loanBox = el('div', { className:'sub-fields', hidden:true }, field('누구에게서', who), nameList('peopleNames', D.lib.flatMap((x) => x.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due));
     const whereField = field('어느 칸에 꽂을까요', where, '집, 교무실처럼 적으면 칸이 나뉘어요. 비워도 돼요');
     st.onchange = () => { loanBox.hidden = st.value !== 'in'; whereField.hidden = st.value === 'in'; };
-    kids.push(field('구분', st), loanMsg, loanBox, whereField, whereList());
+    kids.push(field('구분', st), loanBox, whereField, whereList());
   } else if (it.st === 'own') kids.push(field('어느 칸에 꽂을까요', where), whereList());
   kids.push(field('주제', th, '책등 색이 이 주제로 정해져요'));
   // 이어진 읽은 책(2026-11-14 연결 점검): 전에는 연결을 풀 단추가 없고, 제목 오타만 고쳐도 연결이 지워졌다
@@ -3098,7 +3098,6 @@ function openManyForm() {
   const photo = seeOn() ? el('div', { className:'photo-box' }, photoPick('사진으로 읽기', async (file, lab) => {
     const mine = ++photoRun;
     lab.classList.add('busy'); photoMsg.hidden = false; photoMsg.textContent = '사진에서 책을 읽는 중이에요(보통 15초, 처음엔 1분쯤)'; picksBox.replaceChildren();
-    const loanInfo = seePhoto('list', file).catch(() => null);
     try {
       const books = await photoBooks(file);
       if (mine !== photoRun) return;
@@ -3110,7 +3109,8 @@ function openManyForm() {
         x.value = m.lines.join('\n'); draw();
         photoMsg.textContent = [m.added ? `${m.added}권을 목록에 더했어요` : '새로 더한 책은 없어요', m.filled ? `${m.filled}권은 저자를 붙였어요` : '', '제목이 맞는지 보고 꽂아 주세요.'].filter(Boolean).join(' · ');
       }));
-      loanInfo.then((l) => {
+      // 빌린 곳·반납일은 제목을 읽은 뒤에 따로 묻는다. 같이 보내면 무료 열쇠의 분당 한도를 둘이 나눠 써 제목 읽기까지 «바빠요»가 났다(2026-11-26)
+      seePhoto('list', file).catch(() => null).then((l) => {
         if (mine !== photoRun || !l || !l.books) return;
         const g = loanGuess(l.books);
         if (!(g.who || g.due) || st.value === 'in') return; // 이미 «빌려 온 책»으로 바꿔 두었으면 손대지 않는다
@@ -3121,7 +3121,7 @@ function openManyForm() {
     } catch (e) { if (mine === photoRun) photoMsg.textContent = e.userMsg || seeError(''); }
     finally { if (mine === photoRun) lab.classList.remove('busy'); }
   }), el('small', { textContent:'책 표지(여러 권도)·바코드, 책장 책등, 도서관 대출 화면, 서점 구매 내역 캡처를 읽어요. 읽은 책 중 고른 책만 아래 목록에 더해요. 사진을 제미나이(구글)로 보내 제목·저자·반납일만 읽고, 책장에는 사진을 남기지 않아요.' }), photoMsg, picksBox) : null;
-  showForm('여러 권 한꺼번에 꽂기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('구분', st), loanBox, whereField, whereList()].filter(Boolean), async () => {
+  showForm('여러 권 한꺼번에 꽂기', [lookup, photo, field('책 목록', x, '«제목 / 저자»로 적어요. 위에서 찾아 누르면 한 줄씩 더해져요. 읽은 책에 같은 제목이 있으면 저절로 이어져요'), themeField, field('구분', st), loanMsg, loanBox, whereField, whereList()].filter(Boolean), async () => {
     clearTimeout(timer); draw();
     const lines = manyLines(x.value);
     if (!lines.length) throw fail('책을 한 권 이상 적어 주세요');
@@ -3566,8 +3566,15 @@ function shrinkPhoto(file) {
     img.src = url;
   });
 }
+// 2026-11-26: 중계가 «바빠요»(upstream: 무료 열쇠의 모델이 모두 한도·붐빔)나 «답 못 받음»(fetch)을 주면 6초 뒤 한 번만 다시 묻는다.
+// 같은 날 같은 사진이 몇 분 사이에 실패·성공을 오갔다(한도가 순간순간 차는 것, 열쇠는 제미나이 검토 도구와 같이 씀)
 async function seePhoto(mode, file) {
   const img = await shrinkPhoto(file);
+  try { return await seeOnce(mode, img); } catch (e) { if (e.code !== 'upstream' && e.code !== 'fetch') throw e; }
+  await new Promise((ok) => setTimeout(ok, 6000));
+  return seeOnce(mode, img);
+}
+async function seeOnce(mode, img) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), 110000); // 보통 15초, 오래 쉰 뒤 첫 번째나 제미나이가 붐비면 60~75초(2026-11-24 배포된 중계로 잼)
   let r;
   try {
