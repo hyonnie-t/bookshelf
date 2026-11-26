@@ -82,8 +82,9 @@
       <div class="row" id="libKinds" role="group" aria-label="서재 보기"></div>
       <div class="lib-tools">
         <div class="row" id="libSort" role="group" aria-label="꽂는 순서"></div>
-        <button class="copy" id="addMany" type="button">+ 여러 권 한꺼번에 꽂기</button>
+        <span class="lib-acts"><button class="copy" id="addMany" type="button">+ 여러 권 한꺼번에 꽂기</button> <button class="chip fold-btn" id="foldLibTools" type="button" aria-expanded="false" aria-controls="libToolsPanel">관리</button></span>
       </div>
+      <div class="fold-panel fold-tools" id="libToolsPanel" hidden><button class="copy" id="libReturnRec" type="button">돌려준 책 기록 남기기</button> <button class="copy" id="libLink" type="button">읽은 책과 잇기</button> <button class="copy" id="libSpines" type="button">서재 책등 다시 찾기</button></div>
     </div>
     <div class="bar">
       <input class="search" id="lq" type="search" placeholder="제목, 저자, 빌린 사람 찾기" aria-label="서재에서 찾기">

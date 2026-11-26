@@ -313,11 +313,12 @@ const NAMED_GROUP = '제목·저자 일치';
 const ORDERS = [['new','최신순'],['old','오래된순']];
 /* 접는 칸: 첫 화면에 책이 보이도록 주제·순서와 관리 도구를 접어 둔다. 펼친 상태는 기기별로 기억한다 */
 const FOLD_KEY = LOCAL ? 'myshelf-fold' : 'shelf-fold';
-const fold = { filters:false, tools:false };
+const fold = { filters:false, tools:false, lib:false }; // lib: 내 서재 «관리»(2026-11-27)
 try { (localStorage.getItem(FOLD_KEY) || '').split(',').forEach((k) => { if (k in fold) fold[k] = true; }); } catch (e) {}
 function syncFold() {
   $('filterPanel').hidden = !fold.filters;
   $('toolsPanel').hidden = !(fold.tools && S.owner);
+  if ($('libToolsPanel')) { $('libToolsPanel').hidden = !(fold.lib && S.owner); $('foldLibTools').setAttribute('aria-expanded', fold.lib); }
   $('foldFilters').setAttribute('aria-expanded', fold.filters);
   $('foldTools').setAttribute('aria-expanded', fold.tools);
 }
@@ -1140,10 +1141,10 @@ function batchRun({ todo, size, job, onEach, progress, done }) {
   return { go, stop, busy:() => busy };
 }
 const SPINE = { res:new Map(), again:false, open:{}, flying:new Set() }; // 이 세션에서 찾은 결과(창을 닫아도 남아 다시 열면 이어서 보인다). again: «다시 찾아보기»를 눌렀음
-function openSpineTool() {
-  const targets = spineTargets().sort((a, b) => KO.compare(titleOf(a), titleOf(b)));
-  const ids = new Set(targets.map((w) => w.id));
-  [...SPINE.res.keys()].forEach((id) => { if (!ids.has(id)) SPINE.res.delete(id); else { const r = SPINE.res.get(id); r.w = targets.find((w) => w.id === id); delete r.el; } }); // 그사이 책등이 생긴 책은 빼고, 카드는 이 창에서 새로 만든다(옛 창의 «고른 책 n권»을 고치지 않게, 검토자 재현)
+function openSpineTool({ lib } = {}) { // lib: 내 서재 관리 «서재 책등 다시 찾기»(2026-11-27) — 서재 책만, 이어지지 않은 책은 서재 칸 library/{id}.y24에
+  const targets = (lib === true ? libSpineTargets() : spineTargets()).sort((a, b) => KO.compare(titleOf(a), titleOf(b)));
+  const ids = new Set([...spineTargets(), ...libSpineTargets()].map((w) => w.id)); // 다른 범위(전체·서재)에서 찾은 결과는 남긴다
+  [...SPINE.res.keys()].forEach((id) => { if (!ids.has(id)) SPINE.res.delete(id); else { const r = SPINE.res.get(id), t = targets.find((w) => w.id === id); if (t) r.w = t; delete r.el; } }); // 그사이 책등이 생긴 책은 빼고, 카드는 이 창에서 새로 만든다(옛 창의 «고른 책 n권»을 고치지 않게, 검토자 재현)
   const tried = () => ((D.priv.meta || {}).y24tried || {});
   // 이 세션에서 이미 찾아본 책은 기억(y24tried)에 올라가도 결과 묶음에 남기고, 접힌 «확인된 책» 목록에는 겹쳐 넣지 않는다
   const split = () => { const s = splitTargets(targets, D.y24miss, tried(), SPINE.again), seen = (w) => SPINE.res.has(w.id); return { todo:[...s.todo, ...s.known.filter(seen)], known:s.known.filter((w) => !seen(w)) }; };
@@ -1155,7 +1156,7 @@ function openSpineTool() {
   const sum = () => { count.textContent = `고른 책 ${Object.keys(pickedSpines(results())).length}권`; };
   const summary = () => {
     const s = split(), g = groupResults(results()), left = todo().length;
-    if (!targets.length) return '모든 책에 실물 책등 사진이 있어요.';
+    if (!targets.length) return lib === true ? '서재 책 모두 실물 책등 사진이 있어요.' : '모든 책에 실물 책등 사진이 있어요.';
     const done = results().length ? ` 찾았어요 ${g.found.length} · 직접 골라 주세요 ${g.pick.length} · 못 찾았어요 ${g.none.length}.` : '';
     return `찾아볼 책 ${s.todo.length}권${left && left < s.todo.length ? `(남은 책 ${left}권)` : ''} · 예스24에 책등 사진이 없다고 확인된 책 ${s.known.length}권(맨 아래 접어 둠).${done}`;
   };
@@ -1228,20 +1229,130 @@ function openSpineTool() {
   const allOff = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
   allOff.onclick = () => { results().forEach((r) => { if (r.pick) { r.pick = null; r.paint && r.paint(); } if (r.manual) { r.manual = null; delete r.el; } }); draw(); sum(); };
   head.textContent = summary(); draw(); sum(); ready();
-  showForm('책등 다시 찾기', [head, el('div', { className:'actions' }, batch.go, batch.stop), groups], async () => {
+  showForm(lib === true ? '서재 책등 다시 찾기' : '책등 다시 찾기', [head, el('div', { className:'actions' }, batch.go, batch.stop), groups], async () => {
     if (batch.busy()) throw fail('찾는 중이에요. 다 찾거나 «멈추기»를 누른 뒤 저장해 주세요.');
     const picked = pickedSpines(results());
     if (!Object.keys(picked).length) throw fail('저장할 책등을 하나 이상 골라 주세요');
-    const out = {};
-    Object.entries(picked).forEach(([id, v]) => { const cur = D.works.get(id); if (cur) out[id] = storedWork({ ...cur, y24:v }); });
-    await write('works', out, 'update');
+    const out = {}, libOut = {};
+    Object.entries(picked).forEach(([id, v]) => {
+      if (id.startsWith('lib_')) { const it = D.lib.find((x) => 'lib_' + x.id === id); if (it) { const { id:_, ...data } = { ...it, y24:v }; libOut[it.id] = JSON.parse(JSON.stringify(data)); } return; } // 서재에만 있는 책
+      const cur = D.works.get(id); if (cur) out[id] = storedWork({ ...cur, y24:v });
+    });
+    if (Object.keys(out).length) await write('works', out, 'update');
+    if (Object.keys(libOut).length) { await write('library', libOut, 'update'); Object.entries(libOut).forEach(([id, v]) => { setPriv('library', id, v); SPINE.res.delete('lib_' + id); }); }
     Object.entries(out).forEach(([id, v]) => { setPriv('works', id, v); SPINE.res.delete(id); forgetCover(id); const cur = D.works.get(id); if (cur) markRecolor(cur, cur.t, v.y24); }); // 판이 바뀌면 표지도 그 판으로(2026-11-15)
     refreshAll();
-    toast(`${Object.keys(out).length}권의 책등을 바꿨어요${LOCAL ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
+    toast(`${Object.keys(out).length + Object.keys(libOut).length}권의 책등을 바꿨어요${LOCAL || !Object.keys(out).length ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
   }, '고른 책등 저장');
   $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count, allOn, allOff)); // 저장 단추 옆에 붙어 스크롤해도 보인다
+  if (!targets.length) $('form-body').querySelector('.form-foot').hidden = true; // 찾을 책이 없으면 저장 단추도 없다
 }
 if ($('refindSpines')) $('refindSpines').onclick = openSpineTool;
+/* ---------- 내 서재 관리 (2026-11-27, 효니 쪽지 imwx6ye9kn0m1 «내 서재에 꽂힌 책도 관리 페이지로 책등 다시 찾기나 이런 기능 지원해줘(관리 탭을 따로두거나)») ----------
+   내 서재 탭 «관리»(접는 칸 fold.lib): 돌려준 책 기록 남기기 · 읽은 책과 잇기 · 서재 책등 다시 찾기. 모두 «모아 보기 → 고르기 → 한 번에 저장».
+   새 칸: library/{id}.y24(서재에만 있는 책의 책등 [번호, 비율]), library/{id}.norec(돌려준 책을 기록 없이 둠). publish.js는 library를 읽지 않는다 */
+const libPseudo = (it) => ({ id:'lib_' + it.id, lib:it.id, t:it.t || '', a:it.a || '', p:it.p || '', th:libThemes(it), k:'book', known:true, recs:[], notes:[], marks:[], y24:it.y24 });
+function libSpineTargets() { // 서재에 꽂힌 책 중 실물 책등이 없는 책: 이어진 읽은 책은 그 책(works에 저장), 안 이어진 책은 서재 칸(lib_ 키)
+  if (!S.owner) return [];
+  const act = D.lib.filter(isActive), linked = new Set(act.filter((x) => !Array.isArray(x.y24)).map(libWork).filter(Boolean).map((w) => w.id));
+  return [...spineTargets().filter((w) => linked.has(w.id)), ...act.filter((x) => !libWork(x) && x.t && !Array.isArray(x.y24) && x.y24 !== 0).map(libPseudo)];
+}
+const libData = (it) => { const { id, ...data } = it; return JSON.parse(JSON.stringify(data)); };
+const libTitleSort = (a, b) => KO.compare(leadTrim(a.t), leadTrim(b.t));
+// 고르기 칸 하나(체크): 저장 단추 옆 «고른 책 n권»과 같이 쓴다
+function libCheckRow(on, main, sub, onChange) {
+  const box = el('input', { type:'checkbox', checked:on });
+  box.onchange = () => onChange(box.checked);
+  return el('label', { className:'check lib-pick' }, box, el('span', {}, el('strong', { textContent:main }), sub ? el('small', { className:'when', textContent:` ${sub}` }) : null));
+}
+function openLibLinkTool() {
+  const rows = D.lib.filter((x) => x.st !== 'want' && !libWork(x) && x.t).sort(libTitleSort);
+  const found = [], none = [];
+  rows.forEach((it) => { const w = readMatch(it.t, it.a); if (!w) { none.push(it); return; } const others = D.lib.filter((x) => x.id !== it.id && x.st !== 'want' && libWork(x) && libWork(x).id === w.id).length; found.push({ it, w, on:!others, others }); });
+  const count = el('small', { className:'pick-count', role:'status' });
+  const sum = () => { count.textContent = `고른 책 ${found.filter((r) => r.on).length}권`; };
+  const kids = [el('p', { className:'warn', textContent:rows.length ? `읽은 책과 이어지지 않은 서재 책 ${rows.length}권 · 같은 제목·저자의 읽은 책을 찾은 책 ${found.length}권.` : '서재 책이 모두 읽은 책과 이어져 있어요.' })];
+  if (found.length) kids.push(el('small', { textContent:'이으면 서재 책등이 읽은 책의 책등(표지 색·실물 책등)으로 보이고, 책 창에 그 책의 기록이 보여요. 다른 서재 책이 이미 이어진 읽은 책은 골라 두지 않았어요.' }),
+    el('div', { className:'fill-list' }, found.map((r) => libCheckRow(r.on, r.it.t, `→ 읽은 책 «${titleOf(r.w)}»${r.w.a ? ` (${firstAuthorOf(r.w.a)})` : ''}${r.others ? ` · 이미 서재 책 ${r.others}권이 이어짐` : ''}`, (v) => { r.on = v; sum(); }))));
+  if (none.length) kids.push(el('details', { className:'spine-fold' }, el('summary', { textContent:`같은 책을 못 찾았어요 ${none.length}` }),
+    el('small', { textContent:'제목이나 저자가 달라 저절로 못 이었어요. 책을 눌러 «서재 정보 고치기»의 제목 칸에서 읽은 책을 골라 주세요.' }),
+    el('ul', { className:'spine-known' }, none.map((it) => { const b = el('button', { className:'linkish', type:'button', textContent:[it.t, libAuthor(it)].filter(Boolean).join(' · ') }); b.onclick = () => openLibForm(it); return el('li', {}, b); }))));
+  showForm('읽은 책과 잇기', kids, async () => {
+    const pick = found.filter((r) => r.on);
+    if (!pick.length) throw fail('이을 책을 하나 이상 골라 주세요');
+    const out = {};
+    pick.forEach((r) => { out[r.it.id] = libData({ ...r.it, w:r.w.id }); });
+    await write('library', out, 'update');
+    Object.entries(out).forEach(([id, v]) => setPriv('library', id, v));
+    refreshAll();
+    toast(`서재 책 ${pick.length}권을 읽은 책과 이었어요`);
+  }, '고른 책 잇기');
+  if (found.length) { $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count)); sum(); }
+  else $('form-body').querySelector('.form-foot').hidden = true;
+}
+// 돌려준 책 기록 남기기: 돌려준 빌린 책 중 빌린 동안의 기록이 없는 책(«기록 안 남길래요»로 둔 책 빼고)을 모아 책마다 다 읽음/덜 읽음/안 남김
+function openReturnRecTool() {
+  const items = D.lib.filter(needsReturnRec).sort((a, b) => lastBack(b).back.localeCompare(lastBack(a).back));
+  const picks = new Map(); // 서재 id → 'done'|'part'|'skip'
+  const count = el('small', { className:'pick-count', role:'status' });
+  const sum = () => { const n = (k) => [...picks.values()].filter((v) => v === k).length; count.textContent = `다 읽음 ${n('done')} · 덜 읽음 ${n('part')} · 안 남김 ${n('skip')}`; };
+  const where = (it) => { const w = returnWork(it); return w ? `읽은 책 «${titleOf(w)}»에 기록을 더해요` : '새 읽은 책으로 꽂아요'; };
+  const row = (it) => {
+    const l = lastBack(it), name = `rr${it.id}`;
+    const segs = el('div', { className:'segs', role:'radiogroup', ariaLabel:`«${it.t}» 기록` }, [['done', '다 읽음'], ['part', '덜 읽음'], ['skip', '안 남김']].map(([v, t]) => {
+      const inp = el('input', { type:'radio', name, value:v });
+      inp.onchange = () => { picks.set(it.id, v); sum(); };
+      return el('label', { className:'seg' }, inp, el('span', { textContent:t }));
+    }));
+    return el('div', { className:'dup-row' }, el('strong', { textContent:it.t || '제목 없음' }),
+      el('div', { className:'when', textContent:[fromWho(l.who), l.d ? `${l.d} 빌림` : '', `${l.back} 돌려줌`, where(it)].filter(Boolean).join(' · ') }), segs);
+  };
+  const kids = [el('p', { className:'warn', textContent:items.length ? `돌려준 빌린 책 중 읽은 기록이 없는 책 ${items.length}권. 고르지 않은 책은 그대로 둬요.` : '돌려준 빌린 책은 모두 기록이 있어요.' })];
+  if (items.length) kids.push(el('small', { textContent:'기록 날짜는 돌려준 날이에요. 별점·한 줄 평은 나중에 책 창 «기록 고치기»에서 더해요. «안 남김»은 이 목록에 다시 안 나와요.' }), el('div', { className:'fill-list' }, items.map(row)));
+  showForm('돌려준 책 기록 남기기', kids, async () => {
+    if (!picks.size) throw fail('책마다 다 읽음·덜 읽음·안 남김 중 하나를 골라 주세요');
+    const works = {}, lib = {}, made = [];
+    for (const it of items) {
+      const v = picks.get(it.id);
+      if (!v) continue;
+      const l = lastBack(it);
+      if (v === 'skip') { lib[it.id] = libData({ ...it, norec:l.back }); continue; }
+      const rec = { d:l.back, r:null, l:'', b:'' };
+      if (v === 'part') rec.st = 'unread';
+      // 같은 저장에서 방금 만든 책도 본다(검토자 재현: 같은 책 서재 칸이 둘이면 새 읽은 책이 둘 생겼다)
+      const key = `${norm(it.t)}|${squeeze(firstAuthorOf(it.a || ''))}`;
+      const have = returnWork(it) || (made.find((m) => m.key === key) || {}).w || null;
+      let w = have ? (works[have.id] ? { ...have, ...works[have.id], id:have.id } : have) : null;
+      if (w) w = settleRecs({ ...w, recs:[...w.recs, rec] });
+      else {
+        const id = DEMO ? `demo${Date.now()}${made.length}` : await fb.newId();
+        w = { id, t:it.t, a:it.a || '', p:it.p || '', k:'book', th:libThemes(it), recs:[rec], notes:[], known:true, y:l.back.slice(0, 4), fd:l.back };
+        if (v === 'part') w.unread = true;
+        made.push({ key, w });
+      }
+      works[w.id] = storedWork(w);
+      lib[it.id] = libData({ ...it, w:w.id });
+    }
+    if (Object.keys(works).length) await write('works', works, 'update');
+    if (Object.keys(lib).length) await write('library', lib, 'update');
+    Object.entries(works).forEach(([id, v]) => setPriv('works', id, v));
+    Object.entries(lib).forEach(([id, v]) => setPriv('library', id, v));
+    refreshAll();
+    const n = Object.keys(works).length;
+    toast(n ? `${n}권을 읽은 책 기록으로 남겼어요${made.length ? `(새로 꽂은 책 ${made.length}권)` : ''}` : '기록 없이 돌려준 책으로 뒀어요');
+  }, '한 번에 저장');
+  if (items.length) { $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count)); sum(); }
+  else $('form-body').querySelector('.form-foot').hidden = true; // 할 일이 없으면 저장 단추도 없다(검토자 지적)
+}
+// 관리 단추 글자에 할 일 수(돌려준 책 기록·이을 책)
+function syncLibTools() {
+  if (!$('libToolsPanel') || !S.owner) return;
+  const rr = D.lib.filter(needsReturnRec).length, ln = D.lib.filter((x) => x.st !== 'want' && !libWork(x) && x.t && readMatch(x.t, x.a)).length;
+  $('libReturnRec').textContent = rr ? `돌려준 책 기록 남기기 ${rr}` : '돌려준 책 기록 남기기';
+  $('libLink').textContent = ln ? `읽은 책과 잇기 ${ln}` : '읽은 책과 잇기';
+  $('foldLibTools').textContent = rr + ln ? `관리 ${rr + ln}` : '관리';
+}
+if ($('libReturnRec')) { $('libReturnRec').onclick = openReturnRecTool; $('libLink').onclick = openLibLinkTool; $('libSpines').onclick = () => openSpineTool({ lib:true }); }
 // 책 창 제목 아래 «시리즈 토지 · 1 2 3»(2026-11-15). 지금 권은 진하게, 책장에 있는 권만. 누르면 창을 겹치지 않고 그 권으로 바꿔 연다(방문자에게도)
 function seriesChips(w) {
   const g = w.id && D.series && D.series.get(w.id);
@@ -2427,6 +2538,9 @@ const libThemes = (it) => (it.th.length ? it.th : (libWork(it) || {}).th || []);
 const libAuthor = (it) => firstAuthorOf(it.a || (libWork(it) || {}).a || '');
 const isLate = (l) => !!l.due && !l.back && l.due < today();
 const norm = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
+// 이어질 읽은 책(2026-11-14 연결 점검): 첫 저자가 다르면 잇지 않고, 같은 제목이 둘 이상이면 못 정해 잇지 않는다(여러 권 꽂기·서재 관리 «읽은 책과 잇기»)
+const sameFirst = (x, y) => { const p = squeeze(firstAuthorOf(x)), q = squeeze(firstAuthorOf(y)); return !p || !q || p === q || p.includes(q) || q.includes(p); };
+const readMatch = (title, author) => { const c = list().filter((w) => w.t && w.k === 'book' && norm(w.t) === norm(title) && sameFirst(author, w.a)); return c.length === 1 ? c[0] : null; };
 function libMatches(it) {
   const l = openLoan(it);
   if (S.lf === 'own' && it.st !== 'own') return false;
@@ -2444,7 +2558,9 @@ try { if (localStorage.getItem(LIBVIEW_KEY) === 'flat') S.lv = 'flat'; } catch (
 function libSpine(it) {
   const w = libWork(it), title = it.t || '제목 없음', l = openLoan(it);
   let b;
-  if (w && (w.k || 'book') === 'book') b = spine(w).firstChild; // 읽은 책과 이어진 책: 표지 색·실물 책등 그대로
+  const own24 = Array.isArray(it.y24) ? it.y24 : null; // 서재 칸에 저장한 책등(2026-11-27, 서재 관리 «서재 책등 다시 찾기»)
+  if (w && (w.k || 'book') === 'book') b = spine(own24 && !realOf(w) ? { ...w, y24:own24 } : w).firstChild; // 읽은 책과 이어진 책: 표지 색·실물 책등 그대로(그 책에 사진이 없고 서재 칸에 있으면 서재 칸 것)
+  else if (own24 && useReal(libPseudo(it))) b = spine(libPseudo(it)).firstChild; // 이어지지 않은 책도 서재 칸에 책등 사진이 있으면 사진 책등
   else if (realView()) { // 이어지지 않은 책: 실물 책등 보기에서는 얇은 색 책등(사진 책등과 굵기를 맞춤)
     const sz = thinSize({ id:it.id }), room = Math.max(3, Math.floor((sz.h - 22) / 12));
     b = el('button', { type:'button', className:`spine thin ${lineOf(it.id)}` });
@@ -2500,11 +2616,33 @@ function ledgerRow(it, l) {
 function backButton(it, i) {
   const l = it.loans[i];
   const b = el('button', { className:'copy', type:'button', textContent:l.dir === 'out' ? '돌려받았어요' : '돌려줬어요' });
-  b.onclick = () => {
+  b.onclick = async () => {
     const loans = it.loans.map((x, n) => (n === i ? { ...x, back:today() } : x));
-    saveLib({ ...it, loans }, l.dir === 'out' ? '서가에 다시 꽂았어요' : '돌려준 기록을 남겼어요').then(reshow).catch(saveFailed);
+    try { await saveLib({ ...it, loans }, l.dir === 'out' ? '서가에 다시 꽂았어요' : '돌려준 기록을 남겼어요'); } catch (e) { saveFailed(e); return; }
+    reshow();
+    if (l.dir === 'in') askReturnRec(D.lib.find((x) => x.id === it.id) || { ...it, loans }, l);
   };
   return b;
+}
+/* 돌려준 빌린 책 → 읽은 기록(2026-11-27, 효니 쪽지 imwx6ye9kn0m1 «도서관에서 빌린 책은 돌려주게 되면 다 읽거나 덜 읽거나(읽는 중) 둘 중 하나니까 독서 기록 탭으로 넘겨야 하지 않을까?»)
+   빌린 동안의 기록이 없으면 «다 읽었어요/읽다 말았어요/기록 안 남길래요»를 묻는다. 이어진 읽은 책이 있으면 «기록 더하기», 없으면 «책 추가»(pre로 서재 칸과 이음)를 연다.
+   «기록 안 남길래요»는 library/{id}.norec=돌려준 날로 남겨 그 빌림만 서재 관리 «돌려준 책 기록 남기기»에 다시 안 나오게 한다(다시 빌려 돌려주면 또 나옴, 검토자 지적)
+   기록을 넣을 읽은 책(returnWork)은 이어진 책 → 같은 제목·첫 저자 읽은 책(readMatch) 순. 책 창 묻기와 관리 창이 같은 기준(검토자 재현: 전에는 책 창만 이어진 책만 봐 같은 책이 하나 더 생겼다) */
+const loanRecSince = (w, l) => !!w && w.recs.some((r) => (r.d || '') >= ((l && l.d) || '')); // 빌린 날 뒤에 남긴 기록이 있음(날짜 없는 빌림은 기록이 하나라도 있으면)
+const lastBack = (it) => it.loans.filter((x) => x.dir === 'in' && x.back).sort((a, b) => b.back.localeCompare(a.back))[0] || null;
+const returnWork = (it) => libWork(it) || (it.t ? readMatch(it.t, it.a) : null);
+const needsReturnRec = (it) => { const l = it.st === 'in' && !openLoan(it) ? lastBack(it) : null; return !!l && it.norec !== l.back && it.norec !== true && !loanRecSince(returnWork(it), l); };
+async function askReturnRec(it, l) {
+  if (loanRecSince(returnWork(it), l)) return;
+  const pick = await choose(`«${it.t || '이 책'}»을 돌려줬어요. 읽은 책에 기록으로 남길까요?`, [['done', '다 읽었어요'], ['part', '덜 읽었어요'], ['skip', '기록 안 남길래요']]);
+  if (pick === 'skip') { saveLib({ ...it, norec:l.back || today() }, '기록 없이 돌려준 책으로 뒀어요').catch(saveFailed); return; }
+  if (pick) openReturnRec(it, pick === 'part');
+}
+async function openReturnRec(it, part) {
+  const w = returnWork(it);
+  if (w && !libWork(it)) { try { await saveLib({ ...it, w:w.id }, `읽은 책 «${titleOf(w)}»과 이었어요`); } catch (e) { saveFailed(e); return; } } // 같은 책이 이미 읽은 책에 있으면 잇고 거기에 기록
+  if (w) openRecForm(w, -1, { unread:part });
+  else openBookForm(null, { pre:it, unread:part });
 }
 const saveFailed = (e) => { console.error(e); toast(e.userMsg || '저장하지 못했어요. 인터넷 연결을 확인해 주세요'); };
 function renderLedger() {
@@ -3029,9 +3167,7 @@ function openManyForm() {
   const box = el('ul', { className:'many-list', hidden:true });
   // 같은 저자 책: 읽은 책 + 읽은 책과 안 이어진 서재 책
   const shelf = () => [...themeShelf(''), ...D.lib.filter((b) => isActive(b) && !b.w && (b.th || []).length).map((b) => ({ id:b.id, a:b.a, th:b.th }))];
-  // 이어질 읽은 책(2026-11-14 연결 점검): 전에는 제목만 보고 같은 제목이 둘이면 마지막 책에 이었다. 이제 첫 저자가 다르면 잇지 않고, 둘 이상이면 못 정해 잇지 않는다
-  const sameFirst = (x, y) => { const p = squeeze(firstAuthorOf(x)), q = squeeze(firstAuthorOf(y)); return !p || !q || p === q || p.includes(q) || q.includes(p); };
-  const readMatch = (title, author) => { const c = list().filter((w) => w.t && w.k === 'book' && norm(w.t) === norm(title) && sameFirst(author, w.a)); return c.length === 1 ? c[0] : null; };
+  // 이어질 읽은 책: sameFirst·readMatch(내 서재 위, 서재 관리 «읽은 책과 잇기»와 같이 씀)
   const lookup = bookLookup((b) => {
     found.set(norm(b.t), b);
     const lines = manyLines(x.value), line = b.a ? `${b.t} / ${b.a}` : b.t;
@@ -3204,7 +3340,7 @@ async function write(path, value, how) {
   await Promise.race([(how === 'update' ? fb.updatePath : fb.writePath)(path, value), new Promise((_, no) => setTimeout(() => no(fail('응답이 늦어요. 인터넷을 확인해 주세요. 새로 고침해서 저장됐는지 본 뒤 다시 해 주세요.')), 15000))]);
 }
 const setPriv = (group, key, val) => { D.priv[group] = D.priv[group] || {}; if (val === null) delete D.priv[group][key]; else D.priv[group][key] = val; };
-const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderWant(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); syncDraftBtn(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
+const refreshAll = () => { rebuild(); renderShelf(); renderLibrary(); renderWant(); renderPosts(); renderRecap(); renderToday(); setLede(); syncMemoBin(); syncLinePub(); syncDraftBtn(); syncLibTools(); if (S.owner) { const n = dupCountShown(); $('fixDups').textContent = n ? `겹치는 책 고치기 ${n}` : '겹치는 책 고치기'; $('foldTools').textContent = n ? `관리 ${n}` : '관리'; } };
 // 공개 데이터의 책을 처음 고칠 때는 공개 필드를 함께 저장한다
 function storedWork(w) {
   const { hay, nameHay, pub, qs, ms, ls, md, id, ...rest } = w; // ls(공개 한 줄 평, 2026-11-15)도 공개본에서 온 칸. qs·ms는 공개본에서 온 표지 문장·공개 글이라 비공개 칸에 되돌려 쓰지 않는다. md(달 묶음)·id는 rebuild가 늘 다시 만든다(2026-11-14)
@@ -3243,6 +3379,19 @@ function ask(message, yes = '지우기', danger = true) {
     document.body.append(d);
     d.showModal();
     no.focus(); // 되돌릴 수 없는 일이라 처음에는 취소에 둔다(공개도 밖으로 나가는 일이라 같다)
+  });
+}
+// 여럿 중 하나 고르기(2026-11-27, 돌려준 책 기록): ask와 같은 앱 안 창. options=[[값, 글자], …], 닫거나 Esc면 ''
+function choose(message, options) {
+  return new Promise((done) => {
+    const d = el('dialog', { className:'ask-dlg' });
+    d.setAttribute('role', 'alertdialog');
+    const btns = options.map(([v, label], i) => { const b = el('button', { className:'btn' + (i ? ' ghost' : ''), type:'button', textContent:label }); b.onclick = () => d.close(v); return b; });
+    d.append(el('p', { className:'ask-text', textContent:message }), el('div', { className:'actions choose-actions' }, btns));
+    d.addEventListener('close', () => { const r = d.returnValue || ''; d.remove(); done(r); });
+    document.body.append(d);
+    d.showModal();
+    btns[0].focus();
   });
 }
 
@@ -4264,7 +4413,7 @@ function readingPicker(w) {
   box.append(el('div', { className:'segs' }, opts), ...(canMarkNot(w) ? [] : [el('small', { textContent:NOT_LOCKED })]), more);
   return { box, value, extra:() => ({ d:d.value, r:r.value === '' ? null : +r.value }) };
 }
-function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽은 책으로 옮길 때
+function openBookForm(w, { pre, unread } = {}) { // unread: 돌려준 빌린 책 «읽다 말았어요»(2026-11-27) // pre: 서재에만 있던 책을 읽은 책으로 옮길 때
   const isNew = !w, seed = w || pre || {};
   let newId = ''; // 저장을 다시 눌러도 같은 칸에 쓰여 책이 겹치지 않는다
   const t = el('input', { type:'text', required:true, value:seed.t || '' });
@@ -4293,7 +4442,7 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   const kids = [bookLookup(applyFound), field('제목', t), field('저자', a), field('출판사', p), field('종류', k), el('div', { className:'field' }, el('span', { textContent:'주제' }), th, thNote)];
   let d, r, l, b, unfinished, reading = null, only = null, ser = null;
   if (isNew) {
-    unfinished = el('label', { className:'check' }, el('input', { type:'checkbox' }), ' 아직 읽는 중이에요');
+    unfinished = el('label', { className:'check' }, el('input', { type:'checkbox', checked:!!unread }), ' 아직 읽는 중이에요');
     d = el('input', { type:'date', value:today() }); r = ratingSelect(null); l = el('input', { type:'text' }); b = el('textarea', { rows:6 });
     kids.push(field('읽은 날', d), unfinished, field('별점', r), field('한 줄 평', l), field('기록', b));
   } else {
@@ -4351,11 +4500,11 @@ function openBookForm(w, { pre } = {}) { // pre: 서재에만 있던 책을 읽�
   if (del) kids.push(el('div', { className:'memo-foot' }, del));
   showForm(isNew ? '책 추가' : '책 고치기', kids, save);
 }
-function openRecForm(w, i) {
+function openRecForm(w, i, { unread } = {}) { // unread: 돌려준 빌린 책 «읽다 말았어요»면 켜고, «다 읽었어요»면 끈 채로(2026-11-27)
   const r = i >= 0 ? w.recs[i] : {};
   const d = el('input', { type:'date', value:r.d || today() });
   const rt = ratingSelect(r.r);
-  const st = el('label', { className:'check' }, el('input', { type:'checkbox', checked:i >= 0 ? r.st === 'unread' : isReading(w) }), ' 아직 다 못 읽음'); // 읽는 중인 책에 새 기록을 더하면 읽는 중 그대로 둔다
+  const st = el('label', { className:'check' }, el('input', { type:'checkbox', checked:i >= 0 ? r.st === 'unread' : unread === undefined ? isReading(w) : unread }), ' 아직 다 못 읽음'); // 읽는 중인 책에 새 기록을 더하면 읽는 중 그대로 둔다
   const l = el('input', { type:'text', value:r.l || '' });
   const b = el('textarea', { rows:8, value:r.b || '' });
   const pub = pubBox(r), lp = lineBox(w, i >= 0 ? r : null);
@@ -4664,6 +4813,7 @@ if ($('onlyMe')) $('onlyMe').onclick = () => { S.onlyMe = !S.onlyMe; S.kind = S.
 $('onlyIg').onclick = () => { S.onlyIg = !S.onlyIg; renderShelf(); };
 $('foldFilters').onclick = () => toggleFold('filters');
 $('foldTools').onclick = () => toggleFold('tools');
+if ($('foldLibTools')) $('foldLibTools').onclick = () => toggleFold('lib');
 syncFold();
 $('lq').addEventListener('input', (e) => { S.lq = e.target.value.trim(); renderLibrary(); });
 $('addMany').onclick = () => openManyForm();
