@@ -1245,6 +1245,7 @@ function openSpineTool({ lib } = {}) { // lib: 내 서재 관리 «서재 책등
     toast(`${Object.keys(out).length + Object.keys(libOut).length}권의 책등을 바꿨어요${LOCAL || !Object.keys(out).length ? '' : '. 방문자 화면은 공개 반영 뒤에 바뀌어요'}`);
   }, '고른 책등 저장');
   $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count, allOn, allOff)); // 저장 단추 옆에 붙어 스크롤해도 보인다
+  if (!targets.length) $('form-body').querySelector('.form-foot').hidden = true; // 찾을 책이 없으면 저장 단추도 없다
 }
 if ($('refindSpines')) $('refindSpines').onclick = openSpineTool;
 /* ---------- 내 서재 관리 (2026-11-27, 효니 쪽지 imwx6ye9kn0m1 «내 서재에 꽂힌 책도 관리 페이지로 책등 다시 찾기나 이런 기능 지원해줘(관리 탭을 따로두거나)») ----------
@@ -1287,17 +1288,18 @@ function openLibLinkTool() {
     toast(`서재 책 ${pick.length}권을 읽은 책과 이었어요`);
   }, '고른 책 잇기');
   if (found.length) { $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count)); sum(); }
+  else $('form-body').querySelector('.form-foot').hidden = true;
 }
-// 돌려준 책 기록 남기기: 돌려준 빌린 책 중 빌린 동안의 기록이 없는 책(«기록 안 남길래요»로 둔 책 빼고)을 모아 책마다 다 읽음/읽다 맒/안 남김
+// 돌려준 책 기록 남기기: 돌려준 빌린 책 중 빌린 동안의 기록이 없는 책(«기록 안 남길래요»로 둔 책 빼고)을 모아 책마다 다 읽음/덜 읽음/안 남김
 function openReturnRecTool() {
   const items = D.lib.filter(needsReturnRec).sort((a, b) => lastBack(b).back.localeCompare(lastBack(a).back));
   const picks = new Map(); // 서재 id → 'done'|'part'|'skip'
   const count = el('small', { className:'pick-count', role:'status' });
-  const sum = () => { const n = (k) => [...picks.values()].filter((v) => v === k).length; count.textContent = `다 읽음 ${n('done')} · 읽다 맒 ${n('part')} · 안 남김 ${n('skip')}`; };
-  const where = (it) => { const w = libWork(it) || readMatch(it.t, it.a); return w ? `읽은 책 «${titleOf(w)}»에 기록을 더해요` : '새 읽은 책으로 꽂아요'; };
+  const sum = () => { const n = (k) => [...picks.values()].filter((v) => v === k).length; count.textContent = `다 읽음 ${n('done')} · 덜 읽음 ${n('part')} · 안 남김 ${n('skip')}`; };
+  const where = (it) => { const w = returnWork(it); return w ? `읽은 책 «${titleOf(w)}»에 기록을 더해요` : '새 읽은 책으로 꽂아요'; };
   const row = (it) => {
     const l = lastBack(it), name = `rr${it.id}`;
-    const segs = el('div', { className:'segs', role:'radiogroup', ariaLabel:`«${it.t}» 기록` }, [['done', '다 읽음'], ['part', '읽다 맒'], ['skip', '안 남김']].map(([v, t]) => {
+    const segs = el('div', { className:'segs', role:'radiogroup', ariaLabel:`«${it.t}» 기록` }, [['done', '다 읽음'], ['part', '덜 읽음'], ['skip', '안 남김']].map(([v, t]) => {
       const inp = el('input', { type:'radio', name, value:v });
       inp.onchange = () => { picks.set(it.id, v); sum(); };
       return el('label', { className:'seg' }, inp, el('span', { textContent:t }));
@@ -1308,22 +1310,25 @@ function openReturnRecTool() {
   const kids = [el('p', { className:'warn', textContent:items.length ? `돌려준 빌린 책 중 읽은 기록이 없는 책 ${items.length}권. 고르지 않은 책은 그대로 둬요.` : '돌려준 빌린 책은 모두 기록이 있어요.' })];
   if (items.length) kids.push(el('small', { textContent:'기록 날짜는 돌려준 날이에요. 별점·한 줄 평은 나중에 책 창 «기록 고치기»에서 더해요. «안 남김»은 이 목록에 다시 안 나와요.' }), el('div', { className:'fill-list' }, items.map(row)));
   showForm('돌려준 책 기록 남기기', kids, async () => {
-    if (!picks.size) throw fail('책마다 다 읽음·읽다 맒·안 남김 중 하나를 골라 주세요');
+    if (!picks.size) throw fail('책마다 다 읽음·덜 읽음·안 남김 중 하나를 골라 주세요');
     const works = {}, lib = {}, made = [];
     for (const it of items) {
       const v = picks.get(it.id);
       if (!v) continue;
-      if (v === 'skip') { lib[it.id] = libData({ ...it, norec:true }); continue; }
-      const l = lastBack(it), rec = { d:l.back, r:null, l:'', b:'' };
+      const l = lastBack(it);
+      if (v === 'skip') { lib[it.id] = libData({ ...it, norec:l.back }); continue; }
+      const rec = { d:l.back, r:null, l:'', b:'' };
       if (v === 'part') rec.st = 'unread';
-      const have = libWork(it) || readMatch(it.t, it.a);
+      // 같은 저장에서 방금 만든 책도 본다(검토자 재현: 같은 책 서재 칸이 둘이면 새 읽은 책이 둘 생겼다)
+      const key = `${norm(it.t)}|${squeeze(firstAuthorOf(it.a || ''))}`;
+      const have = returnWork(it) || (made.find((m) => m.key === key) || {}).w || null;
       let w = have ? (works[have.id] ? { ...have, ...works[have.id], id:have.id } : have) : null;
       if (w) w = settleRecs({ ...w, recs:[...w.recs, rec] });
       else {
         const id = DEMO ? `demo${Date.now()}${made.length}` : await fb.newId();
         w = { id, t:it.t, a:it.a || '', p:it.p || '', k:'book', th:libThemes(it), recs:[rec], notes:[], known:true, y:l.back.slice(0, 4), fd:l.back };
         if (v === 'part') w.unread = true;
-        made.push(id);
+        made.push({ key, w });
       }
       works[w.id] = storedWork(w);
       lib[it.id] = libData({ ...it, w:w.id });
@@ -1337,6 +1342,7 @@ function openReturnRecTool() {
     toast(n ? `${n}권을 읽은 책 기록으로 남겼어요${made.length ? `(새로 꽂은 책 ${made.length}권)` : ''}` : '기록 없이 돌려준 책으로 뒀어요');
   }, '한 번에 저장');
   if (items.length) { $('form-body').querySelector('.form-foot').prepend(el('div', { className:'pick-sum' }, count)); sum(); }
+  else $('form-body').querySelector('.form-foot').hidden = true; // 할 일이 없으면 저장 단추도 없다(검토자 지적)
 }
 // 관리 단추 글자에 할 일 수(돌려준 책 기록·이을 책)
 function syncLibTools() {
@@ -2620,18 +2626,21 @@ function backButton(it, i) {
 }
 /* 돌려준 빌린 책 → 읽은 기록(2026-11-27, 효니 쪽지 imwx6ye9kn0m1 «도서관에서 빌린 책은 돌려주게 되면 다 읽거나 덜 읽거나(읽는 중) 둘 중 하나니까 독서 기록 탭으로 넘겨야 하지 않을까?»)
    빌린 동안의 기록이 없으면 «다 읽었어요/읽다 말았어요/기록 안 남길래요»를 묻는다. 이어진 읽은 책이 있으면 «기록 더하기», 없으면 «책 추가»(pre로 서재 칸과 이음)를 연다.
-   «기록 안 남길래요»는 library/{id}.norec=true로 남겨 서재 관리 «돌려준 책 기록 남기기»에 다시 안 나오게 한다 */
+   «기록 안 남길래요»는 library/{id}.norec=돌려준 날로 남겨 그 빌림만 서재 관리 «돌려준 책 기록 남기기»에 다시 안 나오게 한다(다시 빌려 돌려주면 또 나옴, 검토자 지적)
+   기록을 넣을 읽은 책(returnWork)은 이어진 책 → 같은 제목·첫 저자 읽은 책(readMatch) 순. 책 창 묻기와 관리 창이 같은 기준(검토자 재현: 전에는 책 창만 이어진 책만 봐 같은 책이 하나 더 생겼다) */
 const loanRecSince = (w, l) => !!w && w.recs.some((r) => (r.d || '') >= ((l && l.d) || '')); // 빌린 날 뒤에 남긴 기록이 있음(날짜 없는 빌림은 기록이 하나라도 있으면)
 const lastBack = (it) => it.loans.filter((x) => x.dir === 'in' && x.back).sort((a, b) => b.back.localeCompare(a.back))[0] || null;
-const needsReturnRec = (it) => it.st === 'in' && !openLoan(it) && !it.norec && !!lastBack(it) && !loanRecSince(libWork(it), lastBack(it));
+const returnWork = (it) => libWork(it) || (it.t ? readMatch(it.t, it.a) : null);
+const needsReturnRec = (it) => { const l = it.st === 'in' && !openLoan(it) ? lastBack(it) : null; return !!l && it.norec !== l.back && it.norec !== true && !loanRecSince(returnWork(it), l); };
 async function askReturnRec(it, l) {
-  if (loanRecSince(libWork(it), l)) return;
-  const pick = await choose(`«${it.t || '이 책'}»을 돌려줬어요. 읽은 책에 기록으로 남길까요?`, [['done', '다 읽었어요'], ['part', '읽다 말았어요'], ['skip', '기록 안 남길래요']]);
-  if (pick === 'skip') { saveLib({ ...it, norec:true }, '기록 없이 돌려준 책으로 뒀어요').catch(saveFailed); return; }
+  if (loanRecSince(returnWork(it), l)) return;
+  const pick = await choose(`«${it.t || '이 책'}»을 돌려줬어요. 읽은 책에 기록으로 남길까요?`, [['done', '다 읽었어요'], ['part', '덜 읽었어요'], ['skip', '기록 안 남길래요']]);
+  if (pick === 'skip') { saveLib({ ...it, norec:l.back || today() }, '기록 없이 돌려준 책으로 뒀어요').catch(saveFailed); return; }
   if (pick) openReturnRec(it, pick === 'part');
 }
-function openReturnRec(it, part) {
-  const w = libWork(it);
+async function openReturnRec(it, part) {
+  const w = returnWork(it);
+  if (w && !libWork(it)) { try { await saveLib({ ...it, w:w.id }, `읽은 책 «${titleOf(w)}»과 이었어요`); } catch (e) { saveFailed(e); return; } } // 같은 책이 이미 읽은 책에 있으면 잇고 거기에 기록
   if (w) openRecForm(w, -1, { unread:part });
   else openBookForm(null, { pre:it, unread:part });
 }
