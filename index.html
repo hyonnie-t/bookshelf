@@ -95,14 +95,17 @@
   </section>
   <section id="view-want" role="tabpanel" aria-labelledby="tab-want" hidden>
     <div class="filters">
-      <div class="row" id="wantSort" role="group" aria-label="읽고 싶은 책 순서"></div>
+      <div class="lib-tools">
+        <div class="row" id="wantSort" role="group" aria-label="읽고 싶은 책 순서"></div>
+        <button class="copy" id="wantMany" type="button">+ 여러 권 한꺼번에 담기</button>
+      </div>
     </div>
     <div class="bar">
       <input class="search" id="wq" type="search" placeholder="제목, 저자, 담은 까닭 찾기" aria-label="읽고 싶은 책에서 찾기">
       <span class="count" id="wcount" aria-live="polite"></span>
     </div>
     <div id="wants"></div>
-    <p class="note">읽고 싶은 책은 로그인한 나에게만 보여요. 목록에서 제목을 누르면 샀어요·빌렸어요·읽고 기록 남기기가 있어요.</p>
+    <p class="note">읽고 싶은 책은 로그인한 나에게만 보여요. 책등이나 제목을 누르면 샀어요·빌렸어요·읽고 기록 남기기가 있어요.</p>
   </section>
   <section id="view-posts" role="tabpanel" aria-labelledby="tab-posts" hidden>
     <div class="filters">
