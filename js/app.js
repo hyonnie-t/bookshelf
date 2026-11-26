@@ -3558,7 +3558,7 @@ async function seePhoto(mode, file) {
     // text/plain(기본)으로 보내야 미리 묻기(preflight) 없이 앱스크립트가 받는다
     const res = await fetch(BOOK_RELAY, { method:'POST', body:JSON.stringify({ mode, img }), signal:c.signal });
     r = await res.json();
-  } catch (e) { throw fail(seeError('')); } finally { clearTimeout(t); }
+  } catch (e) { throw fail(seeError(e.name === 'AbortError' ? 'timeout' : '')); } finally { clearTimeout(t); }
   if (!r.ok) { const e = fail(seeError(r.error)); e.code = r.error; throw e; }
   return r;
 }

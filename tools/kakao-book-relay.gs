@@ -18,7 +18,8 @@ function doGet(e) {
 // 열쇠는 스크립트 속성 GEMINI_API_KEY, 모델은 GEMINI_MODEL(없으면 SEE_MODELS 순서로, 붐비거나 없는 모델이면 다음 것). 하루 상한 SEE_LIMIT.
 var SEE_LIMIT = 200;
 var SEE_MAX_IMG = 2800000; // base64 글자 수(약 2MB). 앱은 긴 변 1600px JPEG로 줄여 보낸다
-var SEE_MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+// 끝의 flash-lite는 flash 셋이 다 한도(429)일 때만(2026-11-26 실측: 같은 열쇠로 flash는 모두 upstream, lite만 답함. 출처: 효니 말 «읽고 싶은 책에서는 안 됨»)
+var SEE_MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
 var SEE_PROMPTS = {
   // 2026-11-24 저녁: 서점 구매 내역·책장 책등 사진도 같은 지시로 읽는다(출처: 효니 쪽지 «교보, 예스24 구매 목록이나 책장 사진», 답 «① 둘 다 ② 고쳐»)
   list: '이 사진은 책 목록이다. 셋 중 하나다: 도서관 대출 목록 화면, 온라인 서점(교보문고·예스24·알라딘 등)의 주문·구매 내역 화면, 책장에 꽂힌 책을 찍은 사진(책등).\n' +
