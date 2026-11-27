@@ -2917,7 +2917,7 @@ const wantOwned = (it) => { const key = norm(it.t); return key ? D.lib.find((x) 
    제목·저자가 맞는 판(found)은 묻지 않고 library/{id}.y24=[번호, 비율]로 바로 저장하고, 사진 없음·맞는 판 없음은 meta/y24tried(lib_<id>)에 남겨 다시 안 찾는다.
    애매한 책(pick)은 SPINE.res에 남겨 «책등 찾기 n권»(openSpineTool({ lib:'want' }))에서 고른다. 이 세션에서 한 번 찾은 책은 다시 안 찾는다(WANT_AUTO.seen) */
 const wantSpineless = (x) => { if (!isWant(x) || !x.t || Array.isArray(x.y24) || x.y24 === 0 || wantDoneWork(x)) return false; const w = libWork(x); return !(w && realOf(w)); };
-const WANT_AUTO = { seen:new Set(), busy:false, n:0, i:0, saved:0 };
+const WANT_AUTO = { seen:new Set(), fail:{}, busy:false, n:0, i:0, saved:0 }; // fail: 받기 실패 횟수(중계가 오래 쉬다 깨면 처음 묶음이 12초를 넘겨 실패한다. 두 번까지 다시)
 const wantAutoNote = el('p', { className:'note want-spine-note', role:'status' });
 function drawWantAutoNote() {
   const left = S.owner ? libSpineTargets('want') : [], tried = (D.priv.meta || {}).y24tried || {};
@@ -2939,6 +2939,7 @@ function autoWantSpines() {
   if (!todo.length) return;
   Object.assign(WANT_AUTO, { busy:true, n:todo.length, i:0, saved:0 });
   drawWantAutoNote();
+  let again = false;
   (async () => {
     for (let i = 0; i < todo.length; i += 6) {
       const part = todo.slice(i, i + 6);
@@ -2949,6 +2950,7 @@ function autoWantSpines() {
         const it = D.lib.find((x) => 'lib_' + x.id === r.w.id), c = r.status === 'found' && r.cands.find((x) => x.no === r.pick);
         if (c && c.ratio && it && wantSpineless(it)) lib[it.id] = libData({ ...it, y24:[c.no, c.ratio] }); // 그사이 고쳤으면 고친 칸 그대로에 책등만
         else if (r.status === 'pick' || r.status === 'found') SPINE.res.set(r.w.id, r); // 창에서 고르게 남긴다
+        else if (r.status === 'fail' && (WANT_AUTO.fail[r.w.id] = (WANT_AUTO.fail[r.w.id] || 0) + 1) < 3) { WANT_AUTO.seen.delete(r.w.id); again = true; }
       });
       const patch = { ...triedPatch(got), ...triedClear(got, (D.priv.meta || {}).y24tried || {}) };
       try {
@@ -2961,9 +2963,14 @@ function autoWantSpines() {
         }
       } catch (e) { console.error(e); break; } // 저장이 안 되면(연결 끊김) 멈추고 다음에 이 탭을 열 때 남은 책부터(이번에 본 책은 이 세션에서는 다시 안 찾음)
       WANT_AUTO.i = i + part.length;
-      if (Object.keys(lib).length && S.view === 'want') renderWant(); else drawWantAutoNote();
+      if (Object.keys(lib).length) refreshAll(); else drawWantAutoNote(); // setPriv만으로는 D.lib가 안 바뀐다(rebuild가 다시 만든다)
     }
-  })().catch((e) => console.error(e)).finally(() => { WANT_AUTO.busy = false; if (S.view === 'want') renderWant(); if (WANT_AUTO.saved) toast(`읽고 싶은 책 ${WANT_AUTO.saved}권에 실물 책등을 꽂았어요`); });
+  })().catch((e) => console.error(e)).finally(() => {
+    WANT_AUTO.busy = false;
+    if (WANT_AUTO.saved) toast(`읽고 싶은 책 ${WANT_AUTO.saved}권에 실물 책등을 꽂았어요`);
+    if (again) setTimeout(autoWantSpines, 3000); // 받기에 실패한 책만 조금 뒤 다시(중계가 깨어난 뒤)
+    if (S.view === 'want') renderWant();
+  });
 }
 const wantReading = (it) => { const key = norm(it.t); return key ? list().find((x) => bookKind(x) && (x.id === movedTo(it.w || '') || norm(x.t) === key) && isReading(x)) || null : null; };
 function wantRow(it) {
