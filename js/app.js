@@ -2948,7 +2948,7 @@ function autoWantSpines() {
       const lib = {};
       got.forEach((r) => {
         const it = D.lib.find((x) => 'lib_' + x.id === r.w.id), c = r.status === 'found' && r.cands.find((x) => x.no === r.pick);
-        if (c && c.ratio && it && wantSpineless(it)) lib[it.id] = libData({ ...it, y24:[c.no, c.ratio] }); // 그사이 고쳤으면 고친 칸 그대로에 책등만
+        if (c && c.ratio && it && wantSpineless(it) && norm(it.t) === norm(r.w.t)) lib[it.id] = libData({ ...it, y24:[c.no, c.ratio] }); // 그사이 고쳤으면 고친 칸 그대로에 책등만
         else if (r.status === 'pick' || r.status === 'found') SPINE.res.set(r.w.id, r); // 창에서 고르게 남긴다
         else if (r.status === 'fail' && (WANT_AUTO.fail[r.w.id] = (WANT_AUTO.fail[r.w.id] || 0) + 1) < 3) { WANT_AUTO.seen.delete(r.w.id); again = true; }
       });
@@ -3089,9 +3089,9 @@ function openWantForm(it) {
   };
   if (it) {
     const dropIfOwned = async () => { // 이미 서재에 있는 책(2026-11-24 검토 지적): 서재에 하나 더 꽂지 않고 읽고 싶은 책에서만 뺀다
-      const have = wantOwned(it);
+      const r = roomFor(), have = D.lib.find((x) => isActive(x) && roomOf(x) === r && norm(x.t) === norm(it.t)); // 꽂을 서재 안에서만(집에 있는 책을 학교용으로 또 산 경우, 2026-11-27 검토 지적)
       if (!have) return false;
-      if (!await ask(`«${have.t}»은 이미 내 서재에 있어요. 서재 책은 그대로 두고 읽고 싶은 책에서만 뺄까요?`, '빼기')) return true;
+      if (!await ask(`«${have.t}»은 이미 ${ROOM_NAMES[r]}에 있어요. 서재 책은 그대로 두고 읽고 싶은 책에서만 뺄까요?`, '빼기')) return true;
       try { await write(`library/${it.id}`, null); setPriv('library', it.id, null); refreshAll(); $('form').close(); toast('읽고 싶은 책에서 뺐어요'); } catch (e) { saveFailed(e); }
       return true;
     };
@@ -4626,6 +4626,7 @@ function openBookForm(w, { pre, unread } = {}) { // unread: 돌려준 빌린 책
     const swapped = retitled && foundTitle === title && k.value === 'book';
     if (swapped && (D.y24[base.id] || Array.isArray(base.y24) || spinePick)) base.y24 = spinePick && spinePick.t === title ? spinePick.got : 0;
     else if (spinePick && spinePick.t === title && k.value === 'book' && !Array.isArray(base.y24) && base.y24 !== 0 && !D.y24[base.id]) base.y24 = spinePick.got;
+    else if (isNew && pre && Array.isArray(pre.y24) && norm(pre.t) === norm(title) && k.value === 'book' && !Array.isArray(base.y24)) base.y24 = pre.y24; // 서재·읽고 싶은 책 칸에 찾아 둔 책등(2026-11-27 검토 지적)
     if (isNew) { const rec = { d:d.value, r:r.value === '' ? null : +r.value, l:l.value.trim(), b:b.value.trim() }; if (unfinished.querySelector('input').checked) { rec.st = 'unread'; base.unread = true; } base.recs = [rec]; base.y = (d.value || today()).slice(0, 4); base.fd = d.value || today(); }
     if (ser) { if (ser.no.checked) base.ser = false; else if (tidy(ser.inp.value)) base.ser = tidy(ser.inp.value); else delete base.ser; }
     if (only && only.checked !== isOnlyMe(w)) { // 예전 책 창 칸과 같은 규칙: 책·영화는 풀면 only를 지워 원래 기준으로
