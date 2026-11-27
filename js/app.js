@@ -1141,9 +1141,9 @@ function batchRun({ todo, size, job, onEach, progress, done }) {
   return { go, stop, busy:() => busy };
 }
 const SPINE = { res:new Map(), again:false, open:{}, flying:new Set() }; // 이 세션에서 찾은 결과(창을 닫아도 남아 다시 열면 이어서 보인다). again: «다시 찾아보기»를 눌렀음
-function openSpineTool({ lib } = {}) { // lib: 내 서재 관리 «서재 책등 다시 찾기»(2026-11-27) — 서재 책만, 이어지지 않은 책은 서재 칸 library/{id}.y24에
-  const targets = (lib === true ? libSpineTargets() : spineTargets()).sort((a, b) => KO.compare(titleOf(a), titleOf(b)));
-  const ids = new Set([...spineTargets(), ...libSpineTargets()].map((w) => w.id)); // 다른 범위(전체·서재)에서 찾은 결과는 남긴다
+function openSpineTool({ lib } = {}) { // lib: true 내 서재 관리 «서재 책등 다시 찾기»(2026-11-27) — 서재 책만, 이어지지 않은 책은 서재 칸 library/{id}.y24에 / 'want' 읽고 싶은 책(2026-11-27 쪽지 imwyek8kt5lcy)
+  const targets = (lib === true ? libSpineTargets() : lib === 'want' ? libSpineTargets('want') : spineTargets()).sort((a, b) => KO.compare(titleOf(a), titleOf(b)));
+  const ids = new Set([...spineTargets(), ...libSpineTargets(), ...libSpineTargets('want')].map((w) => w.id)); // 다른 범위(전체·서재)에서 찾은 결과는 남긴다
   [...SPINE.res.keys()].forEach((id) => { if (!ids.has(id)) SPINE.res.delete(id); else { const r = SPINE.res.get(id), t = targets.find((w) => w.id === id); if (t) r.w = t; delete r.el; } }); // 그사이 책등이 생긴 책은 빼고, 카드는 이 창에서 새로 만든다(옛 창의 «고른 책 n권»을 고치지 않게, 검토자 재현)
   const tried = () => ((D.priv.meta || {}).y24tried || {});
   // 이 세션에서 이미 찾아본 책은 기억(y24tried)에 올라가도 결과 묶음에 남기고, 접힌 «확인된 책» 목록에는 겹쳐 넣지 않는다
@@ -1156,7 +1156,7 @@ function openSpineTool({ lib } = {}) { // lib: 내 서재 관리 «서재 책등
   const sum = () => { count.textContent = `고른 책 ${Object.keys(pickedSpines(results())).length}권`; };
   const summary = () => {
     const s = split(), g = groupResults(results()), left = todo().length;
-    if (!targets.length) return lib === true ? '서재 책 모두 실물 책등 사진이 있어요.' : '모든 책에 실물 책등 사진이 있어요.';
+    if (!targets.length) return lib === true ? '서재 책 모두 실물 책등 사진이 있어요.' : lib === 'want' ? '읽고 싶은 책 모두 실물 책등 사진이 있어요.' : '모든 책에 실물 책등 사진이 있어요.';
     const done = results().length ? ` 찾았어요 ${g.found.length} · 직접 골라 주세요 ${g.pick.length} · 못 찾았어요 ${g.none.length}.` : '';
     return `찾아볼 책 ${s.todo.length}권${left && left < s.todo.length ? `(남은 책 ${left}권)` : ''} · 예스24에 책등 사진이 없다고 확인된 책 ${s.known.length}권(맨 아래 접어 둠).${done}`;
   };
@@ -1229,7 +1229,7 @@ function openSpineTool({ lib } = {}) { // lib: 내 서재 관리 «서재 책등
   const allOff = el('button', { className:'copy', type:'button', textContent:'모두 풀기' });
   allOff.onclick = () => { results().forEach((r) => { if (r.pick) { r.pick = null; r.paint && r.paint(); } if (r.manual) { r.manual = null; delete r.el; } }); draw(); sum(); };
   head.textContent = summary(); draw(); sum(); ready();
-  showForm(lib === true ? '서재 책등 다시 찾기' : '책등 다시 찾기', [head, el('div', { className:'actions' }, batch.go, batch.stop), groups], async () => {
+  showForm(lib === true ? '서재 책등 다시 찾기' : lib === 'want' ? '읽고 싶은 책 책등 찾기' : '책등 다시 찾기', [head, el('div', { className:'actions' }, batch.go, batch.stop), groups], async () => {
     if (batch.busy()) throw fail('찾는 중이에요. 다 찾거나 «멈추기»를 누른 뒤 저장해 주세요.');
     const picked = pickedSpines(results());
     if (!Object.keys(picked).length) throw fail('저장할 책등을 하나 이상 골라 주세요');
@@ -1252,8 +1252,9 @@ if ($('refindSpines')) $('refindSpines').onclick = openSpineTool;
    내 서재 탭 «관리»(접는 칸 fold.lib): 돌려준 책 기록 남기기 · 읽은 책과 잇기 · 서재 책등 다시 찾기. 모두 «모아 보기 → 고르기 → 한 번에 저장».
    새 칸: library/{id}.y24(서재에만 있는 책의 책등 [번호, 비율]), library/{id}.norec(돌려준 책을 기록 없이 둠). publish.js는 library를 읽지 않는다 */
 const libPseudo = (it) => ({ id:'lib_' + it.id, lib:it.id, t:it.t || '', a:it.a || '', p:it.p || '', th:libThemes(it), k:'book', known:true, recs:[], notes:[], marks:[], y24:it.y24 });
-function libSpineTargets() { // 서재에 꽂힌 책 중 실물 책등이 없는 책: 이어진 읽은 책은 그 책(works에 저장), 안 이어진 책은 서재 칸(lib_ 키)
+function libSpineTargets(scope) { // 서재에 꽂힌 책 중 실물 책등이 없는 책: 이어진 읽은 책은 그 책(works에 저장), 안 이어진 책은 서재 칸(lib_ 키)
   if (!S.owner) return [];
+  if (scope === 'want') return D.lib.filter(wantSpineless).map(libPseudo); // 읽고 싶은 책(아직 안 읽은 책): 늘 서재 칸(library/{id}.y24)에
   const act = D.lib.filter(isActive), linked = new Set(act.filter((x) => !Array.isArray(x.y24)).map(libWork).filter(Boolean).map((w) => w.id));
   return [...spineTargets().filter((w) => linked.has(w.id)), ...act.filter((x) => !libWork(x) && x.t && !Array.isArray(x.y24) && x.y24 !== 0).map(libPseudo)];
 }
@@ -2840,6 +2841,59 @@ const wantDoneWork = (it) => { // 이 책을 다 읽은 읽은 책(없으면 nul
   return key ? list().find((x) => x.known && bookKind(x) && norm(x.t) === key && countsRead(x)) || null : null;
 };
 const wantOwned = (it) => { const key = norm(it.t); return key ? D.lib.find((x) => isActive(x) && norm(x.t) === key) || null : null; };
+/* 읽고 싶은 책 실물 책등(2026-11-27, 출처: 효니 쪽지 imwyek8kt5lcy «읽고 싶은 책도 실물 책등으로! 꼭 이렇게 두 번 말하게 하지»)
+   책등 보기·실물 책등 보기로 이 탭을 열면 책등 사진이 없는 책을 여섯 권씩 예스24(중계 src=y24)에서 저절로 찾는다(«책등 다시 찾기»와 같은 spineSearch·판정).
+   제목·저자가 맞는 판(found)은 묻지 않고 library/{id}.y24=[번호, 비율]로 바로 저장하고, 사진 없음·맞는 판 없음은 meta/y24tried(lib_<id>)에 남겨 다시 안 찾는다.
+   애매한 책(pick)은 SPINE.res에 남겨 «책등 찾기 n권»(openSpineTool({ lib:'want' }))에서 고른다. 이 세션에서 한 번 찾은 책은 다시 안 찾는다(WANT_AUTO.seen) */
+const wantSpineless = (x) => { if (!isWant(x) || !x.t || Array.isArray(x.y24) || x.y24 === 0 || wantDoneWork(x)) return false; const w = libWork(x); return !(w && realOf(w)); };
+const WANT_AUTO = { seen:new Set(), busy:false, n:0, i:0, saved:0 };
+const wantAutoNote = el('p', { className:'note want-spine-note', role:'status' });
+function drawWantAutoNote() {
+  const left = S.owner ? libSpineTargets('want') : [], tried = (D.priv.meta || {}).y24tried || {};
+  const ask = left.filter((w) => !tried[w.id]).length; // 사진 없음으로 확인된 책은 숫자에 넣지 않는다(창에서 접어 둠)
+  const kids = [];
+  if (WANT_AUTO.busy) kids.push(el('span', { textContent:`실물 책등 사진을 찾는 중이에요 ${Math.min(WANT_AUTO.i, WANT_AUTO.n)}/${WANT_AUTO.n}${WANT_AUTO.saved ? ` · 찾아 꽂은 책 ${WANT_AUTO.saved}권` : ''}` }));
+  else if (ask && realView()) {
+    const b = el('button', { className:'copy', type:'button', textContent:`책등 찾기 ${ask}권` });
+    b.onclick = () => openSpineTool({ lib:'want' });
+    kids.push(el('span', { textContent:'책등 사진을 직접 골라야 하는 책이 있어요 ' }), b);
+  }
+  wantAutoNote.replaceChildren(...kids);
+  wantAutoNote.hidden = !kids.length;
+}
+function autoWantSpines() {
+  if (!S.owner || DEMO || WANT_AUTO.busy || S.view !== 'want' || S.wv !== 'spine' || !realView()) return;
+  const tried = (D.priv.meta || {}).y24tried || {};
+  const todo = libSpineTargets('want').filter((w) => !tried[w.id] && !WANT_AUTO.seen.has(w.id) && !SPINE.flying.has(w.id) && !SPINE.res.has(w.id));
+  if (!todo.length) return;
+  Object.assign(WANT_AUTO, { busy:true, n:todo.length, i:0, saved:0 });
+  drawWantAutoNote();
+  (async () => {
+    for (let i = 0; i < todo.length; i += 6) {
+      const part = todo.slice(i, i + 6);
+      part.forEach((w) => { WANT_AUTO.seen.add(w.id); SPINE.flying.add(w.id); });
+      const got = await Promise.all(part.map((w) => spineSearch(w).finally(() => SPINE.flying.delete(w.id))));
+      const lib = {};
+      got.forEach((r) => {
+        const it = D.lib.find((x) => 'lib_' + x.id === r.w.id), c = r.status === 'found' && r.cands.find((x) => x.no === r.pick);
+        if (c && c.ratio && it && wantSpineless(it)) lib[it.id] = libData({ ...it, y24:[c.no, c.ratio] }); // 그사이 고쳤으면 고친 칸 그대로에 책등만
+        else if (r.status === 'pick' || r.status === 'found') SPINE.res.set(r.w.id, r); // 창에서 고르게 남긴다
+      });
+      const patch = { ...triedPatch(got), ...triedClear(got, (D.priv.meta || {}).y24tried || {}) };
+      try {
+        if (Object.keys(lib).length) { await write('library', lib, 'update'); Object.entries(lib).forEach(([id, v]) => setPriv('library', id, v)); WANT_AUTO.saved += Object.keys(lib).length; }
+        if (Object.keys(patch).length) {
+          await write('meta/y24tried', patch, 'update');
+          const m = D.priv.meta = D.priv.meta || {}, next = { ...(m.y24tried || {}) };
+          Object.entries(patch).forEach(([k, v]) => { if (v === null) delete next[k]; else next[k] = v; });
+          m.y24tried = next;
+        }
+      } catch (e) { console.error(e); break; } // 저장이 안 되면(연결 끊김) 멈추고 다음에 이 탭을 열 때 남은 책부터(이번에 본 책은 이 세션에서는 다시 안 찾음)
+      WANT_AUTO.i = i + part.length;
+      if (Object.keys(lib).length && S.view === 'want') renderWant(); else drawWantAutoNote();
+    }
+  })().catch((e) => console.error(e)).finally(() => { WANT_AUTO.busy = false; if (S.view === 'want') renderWant(); if (WANT_AUTO.saved) toast(`읽고 싶은 책 ${WANT_AUTO.saved}권에 실물 책등을 꽂았어요`); });
+}
 const wantReading = (it) => { const key = norm(it.t); return key ? list().find((x) => bookKind(x) && (x.id === movedTo(it.w || '') || norm(x.t) === key) && isReading(x)) || null : null; };
 function wantRow(it) {
   const name = el('button', { className:'ledger-title', type:'button', textContent:it.t || '제목 없음' });
@@ -2878,7 +2932,7 @@ function renderWant() {
     const reset = el('button', { className:'btn', type:'button', textContent:'찾기 지우기' });
     reset.onclick = () => { S.wq = ''; $('wq').value = ''; renderWant(); };
     kids.push(el('div', { className:'empty' }, el('div', { textContent:'찾는 말에 맞는 책이 없어요.' }), reset));
-  } else if (rows.length && S.wv === 'spine') kids.push(...wantShelves(rows));
+  } else if (rows.length && S.wv === 'spine') { drawWantAutoNote(); kids.push(wantAutoNote, ...wantShelves(rows)); }
   else if (rows.length) kids.push(el('ul', { className:'ledger-list want-list' }, rows.map(wantRow)));
   else kids.push(el('p', { className:'warn', textContent:'담아 둔 책을 모두 읽었어요.' }));
   if (doneRows.length) {
@@ -2895,6 +2949,7 @@ function renderWant() {
   $('wants').replaceChildren(...kids);
   watch('.want-row');
   watch('#wants .lib-group.shelf');
+  autoWantSpines(); // 이 탭이 보일 때만 돈다(안에서 확인)
 }
 // 책등 보기(2026-11-25, 출처: 효니 쪽지 imwvj33gfq61c «읽고 싶은 책도 그 책 등으로 보이게 해주는 게 나을 거 같은 데»): 내 서재 책등 보기와 같은 책등(caseBook).
 // 순서가 «주제»면 주제 칸마다, 아니면 고른 순서대로 한 선반. 다 읽은 책(«읽은 책이 된 책»)은 아래 목록 그대로. 책등을 누르면 책 창(«읽고 싶은 책 고치기»)
@@ -2927,9 +2982,12 @@ function openWantForm(it) {
     note.textContent = done ? `이미 읽은 책이에요(«${titleOf(done)}»). «읽은 책이 된 책»에 들어가요.` : have ? '내 서재에 이미 있는 책이에요.' : '';
   };
   t.addEventListener('input', check);
-  let pick = 0;
+  let pick = 0, spinePick = null, spineRun = 0;
   const kids = [bookLookup(async (b) => {
     t.value = b.t; a.value = b.a || a.value; p.value = b.p || p.value; check();
+    // 실물 책등(2026-11-27): 예스24에서 고른 책은 그 판의 책등 사진을 재 두었다가 저장 때 library/{id}.y24로(«책 추가»의 spinePick과 같은 방식)
+    spinePick = null; const sp = ++spineRun;
+    if (b.y24) measureSpine(b.y24).then((g) => { if (sp === spineRun && g) spinePick = { got:g, t:b.t }; });
     if (th.values().length) return; // 주제가 비어 있을 때만(«내 서재에 꽂기»와 같은 규칙)
     const mine = ++pick, got = await autoTheme(b, '');
     if (mine === pick && got && !th.values().length) { th.set([got.th]); th.flash(got.th); }
@@ -2943,7 +3001,12 @@ function openWantForm(it) {
     Object.assign(base, { t:title, a:a.value.trim(), p:p.value.trim(), th:th.values() });
     if (why.value.trim()) base.why = why.value.trim(); else delete base.why;
     if (!isNew && base.w && !hitTitle(base.w, title) && norm(title) !== norm(it.t)) base.w = ''; // 다른 책으로 바꾸면 예전 연결을 푼다
+    if (spinePick && spinePick.t === title) base.y24 = spinePick.got;
+    const refind = !isNew && norm(title) !== norm(it.t) && !(spinePick && spinePick.t === title);
+    if (refind && base.y24 !== 0) delete base.y24; // 다른 책으로 바꾸면 옛 책등을 버리고 다시 찾는다(«색 책등으로» 고른 0은 둔다)
     await saveLib(base, isNew ? '읽고 싶은 책에 담았어요' : '고쳤어요');
+    const tk = 'lib_' + base.id, m = D.priv.meta || {};
+    if (refind) { WANT_AUTO.seen.delete(tk); SPINE.res.delete(tk); if ((m.y24tried || {})[tk]) write('meta/y24tried', { [tk]:null }, 'update').then(() => { delete m.y24tried[tk]; }).catch((e) => console.error(e)); } // 지난번 «사진 없음» 기억도 지워 새 제목으로 다시 찾게
     reshow();
   };
   if (it) {
@@ -4796,6 +4859,7 @@ function show(v, quiet) {
   if (!quiet) { try { history.replaceState(null, '', `${location.pathname}${location.search}#${v}`); } catch (e) {} }
   if (v === 'shelf') balanceRacks(); // 숨은 동안 다시 그렸거나 창 폭이 바뀌었으면 폭을 못 쟀다. 보일 때 다시 잰다
   if (v === 'posts') watch('.rise');
+  if (v === 'want') autoWantSpines();
   if (v === 'recap') { const c = document.querySelector('#wordMap[data-pending]'); if (c && !c.closest('.rfold-body[hidden]')) drawWordMap(c); else fitNet(); }
   renderJump();
 }
