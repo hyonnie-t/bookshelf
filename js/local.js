@@ -148,7 +148,7 @@ function cleanWork(w) {
 function cleanLib(b) {
   return { t:str(b.t), a:str(b.a), p:str(b.p), w:safeKey(str(b.w)) ? str(b.w) : '', th:Array.isArray(b.th) ? b.th.filter((x) => typeof x === 'string').slice(0, 21) : [], st:b.st === 'in' || b.st === 'want' ? b.st : 'own', ...(str(b.why) ? { why:str(b.why).slice(0, 500) } : {}), where:str(b.where), added:day(b.added),
     // 서재 관리(2026-11-27): 서재에만 있는 책의 책등 [번호, 비율]·0, 돌려준 책을 기록 없이 둠
-    ...(Array.isArray(b.y24) && /^\d{4,12}$/.test(String(b.y24[0])) && b.y24[1] > 0 && b.y24[1] < 1 ? { y24:[String(b.y24[0]), +b.y24[1]] } : b.y24 === 0 ? { y24:0 } : {}), ...(b.norec === true ? { norec:true } : day(b.norec) ? { norec:day(b.norec) } : {}),
+    ...(Array.isArray(b.y24) && /^\d{4,12}$/.test(String(b.y24[0])) && b.y24[1] > 0 && b.y24[1] < 1 ? { y24:[String(b.y24[0]), +b.y24[1]] } : b.y24 === 0 ? { y24:0 } : {}), ...(b.norec === true ? { norec:true } : day(b.norec) ? { norec:day(b.norec) } : {}), ...(b.room === 'school' ? { room:'school' } : {}), // 학교 서재(2026-11-27)
     loans:arr(b.loans).map((l) => { const o = { dir:l.dir === 'in' ? 'in' : 'out', who:str(l.who), d:day(l.d), due:day(l.due) }; if (day(l.back)) o.back = day(l.back); return o; }) };
 }
 const cleanMap = (m, f) => (isObj(m) ? Object.fromEntries(Object.entries(m).filter(([k, v]) => safeKey(k) && isObj(v)).map(([k, v]) => [k, f(v)])) : {});
