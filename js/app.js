@@ -3088,19 +3088,21 @@ function openWantForm(it) {
     reshow();
   };
   if (it) {
-    const dropIfOwned = async () => { // 이미 서재에 있는 책(2026-11-24 검토 지적): 서재에 하나 더 꽂지 않고 읽고 싶은 책에서만 뺀다
-      const r = roomFor(), have = D.lib.find((x) => isActive(x) && roomOf(x) === r && norm(x.t) === norm(it.t)); // 꽂을 서재 안에서만(집에 있는 책을 학교용으로 또 산 경우, 2026-11-27 검토 지적)
+    // 어느 서재에(2026-11-27 제미나이 의견): 학교 서재를 쓰기 시작했으면 묻고(닫으면 null), 아니면 집 서재
+    const pickRoom = async () => (D.lib.some((x) => isActive(x) && roomOf(x) === 'school') ? choose(`«${it.t}»을 어느 서재에 꽂을까요?`, [['home', ROOM_NAMES.home], ['school', ROOM_NAMES.school]]) : 'home');
+    const dropIfOwned = async (r) => { // 이미 서재에 있는 책(2026-11-24 검토 지적): 서재에 하나 더 꽂지 않고 읽고 싶은 책에서만 뺀다
+      const have = D.lib.find((x) => isActive(x) && roomOf(x) === r && norm(x.t) === norm(it.t)); // 꽂을 서재 안에서만(집에 있는 책을 학교용으로 또 산 경우, 2026-11-27 검토 지적)
       if (!have) return false;
       if (!await ask(`«${have.t}»은 이미 ${ROOM_NAMES[r]}에 있어요. 서재 책은 그대로 두고 읽고 싶은 책에서만 뺄까요?`, '빼기')) return true;
       try { await write(`library/${it.id}`, null); setPriv('library', it.id, null); refreshAll(); $('form').close(); toast('읽고 싶은 책에서 뺐어요'); } catch (e) { saveFailed(e); }
       return true;
     };
     const bought = formBtn('샀어요', async () => {
-      if (await dropIfOwned()) return;
-      const r = roomFor();
+      const r = await pickRoom();
+      if (!r || await dropIfOwned(r)) return;
       try { await saveLib(setRoom({ ...it, st:'own', where:r === 'school' ? '' : S.lastWhere || '', added:today() }, r), `${ROOM_NAMES[r]}에 꽂았어요(서재 정보 고치기에서 옮길 수 있어요)`); $('form').close(); reshow(); } catch (e) { saveFailed(e); }
     });
-    const borrowed = formBtn('빌렸어요', async () => { if (!await dropIfOwned()) openWantLoan(it); });
+    const borrowed = formBtn('빌렸어요', async () => { const r = await pickRoom(); if (r && !await dropIfOwned(r)) openWantLoan(it, r); });
     const read = formBtn('읽고 기록 남기기', async () => {
       const w = wantDoneWork(it);
       if (w) { $('form').close(); openBook(w.id); return; }
@@ -3193,13 +3195,13 @@ function openWantMany() {
   }, '담기');
 }
 // «빌렸어요»: 누구에게서·빌린 날·돌려줄 날을 받아 빌려 온 책(st:'in')으로 내 서재에 꽂는다
-function openWantLoan(it) {
+function openWantLoan(it, room = roomFor()) {
   const who = el('input', { type:'text', required:true });
   who.setAttribute('list', 'peopleNames');
   const d = el('input', { type:'date', value:today() }), due = el('input', { type:'date' });
   const save = async () => {
     if (!who.value.trim()) throw fail('누구에게서 빌렸는지 적어 주세요');
-    await saveLib(setRoom({ ...it, st:'in', added:today(), loans:[...(it.loans || []), { dir:'in', who:who.value.trim(), d:d.value, due:due.value }] }, roomFor()), '빌려 온 책으로 내 서재에 꽂았어요');
+    await saveLib(setRoom({ ...it, st:'in', added:today(), loans:[...(it.loans || []), { dir:'in', who:who.value.trim(), d:d.value, due:due.value }] }, room), `빌려 온 책으로 ${ROOM_NAMES[room]}에 꽂았어요`);
     reshow();
   };
   showForm(`«${it.t}» 빌렸어요`, [field('누구에게서', who, '도서관이면 도서관 이름'), nameList('peopleNames', D.lib.flatMap((x) => x.loans.map((l) => l.who))), field('빌린 날', d), field('돌려주기로 한 날', due)], save);
