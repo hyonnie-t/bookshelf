@@ -287,6 +287,10 @@ details.ledger-part summary { cursor:pointer; font-family:var(--font-title); fon
 /* 읽고 싶은 책(2026-11-24): 빌린 기록 목록(.ledger-*) 모양을 그대로 쓰고 주제 색 점·담은 까닭만 더한다 */
 .want-head { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-2); }
 .want-head .sw { width:10px; height:10px; border-radius:50%; flex:none; }
+/* 읽고 싶은 책 책등 찾는 중·«책등 찾기 n권»(2026-11-27), 집·학교 서재 고르기(2026-11-27) */
+.want-spine-note { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2); margin:0 0 var(--space-2); }
+.room-row { margin-bottom:var(--space-2); }
+.room-chip { font-weight:600; }
 .want-tag { font-size:.78rem; padding:0 var(--space-2); border:1px solid var(--line); border-radius:999px; color:var(--muted); }
 .want-why { margin:0; font-size:.9rem; color:var(--muted); white-space:pre-line; overflow-wrap:anywhere; }
 .want-row.done .ledger-title { color:var(--muted); }
